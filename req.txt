@@ -1,0 +1,13 @@
+shiny
+shinyAce
+ggplot2
+dplyr
+tidyr
+shinyjs
+scales
+svglite
+colourpicker
+jsonlite
+ggbeeswarm
+ggbreak
+zip
