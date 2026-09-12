@@ -60,18 +60,11 @@ RStudioは必須ではありません。
 
 `run.bat` はRの標準的なインストール先から `Rscript.exe` を自動的に探して起動します。
 
-## 統計解析機能について
-
-以下のファイルは統計解析機能で使用するため、削除しないでください。
-
-- `anovakun_489.txt`
-- `anovakun_489_10.txt`
-
 ## オンライン版
 
 shinyapps.io版も利用できます。
 
-<!-- 後でURLを追加 -->
+<https://hystmhr.shinyapps.io/ggplot_gui/>
 
 ## データについて
 
