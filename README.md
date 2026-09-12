@@ -1,49 +1,106 @@
 # ggplot-shiny-gui
 
-A Shiny GUI for creating publication-ready ggplot2 figures.
+R / Shiny を使って、ggplot2ベースのグラフをGUI操作で作成するためのアプリです。
 
-## Current version
+棒グラフ、折れ線グラフ、散布図、箱ひげ図などを、コードを直接書かずに作成・調整できます。
+論文・研究発表用の図作成を主な用途として開発しています。
 
-v3.3.38
+## 現在のバージョン
 
-## Features
+**v3.3.38**
 
-- Bar plots
-- Line plots
-- Scatter plots
-- Box plots
-- Mean / SD / SEM / 95% CI
-- Use precomputed values without recalculation
-- External error bars
-- Individual data points
-- Custom colors and palettes
-- Statistical analysis support
-- Project save / load
-- Local launch with `run.bat`
+## 主な機能
 
-## Requirements
+- 棒グラフ（Bar plot）
+- 折れ線グラフ（Line plot）
+- 散布図（Scatter plot）
+- 箱ひげ図（Box plot）
+- 平均値の計算
+- SD / SEM / 95% CI の表示
+- IDごとに平均してから集計
+- 計算済みデータをそのまま描画
+- 外部で計算済みのError barを指定
+  - ±誤差列
+  - 下限列・上限列
+- 個体データ点の表示
+- 個体間・個体内の接続線
+- Color mapping
+- カラーパレット
+- 任意色の指定
+- Facet表示
+- 軸・文字・凡例・余白などの詳細調整
+- Projectの保存・読み込み
+- PNG / PDF / SVG等への出力
+- 統計解析機能
 
-- Windows
+## 必要な環境
+
+### Windows
+
 - R
 
-## How to use
+RはCRANからインストールできます。
 
-1. Download the latest ZIP from **Releases**
-2. Extract all files to one folder
-3. Double-click `run.bat`
-4. On the first launch, required R packages may be installed automatically
-5. The Shiny app will open in your web browser
+https://cran.r-project.org/
 
-All files should remain in the same folder.
+RStudioは必須ではありません。
 
-## Online version
+## ローカル版の使い方
 
-A shinyapps.io version is also available.
+1. GitHubの **Releases** から最新版のZIPをダウンロードします。
+2. ZIPを展開します。
+3. ファイルをすべて同じフォルダに置いたままにします。
+4. `run.bat` をダブルクリックします。
+5. 必要なRパッケージが不足している場合は、初回起動時にインストールされます。
+6. Shinyアプリがブラウザで開きます。
 
-## Notes
+### フォルダ内のファイルについて
 
-`run.bat` automatically searches for `Rscript.exe` in the Windows PATH and standard R installation folders.
+`run.bat`、`run.R`、`req.txt`、その他のアプリファイルは同じフォルダに置いてください。
 
-## License
+`run.bat` はRの標準的なインストール先から `Rscript.exe` を自動的に探して起動します。
 
-No license has been specified yet.
+## 統計解析機能について
+
+以下のファイルは統計解析機能で使用するため、削除しないでください。
+
+- `anovakun_489.txt`
+- `anovakun_489_10.txt`
+
+## オンライン版
+
+shinyapps.io版も利用できます。
+
+<!-- 後でURLを追加 -->
+
+## データについて
+
+基本的には、1行を1観測とした表形式のデータを貼り付けて使用します。
+
+また、すでに外部ソフト等で平均値やSEM、信頼区間などを計算済みの場合は、
+「値（集計しない）」を使用して入力値をそのまま描画できます。
+
+例えば、
+Group   Mean   SEM
+A       10.2   0.8
+B       12.4   1.1
+のようなデータでは、
+- Y = Mean
+- Error bar = SEM
+として、GUI側で平均値やSEMを再計算せずに描画できます。
+
+## 注意
+現在も開発中のため、機能やUIは今後変更される可能性があります。
+不具合を見つけた場合は、使用したデータ形式・設定・発生したエラー等を記録しておくと原因確認がしやすくなります。
+
+## 更新履歴
+v3.3.38
+- 「値（集計しない）」を入力値をそのまま使用する仕様へ整理
+- 外部Error bar列の指定に対応
+- Project読み込み時のError bar設定復元を修正
+- 固定色指定をカラーピッカー中心に整理
+- Bar / Boxの枠線を塗り色と同じ色に設定可能
+- BarのXカテゴリ間隔を中央基準で調整するよう修正
+- 0に意味がある各種スライダーの下限を0へ変更
+License
+ライセンスは現在検討中です。
