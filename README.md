@@ -36,15 +36,6 @@ v3.3.38
 
 All files should remain in the same folder.
 
-## Files used by the app
-
-The following files are required for the statistical-analysis functions:
-
-- `anovakun_489.txt`
-- `anovakun_489_10.txt`
-
-Do not delete them.
-
 ## Online version
 
 A shinyapps.io version is also available.
