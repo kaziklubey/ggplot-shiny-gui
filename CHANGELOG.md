@@ -1,3 +1,17 @@
+## v3.73.2.34-github-clean1
+
+- GitHub `main` / Release向けに配布ツリーを整理。
+- `docs/` から旧版の静的監査JSON/CSV、関数索引、runtime split manifest等の機械生成物36ファイルを除外。
+- `docs/` は現行の6文書だけに整理。
+- `V33_CHANGE_NOTES.md` を `docs/CHANGE_HISTORY_ARCHIVE.md` に全文移し、現在版は `V34_CHANGE_NOTES.md` のみ単独保持。
+- Graph / Figure / Statistics / Project / update-check の実行ロジックは変更なし。
+
+## v3.73.2.33-doc-history-consolidation1
+
+- Consolidate 90 historical/version-specific Markdown files into `docs/CHANGE_HISTORY_ARCHIVE.md` while preserving their full text and former source paths.
+- Keep only current maintainer documents separate and rewrite the root README as a concise Japanese user guide.
+- No application runtime behavior changed.
+
 ## v3.73.2.32-github-update-check1
 
 - Add non-fatal GitHub Release update check to `run.bat` via `check_update.ps1`.
@@ -8,7 +22,7 @@
 
 ## v3.73.2.31-graph-settings-canonical-only1
 
-Graph Settings Manager Graph writes are now canonical-only for dormant Graphs. They no longer launch hidden UI / graphServer materialization after a direct or batch parameter edit; the persistent Graph Editor replays the updated canonical GraphState only when that Graph is actually visited. This removes the `MATERIALIZE -> RenderState != canonical -> RESTORE-RETRY` loop seen after v30 multi-Graph edits. Figure-only/direct Figure updates and v30 Inset preservation remain unchanged. See [V31_CHANGE_NOTES.md](V31_CHANGE_NOTES.md).
+Graph Settings Manager Graph writes are now canonical-only for dormant Graphs. They no longer launch hidden UI / graphServer materialization after a direct or batch parameter edit; the persistent Graph Editor replays the updated canonical GraphState only when that Graph is actually visited. This removes the `MATERIALIZE -> RenderState != canonical -> RESTORE-RETRY` loop seen after v30 multi-Graph edits. Figure-only/direct Figure updates and v30 Inset preservation remain unchanged. See [過去の詳細履歴](docs/CHANGE_HISTORY_ARCHIVE.md).
 
 # v3.73.2.29-graph-settings-figure-edit1
 
@@ -21,11 +35,11 @@ Graph Settings Manager Graph writes are now canonical-only for dormant Graphs. T
 
 # v3.73.2.28-graph-settings-batch1
 
-External Graph Settings Manager now highlights cross-Graph differences, shows Shared Library binding status, supports multi-Graph target selection, and can copy one whitelisted display setting from a chosen source Graph to selected Graphs without changing Figure snapshots. See [V28_CHANGE_NOTES.md](V28_CHANGE_NOTES.md).
+External Graph Settings Manager now highlights cross-Graph differences, shows Shared Library binding status, supports multi-Graph target selection, and can copy one whitelisted display setting from a chosen source Graph to selected Graphs without changing Figure snapshots. See [過去の詳細履歴](docs/CHANGE_HISTORY_ARCHIVE.md).
 
 # v3.73.2.27-graph-settings-popout-jump1
 
-External Graph Settings Manager jumps now reliably return to the main Graph workspace and reveal the requested setting. See [V27_CHANGE_NOTES.md](V27_CHANGE_NOTES.md).
+External Graph Settings Manager jumps now reliably return to the main Graph workspace and reveal the requested setting. See [過去の詳細履歴](docs/CHANGE_HISTORY_ARCHIVE.md).
 
 # v3.73.2.26-graph-settings-popout1
 
@@ -33,7 +47,7 @@ Graph Settings Manager can now open as a separate browser companion window while
 
 # v3.73.2.25-graph-settings-manager1
 
-Figureの共通設定に、全Graphの主要パラメータを横並び比較して該当Graph/入力欄へ直接移動できるGraph Settings Managerを追加しました。詳細は [V25_CHANGE_NOTES.md](V25_CHANGE_NOTES.md)。
+Figureの共通設定に、全Graphの主要パラメータを横並び比較して該当Graph/入力欄へ直接移動できるGraph Settings Managerを追加しました。詳細は [過去の詳細履歴](docs/CHANGE_HISTORY_ARCHIVE.md)。
 
 # v3.73.2.24-figure-legend-title-align-shared-style1
 
@@ -51,7 +65,7 @@ Figureの共通設定に、全Graphの主要パラメータを横並び比較し
 
 # v3.73.2.22-direct-state-figure1
 
-Figure snapshots now build directly from GraphState, with the existing READY Graph fast path. See [V22_CHANGE_NOTES.md](V22_CHANGE_NOTES.md) for scope and static validation.
+Figure snapshots now build directly from GraphState, with the existing READY Graph fast path. See [過去の詳細履歴](docs/CHANGE_HISTORY_ARCHIVE.md) for scope and static validation.
 
 # v3.73.2.21-value-replay-live-figure1
 
