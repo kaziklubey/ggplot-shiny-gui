@@ -109,11 +109,18 @@ Two migration invariants are now explicit:
 
 The next architectural step remains a true fixed-namespace Single Graph Editor with transaction load/commit.
 
-## v3.72.23 materialization boundary
+## v3.73.2.36 direct-state source boundary
 
-The former warm/preload compatibility layer is retired from the active architecture. Figure, Export and preview-less legacy Project workflows now request a read-only source materializer through `schedule_graph_materialization()` / `request_graph_materialization()`. Background source modules do not write Registry state and are reusable only while a canonical revision lease is current. Their browser DOM is disposable after READY. Materialization queue/barrier internals are private to `server_graph_materialization_runtime.R`.
+The hidden per-Graph materialization compatibility layer is retired from active runtime. `server_graph_materialization_runtime.R` and its disposable Graph DOM/module lifecycle are removed.
 
-This cleanup intentionally precedes further Editor-hydrate optimization so reshape/mapping/style performance work has one source-preparation architecture rather than competing warm/preload paths.
+- Normal Graph editing: one persistent `graph_editor_single` module only.
+- Figure Main/Inset/import: canonical or Figure-owned GraphState -> server-side direct renderer -> Figure-owned snapshot.
+- Export: canonical GraphState -> server-side direct export renderer -> file.
+- Shared Style Graph: update canonical state; only the visible singleton owner may be replayed. Dormant Graphs remain state-only.
+- Shared Style Figure: update Figure-owned state and regenerate snapshots direct-state. The visible Figure Editor, when present, is presentation sync only.
+- Project load: state-first. Dormant Graphs do not have hidden UI/module restore work.
+
+Do not reintroduce `schedule_graph_materialization()`, `request_graph_materialization()`, per-Graph hidden `graphUI()` / `graphServer()`, source-module revision leases, browser materialization drain barriers, or Figure-editor sequential generation queues.
 
 
 ## v3.72.24 Editor hydrate fast path

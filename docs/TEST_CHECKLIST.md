@@ -37,19 +37,17 @@ The refactor intentionally does not claim runtime equivalence until these checks
 - g003/g006 first-open dynamic colors/legend titles settle without losing values.
 - Figure delete → source GC → re-add still imports the current Graph.
 
-## v3.72.23 source materialization encapsulation
+## v3.73.2.36 Phase 2 direct-state source boundary
 
-- Packaged Project with persisted previews: Graph tab browsing stays preview-only; no background source materialization is started by browsing alone.
-- Explicit Graph edit: the one persistent Editor hydrates and the v3.72.16 full-screen synchronization mask behaves unchanged.
-- Figure new assignment with no usable snapshot: one source materialization occurs and the Figure snapshot imports once at READY.
-- Existing Figure-owned Graph: panel selection alone does not refresh from source; explicit refresh does.
-- Figure explicit panel refresh and Inset refresh work when the source Graph is dormant.
-- Bulk Export `Selected` and `All` prepare dormant Graphs serially and finish without creating competing editors.
-- Preview-less legacy Project follows the serial materialization compatibility path and releases the Project load lock only after the queue completes.
-- After Figure -> Graph Apply, the fresh Graph preview is immediately available and any old background source lease is invalid.
-- A later Figure/Export request for that Graph restores the background source from current canonical GraphState before reuse.
-- No `WARM-UI`, `graph_preload_*`, or `server_graph_preload_legacy.R` runtime path appears in current logs/source.
-- Static scan: materialization queue/barrier internals have no references outside `server_graph_materialization_runtime.R`.
+- [ ] Static scan: no runtime reference to `schedule_graph_materialization`, `request_graph_materialization`, `ensure_graph_ui`, `instantiate_graph`, `source_graph_module`, `source_graph_ready`, or `modules[[id]]` remains.
+- [ ] Normal Graph A -> B -> A still uses one persistent Editor and one live Plot; no hidden Graph module is created.
+- [ ] Figure new assignment, selected-panel refresh, Inset refresh, and bulk import work for dormant Graphs via `DIRECT-STATE` diagnostics.
+- [ ] Editing a Graph, then explicit Graph -> Figure refresh, imports the latest stable canonical state without persisted-SVG reuse.
+- [ ] Bulk Export `Selected` and `All` export dormant Graphs without preparing/mounting Graph editors.
+- [ ] Shared Style change updates dormant Graph canonical states without mounting them; the visible Graph updates through the normal persistent replay only.
+- [ ] Figure Shared Style sync regenerates affected Figure-owned snapshots direct-state; no sequential Figure Editor switching occurs.
+- [ ] Project save/reopen restores canonical GraphState + Figure-owned snapshots; only the selected Graph attaches to the persistent Editor.
+- [ ] Graph deletion during ordinary idle state has no hidden materialization teardown dependency.
 
 
 ## v3.72.24 Editor hydration fast path

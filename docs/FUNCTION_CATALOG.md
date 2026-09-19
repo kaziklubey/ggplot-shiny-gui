@@ -61,7 +61,8 @@ This document is the maintainer-facing map of the function-first source layout.
 
 ### `server_graph_editor_runtime.R`
 - `graph_single_load()`
-- `graph_single_request_reconcile_barrier()`
+- `graph_single_accept_loaded_state()`
+- `graph_single_release_live_render()`
 
 ## Responsibility map
 
@@ -71,7 +72,9 @@ This document is the maintainer-facing map of the function-first source layout.
 - **Original Graph dataset parser / Plot transform state:** `graph_data_runtime.R`
 - **Reusable pure data transforms:** `graph_data_transform.R`
 - **Statistics Analysis recipes / independent preparation / tests:** `graph_statistics_runtime.R`
-- **GraphState restore:** `graph_restore_runtime.R`
+- **GraphState value replay:** `server_graph_state_replay_runtime.R`
+- **Persistent Editor local primitives:** `graph_editor_primitives_runtime.R`
+- **Graph style persistence:** `graph_style_persistence_runtime.R`
 - **Data View and Plot outputs:** `graph_output_runtime.R`
 - **Figure/source ownership:** `figure_sync_contract.R`
 - **Figure workflow UI composition:** `figure_ui_module.R`
@@ -384,7 +387,6 @@ Statistics Analysis preparation and Plot preparation may call the same pure tran
 - `graph_plot_type_normalize()` — line 44, top-level
 - `graph_plot_type_spec()` — line 54, top-level
 - `graph_plot_supports_mapping()` — line 58, top-level
-- `graph_plot_restore_input_ids()` — line 62, top-level
 
 ### `graph_plot_runtime.R`
 - `y_break_values()` — line 6, nested/local
@@ -421,33 +423,15 @@ Statistics Analysis preparation and Plot preparation may call the same pure tran
 - `graph_render_diff_paths()` — line 119, top-level
 - `graph_render_state_changed()` — line 123, top-level
 
-### `graph_restore_runtime.R`
-- `parse_style_tree()` — line 96, nested/local
-- `legacy_mapping_vars()` — line 112, nested/local
-- `json_safe_tree()` — line 126, nested/local
-- `apply_style_config()` — line 164, nested/local
-- `abort_project_restore()` — line 441, nested/local
-- `cancel_initial_restore()` — line 470, nested/local
-- `restore_wait()` — line 507, nested/local
-- `restore_diag_checkpoint()` — line 528, nested/local
-- `restore_diag_value()` — line 534, nested/local
-- `restore_binding_ack_diag()` — line 542, nested/local
-- `restore_ack_field_value()` — line 571, nested/local
-- `restore_ack_scalar_matches()` — line 582, nested/local
-- `restore_ack_set_matches()` — line 593, nested/local
-- `restore_current_reshape_parent_matches()` — line 601, nested/local
-- `restore_diag_condition()` — line 612, nested/local
-- `restore_diag_snapshot()` — line 644, nested/local
-- `reset_mapping_binding_wait()` — line 701, nested/local
-- `request_mapping_binding_ack()` — line 710, nested/local
-- `json_chr()` — line 796, nested/local
-- `json_vec()` — line 803, nested/local
-- `normalize_order_tree()` — line 808, nested/local
-- `seed_internal_state()` — line 828, nested/local
-- `mapping_project_status()` — line 914, nested/local
-- `input_value()` — line 931, nested/local
-- `raw_label()` — line 935, nested/local
-- `resync_mapping_fields()` — line 1016, nested/local
+### `graph_editor_primitives_runtime.R`
+- `json_chr()` — nested/local scalar normalizer
+- editor-local reactive primitives: attached canonical seed, style replay guard/epoch, render revision/state
+
+### `graph_style_persistence_runtime.R`
+- `parse_style_tree()` — nested/local
+- `legacy_mapping_vars()` — nested/local
+- `json_safe_tree()` — nested/local
+- `apply_style_config()` — nested/local
 
 ### `graph_shared_style_runtime.R`
 - `shared_style_choices()` — line 6, nested/local
@@ -470,25 +454,17 @@ Statistics Analysis preparation and Plot preparation may call the same pure tran
 - `install_graph_render_revision_runtime()` — line 160, top-level
 
 ### `graph_state_runtime.R`
-- `direct_sync_path_changed()` — line 115, nested/local
-- `direct_sync_any_changed()` — line 125, nested/local
-- `reassert_dynamic_style_state()` — line 134, nested/local
-- `sync_editor_from_state()` — line 188, nested/local
-- `start_state_restore()` — line 411, nested/local
-- `finish_restore()` — line 1499, nested/local
-- `accept_preseeded_controls_state()` — line 1586, nested/local
-- `ack_state()` — line 1599, nested/local
-- `scalar_state()` — line 1611, nested/local
-- `prepare_restore_from_canonical()` — line 1654, nested/local
-- `activate_initial_state()` — line 1687, nested/local
-- `prepare_remount_state()` — line 1754, nested/local
-- `dbg_tree()` — line 1771, nested/local
-- `char1()` — line 1848, nested/local
-- `same()` — line 1853, nested/local
-- `cancel_remount_ui()` — line 1902, nested/local
-- `remount_binding_fields()` — line 1931, nested/local
-- `field()` — line 1937, nested/local
-- `remount_ui()` — line 1976, nested/local
+- `project_settings()` — reactive canonical GraphState capture
+- live canonical commit observer — guarded by replay/style-application state
+
+### `server_graph_state_replay_runtime.R`
+- `graph_capture_editor_ui_snapshot()` — nested/local
+- `graph_replay_selected()` — nested/local
+- `graph_replay_apply_mapping_values()` — nested/local
+- `graph_replay_apply_scalar_controls()` — nested/local
+- `graph_replay_apply_statistics()` — nested/local
+- `graph_replay_finish()` — nested/local
+- `graph_apply_state_replay()` — nested/local
 
 ### `graph_statistics_runtime.R`
 - `stats_new_id()` — line 39, nested/local
@@ -715,12 +691,13 @@ Statistics Analysis preparation and Plot preparation may call the same pure tran
 - `scalar_chr()` — line 583, nested/local
 - `vec_chr()` — line 587, nested/local
 - `graph_single_load()` — line 607, nested/local
-- `graph_single_request_reconcile_barrier()` — line 832, nested/local
 
 ### `server_graph_export_runtime.R`
-- `write_one_graph()` — line 3, nested/local
-- `write_graph_export()` — line 67, nested/local
-- `export_filename_now()` — line 117, nested/local
+- `graph_export_sync_visible_owner()` — nested/local; publishes the stable visible singleton owner before direct export.
+- `graph_export_payload()` — nested/local; canonical GraphState -> direct export payload.
+- `write_one_graph()` — nested/local.
+- `write_graph_export()` — nested/local.
+- `export_filename_now()` — nested/local.
 
 ### `server_graph_fast_switch_runtime.R`
 - `graph_single_fast_compare_state()` — line 7, top-level
@@ -730,42 +707,6 @@ Statistics Analysis preparation and Plot preparation may call the same pure tran
 - `graph_single_fast_retarget_client()` — line 56, top-level
 - `graph_single_try_equivalent_fast_switch()` — line 78, top-level
 - `miss()` — line 81, nested/local
-
-### `server_graph_materialization_runtime.R`
-- `browser_ui_ready()` — line 20, nested/local
-- `mark_browser_ui_ready()` — line 21, nested/local
-- `init_drain_ready()` — line 36, nested/local
-- `mark_init_drain_ready()` — line 37, nested/local
-- `graph_materialization_signal()` — line 46, nested/local
-- `graph_materialization_current_is()` — line 50, nested/local
-- `graph_materialization_current_id()` — line 55, nested/local
-- `graph_materialization_forget_ui_state()` — line 59, nested/local
-- `reset_graph_materialization_service()` — line 67, nested/local
-- `remove_graph_materialization_item()` — line 102, nested/local
-- `reset_graph_materialization_source()` — line 120, nested/local
-- `schedule_graph_materialization()` — line 149, nested/local
-- `cancel_graph_materialization_barriers()` — line 176, nested/local
-- `cancel_graph_restore_for_canonical_update()` — line 205, nested/local
-- `materialization_reason_is_user_priority()` — line 235, nested/local
-- `preempt_graph_materialization()` — line 243, nested/local
-- `request_graph_materialization()` — line 296, nested/local
-- `request_graph_materialization_ui_mount()` — line 338, nested/local
-- `refit_graph_cached_preview_after_mount()` — line 379, nested/local
-- `handle_graph_materialization_ui_mount_ack()` — line 404, nested/local
-- `request_graph_materialization_init_drain()` — line 445, nested/local
-- `handle_graph_materialization_init_ack()` — line 479, nested/local
-- `request_graph_materialization_browser_drain()` — line 509, nested/local
-- `handle_graph_materialization_browser_drain_ack()` — line 538, nested/local
-- `materialization_import_pending_figure_assignment()` — line 574, nested/local
-- `materialization_should_keep_background_ui()` — line 610, nested/local
-- `complete_graph_materialization_item()` — line 624, nested/local
-- `prepare_background_source_for_canonical()` — line 675, nested/local
-- `accept_background_source_revision()` — line 703, nested/local
-- `materialization_select_current_item()` — line 728, nested/local
-- `materialization_skip_item()` — line 748, nested/local
-- `materialization_ensure_background_runtime()` — line 757, nested/local
-- `materialization_restore_background_runtime()` — line 794, nested/local
-- `run_graph_materialization_worker()` — line 827, nested/local
 
 ### `server_graph_selection_runtime.R`
 - `graph_selection_valid_id()` — line 5, nested/local

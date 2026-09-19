@@ -63,6 +63,29 @@ figure_source_snapshot_busy <- function(id = NULL) {
   identical(as.character(job$id %||% "")[1], as.character(id %||% "")[1])
 }
 
+figure_source_snapshot_target_pending <- function(id, target_type = "main", owner_id = NULL) {
+  id <- as.character(id %||% "")[1]
+  target_type <- as.character(target_type %||% "main")[1]
+  owner_id <- as.character(owner_id %||% "")[1]
+  if (!nzchar(id)) return(FALSE)
+
+  jobs <- isolate(figure_source_snapshot_jobs())
+  queued <- isolate(figure_source_snapshot_queue())
+  active <- as.character(isolate(figure_source_snapshot_active_job()) %||% "")[1]
+  job_ids <- unique(c(active[nzchar(active)], queued))
+  if (!length(job_ids)) return(FALSE)
+
+  any(vapply(job_ids, function(job_id) {
+    job <- jobs[[job_id]] %||% list()
+    same_owner <- if (identical(target_type, "inset")) {
+      identical(as.character(job$owner_id %||% "")[1], owner_id)
+    } else TRUE
+    identical(as.character(job$id %||% "")[1], id) &&
+      identical(as.character(job$target_type %||% "main")[1], target_type) &&
+      isTRUE(same_owner)
+  }, logical(1)))
+}
+
 cancel_figure_source_snapshot_jobs <- function(id, reason = "cancel") {
   id <- as.character(id %||% "")[1]
   if (!nzchar(id)) return(invisible(FALSE))
@@ -111,13 +134,19 @@ request_figure_source_snapshot <- function(id, reason = "figure-source",
   owner_id <- as.character(owner_id %||% "")[1]
   if (!nzchar(id) || (identical(target_type, "inset") && !nzchar(owner_id))) return(invisible(FALSE))
 
+  # Canonical GraphState is the only source authority. If this id currently owns
+  # the persistent Graph Editor, synchronously publish its latest stable state
+  # before freezing the direct-state snapshot request.
+  if (!is.list(state_override) && identical(id, graph_single_owner()) &&
+      !isTRUE(isolate(graph_single_editor_loading())) && graph_single_ready(id)) {
+    graph_single_commit(paste0("figure-source:", as.character(reason %||% "snapshot")[1]))
+  }
+
   state <- if (is.list(state_override)) state_override else if (cache_has(id)) cache_get(id) else NULL
   if (!is.list(state)) return(invisible(FALSE))
 
-  # Main-panel explicit imports own an editable Figure GraphState copy. Inset
-  # refreshes are point-in-time assets and must not overwrite that main copy.
   if (identical(target_type, "main") && isTRUE(import_editor_state)) {
-    seed_figure_editor_from_source(id, state, reason = reason, reload_editor = FALSE)
+    invalidate_figure_main_snapshot_for_import(id)
   }
 
   key <- figure_source_snapshot_key(id, target_type, owner_id)
@@ -130,6 +159,7 @@ request_figure_source_snapshot <- function(id, reason = "figure-source",
     id = id,
     owner_id = owner_id,
     target_type = target_type,
+    import_editor_state = isTRUE(import_editor_state),
     reason = as.character(reason %||% "figure-source")[1],
     state = unserialize(serialize(state, NULL)),
     revision = revision,
@@ -209,7 +239,12 @@ figure_source_snapshot_run_job <- function(job) {
     return(isTRUE(figure_source_snapshot_store_inset(job, payload)))
   }
   ok <- isTRUE(snapshot_ready_figure_editor(job$id, job$state, payload = payload))
-  if (ok) figure_clear_new_import(job$id)
+  if (ok) {
+    if (isTRUE(job$import_editor_state)) {
+      seed_figure_editor_from_source(job$id, job$state, reason = job$reason, reload_editor = TRUE)
+    }
+    figure_clear_new_import(job$id)
+  }
   ok
 }
 

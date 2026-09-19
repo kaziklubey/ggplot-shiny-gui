@@ -138,7 +138,15 @@ install_graph_render_revision_runtime <- function() {
   # exactly once when the outer gate opens. This observer intentionally does
   # not own ordinary live-edit invalidation.
   observe({
-    gate_open <- isTRUE(render_gate()) && isTRUE(initial_restore_done())
+    # The normal persistent Graph Editor owns accepted-canonical auto release
+    # through its outer render gate. The controls-only Figure Editor has no
+    # equivalent outer gate; its replay completion observer in server.R owns
+    # the single post-browser-barrier release instead. Letting both paths own
+    # release would consume the pending target before Figure input replay has
+    # finished and can render once from the previous owner's browser values.
+    if (isTRUE(controls_only)) return()
+
+    gate_open <- isTRUE(render_gate())
     pending <- isTRUE(plot_build_pending())
     if (!isTRUE(gate_open) || !isTRUE(pending)) return()
     graph_release_attached_render_target("accepted-canonical")
@@ -155,7 +163,7 @@ install_graph_render_revision_runtime <- function() {
       log_non_shiny_error = TRUE
     )
 
-    if (!isTRUE(render_gate()) || !isTRUE(initial_restore_done())) return()
+    if (!isTRUE(render_gate())) return()
     if (isTRUE(graph_state_replay_active())) return()
     if (isTRUE(plot_build_pending())) return()
     if (!is.list(state_now)) return()

@@ -108,10 +108,6 @@ div(
           class = "text-muted",
           ""
         )
-      ),
-      div(
-        class = "project-progress-inline",
-        uiOutput("project_load_progress")
       )
     ),
 

@@ -2,7 +2,7 @@
 # Graph plot-type contract
 # ============================================================
 # Plot-type metadata belongs here rather than being repeated across UI,
-# restore, mapping, and state code.  Builders still live in graph_plot_runtime.R;
+# mapping and state code.  Builders still live in graph_plot_runtime.R;
 # this file only defines stable capabilities and compatibility rules.
 
 graph_plot_type_specs <- function() {
@@ -57,11 +57,4 @@ graph_plot_type_spec <- function(x) {
 
 graph_plot_supports_mapping <- function(plot_type, mapping) {
   mapping %in% (graph_plot_type_spec(plot_type)$mappings %||% character(0))
-}
-
-graph_plot_restore_input_ids <- function(plot_type) {
-  ids <- c("xvar", "yvar", "colorvar", "shapevar", "idvar", "facetvar")
-  if (graph_plot_supports_mapping(plot_type, "position")) ids <- c(ids, "groupvar")
-  if (graph_plot_supports_mapping(plot_type, "linetype")) ids <- c(ids, "linetypevar")
-  unique(ids)
 }

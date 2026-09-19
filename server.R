@@ -58,7 +58,6 @@ shinyServer(function(input, output, session) {
     diag_log("PRECOMPILE", "metadata unavailable; using graphServer fallback")
   }
 
-  diag_ready_seen <- new.env(parent = emptyenv())
   diag_svg_viewport_seen <- new.env(parent = emptyenv())
   diag_figure_frame_seen <- new.env(parent = emptyenv())
   diag_figure_autofit_seen <- new.env(parent = emptyenv())
@@ -79,73 +78,13 @@ shinyServer(function(input, output, session) {
   # ------------------------------------------------------------------
   # Graph registry
   # ------------------------------------------------------------------
-  modules <- new.env(parent = emptyenv())
-  # v3.3.55: UI and server lifecycles are independent.  A Graph can have a
-  # fully rendered parameter UI + cached SVG while graphServer is still absent.
-  graph_ui_mounted <- new.env(parent = emptyenv())
-  assign("g001", TRUE, envir = graph_ui_mounted)  # static shell from ui.R
-
-  ui_mounted <- function(id) exists(id, envir = graph_ui_mounted, inherits = FALSE)
-  mounted_ids <- function() ls(envir = graph_ui_mounted, all.names = TRUE)
-  mark_ui_mounted <- function(id, value = TRUE) {
-    if (isTRUE(value)) assign(id, TRUE, envir = graph_ui_mounted)
-    else if (ui_mounted(id)) rm(list = id, envir = graph_ui_mounted)
-    invisible(TRUE)
-  }
-
-  # Canonical GraphState registry. Background per-Graph modules are now
-  # read-only materializers for Figure/Export compatibility; they never own
-  # canonical state. A revision lease records which canonical snapshot a
-  # materializer has successfully restored.
+  # Canonical GraphState registry. Normal Graphs are rendered only by the one
+  # persistent Graph Editor; dormant Graphs remain pure state until selected.
   graph_state_cache <- reactiveVal(list())
   graph_state_revision <- new.env(parent = emptyenv())
-  graph_source_module_lease <- new.env(parent = emptyenv())
-  graph_source_sync_target <- new.env(parent = emptyenv())
 
   graph_state_revision_value <- function(id) {
     as.integer(graph_state_revision[[as.character(id %||% "")[1]]] %||% 0L)
-  }
-
-  source_module_claim_revision <- function(id, reason = "materialized") {
-    id <- as.character(id %||% "")[1]
-    if (!nzchar(id) || !cache_has(id)) return(invisible(FALSE))
-    graph_source_module_lease[[id]] <- list(
-      revision = graph_state_revision_value(id),
-      reason = as.character(reason %||% "materialized")[1]
-    )
-    if (exists(id, envir = graph_source_sync_target, inherits = FALSE)) {
-      rm(list = id, envir = graph_source_sync_target)
-    }
-    diag_log(
-      "SOURCE-LEASE",
-      paste0("CLAIM revision=", graph_state_revision_value(id), " reason=", reason),
-      id = id
-    )
-    invisible(TRUE)
-  }
-
-  source_module_revision_is_current <- function(id) {
-    id <- as.character(id %||% "")[1]
-    rec <- graph_source_module_lease[[id]]
-    is.list(rec) && identical(as.integer(rec$revision %||% -1L), graph_state_revision_value(id))
-  }
-
-  invalidate_graph_source_module <- function(id, reason = "canonical-update") {
-    id <- as.character(id %||% "")[1]
-    if (!nzchar(id)) return(invisible(FALSE))
-    had <- exists(id, envir = graph_source_module_lease, inherits = FALSE)
-    if (had) rm(list = id, envir = graph_source_module_lease)
-    if (exists(id, envir = graph_source_sync_target, inherits = FALSE)) {
-      rm(list = id, envir = graph_source_sync_target)
-    }
-    if (had || (!is.null(modules[[id]]))) {
-      diag_log(
-        "SOURCE-LEASE",
-        paste0("INVALIDATE revision=", graph_state_revision_value(id), " reason=", reason),
-        id = id
-      )
-    }
-    invisible(had)
   }
 
   # Graph間・Project間で使う一時的な「書式クリップボード」。
@@ -158,9 +97,7 @@ shinyServer(function(input, output, session) {
   # independent unless its explicit Library sync switch is enabled.
   shared_style_library <- reactiveVal(shared_style_default_library())
   figure_shared_style_sync <- reactiveVal(FALSE)
-  shared_style_figure_queue <- reactiveVal(character(0))
-  shared_style_figure_restore_owner <- reactiveVal("")
-  shared_style_figure_apply_active <- reactiveVal(FALSE)
+  shared_style_graph_replay_pending <- reactiveVal(NULL)
 
   graph_meta <- reactiveVal(data.frame(
     id = "g001", name = "Graph 1", stringsAsFactors = FALSE
@@ -222,18 +159,14 @@ shinyServer(function(input, output, session) {
   diag_log("STARTUP-EDITOR", "eager g001 editor scheduled for first flush", id = "g001")
 
   # ------------------------------------------------------------------
-  # Project / Graph restore status
+  # Project file status
   # ------------------------------------------------------------------
-  restore_status <- reactiveVal("idle")       # idle / restoring / complete
-  restore_kind <- reactiveVal("project")      # project / graph
-  restore_target <- reactiveVal(NULL)
   project_file_read <- reactiveVal(FALSE)
   project_save_destination_available <- reactiveVal(FALSE)
 
-  # Project restore lock.  Legacy/no-preview Projects still keep the original
-  # all-Graph READY barrier.  Phase 12 cache-first Projects release the global
-  # overlay as soon as registry + persisted Preview + Figure state are restored;
-  # Graph hydration then proceeds lazily through the same serial worker.
+  # Project restore lock covers bundle parsing + canonical/Figure state staging.
+  # Dormant Graphs have no restore worker; after staging, only the selected Graph
+  # is attached to the one persistent Editor.
   project_load_locked <- reactiveVal(FALSE)
   project_load_ids <- reactiveVal(character(0))
   project_load_failure <- reactiveVal(NULL)
@@ -293,7 +226,7 @@ shinyServer(function(input, output, session) {
     ids <- as.character(isolate(project_load_ids()) %||% character(0))
     total <- length(ids)
     ready_n <- if (total) {
-      sum(vapply(ids, graph_is_ready, logical(1)))
+      sum(vapply(ids, function(id) cache_has(id) && is.list(cache_get(id)), logical(1)))
     } else 0L
     current_id <- as.character(current_id %||% "")
     current_idx <- if (nzchar(current_id) && current_id %in% ids) match(current_id, ids) else NA_integer_
@@ -368,21 +301,8 @@ shinyServer(function(input, output, session) {
   project_remember_pref <- reactiveVal(FALSE)
   project_name_save_override <- reactiveVal(NULL)
 
-  # Project/未初期化Graphの復元中は、新panelを完成まで画面へ出さない。
-  pending_display_graph <- reactiveVal(NULL)
-  obsolete_panels <- reactiveVal(character(0))
-
-  # ------------------------------------------------------------------
-  # Export preparation
-  # ------------------------------------------------------------------
-  export_queue <- reactiveVal(character(0))
-  export_prepare_active <- reactiveVal(FALSE)
-
-  # ------------------------------------------------------------------
-  # Graph source materialization
-  # ------------------------------------------------------------------
-  # Queue/barrier state is owned by `server_graph_materialization_runtime.R`.
-  # Figure/Export/legacy-Project callers use only its named service API.
+  # Export and Figure source generation are canonical GraphState -> value
+  # operations. There is no hidden per-Graph materialization lifecycle.
 
   # Figure PreviewはExportとは独立した準備queueを持つ。
   # v3.3.46: Preview中心Figure Editor試作。Layout state一本化 + click/drag編集。
@@ -490,14 +410,8 @@ shinyServer(function(input, output, session) {
   # Figure-owned editable state.
   figure_single_editor_target_state <- reactiveVal(NULL)
   figure_single_editor_generation <- reactiveVal(0L)
-  # v3.60.1: HYDRATING is a real transaction.  The reusable Figure editor is
-  # kept hidden until its state has remained stable across consecutive Shiny
-  # flushes; load completion itself never commits back into FigureState.
+  # Figure editor load completion is owned by the value-replay browser barrier.
   figure_single_editor_mode <- reactiveVal("IDLE")
-  figure_single_editor_settle_tick <- reactiveVal(0L)
-  figure_single_editor_settle <- reactiveVal(list(
-    generation = 0L, id = "", last_state = NULL, stable = 0L, attempts = 0L
-  ))
 
   figure_load_progress <- reactiveVal(NULL)
   figure_load_expected_revisions <- reactiveVal(list())
@@ -698,6 +612,7 @@ shinyServer(function(input, output, session) {
   # persistent Editor owns the only live Graph plot output.
 
   project_bundle_pending_previews <- reactiveVal(list())
+  project_bundle_pending_inset_previews <- reactiveVal(list())
   project_bundle_pending_graph_previews <- reactiveVal(list())
   project_legacy_graph_previews <- reactiveVal(list())
 
@@ -991,10 +906,6 @@ shinyServer(function(input, output, session) {
     sprintf("g%03d", n)
   }
 
-  module_exists <- function(id) {
-    !is.null(modules[[id]])
-  }
-
   graph_single_mod <- function() isolate(graph_single_editor_module())
 
   graph_single_owner <- function() {
@@ -1008,31 +919,6 @@ shinyServer(function(input, output, session) {
     mod <- graph_single_mod()
     !is.null(mod) && identical(as.character(isolate(graph_single_editor_mode()) %||% ""), "READY") &&
       isTRUE(tryCatch(isolate(mod$ready()), error = function(e) FALSE))
-  }
-
-  source_graph_module <- function(id) {
-    id <- as.character(id %||% "")[1]
-    if (!nzchar(id)) return(NULL)
-    if (identical(id, graph_single_owner())) {
-      mod <- graph_single_mod()
-      if (!is.null(mod) && graph_single_ready(id)) return(mod)
-      if (isTRUE(isolate(graph_single_editor_loading()))) return(NULL)
-    }
-
-    # Background source modules are valid consumers only while their revision
-    # lease matches the canonical GraphState. A stale READY module must never be
-    # exposed to Figure/Export callers merely because its server reactive graph
-    # is still alive after disposable DOM eviction.
-    mod <- modules[[id]]
-    if (is.null(mod) || !source_module_revision_is_current(id)) return(NULL)
-    mod
-  }
-
-  # v3.64.2-format-export1: every export readiness check must resolve the
-  # persistent single Editor first, not only legacy/background modules[[id]].
-  source_graph_ready <- function(id) {
-    mod <- source_graph_module(id)
-    !is.null(mod) && isTRUE(tryCatch(isolate(mod$ready()), error = function(e) FALSE))
   }
 
   cache_has <- function(id) {
@@ -1049,10 +935,6 @@ shinyServer(function(input, output, session) {
     ca <- isolate(graph_state_cache())
     if (!identical(ca[[id]]$state, state)) {
       graph_state_revision[[id]] <- graph_state_revision_value(id) + 1L
-      # Background source modules are derived readers. Any canonical change
-      # invalidates their lease; the next Figure/Export materialization restores
-      # the same persistent module from this newer revision before reuse.
-      invalidate_graph_source_module(id, source)
     }
     ca[[id]] <- list(state = state)
     graph_state_cache(ca)
@@ -1099,8 +981,8 @@ shinyServer(function(input, output, session) {
     id <- as.character(id %||% "")[1]
     if (!nzchar(id) || is.null(state) || !is.list(state)) return(invisible(FALSE))
 
-    # Canonical writes are explicit. Background per-Graph source modules are
-    # read-only materializers and therefore never enter this writer path.
+    # Canonical GraphState is the sole dormant-Graph authority. Renderers and
+    # exporters consume values from this Registry without creating Graph modules.
     previous <- if (cache_has(id)) cache_get(id) else NULL
     canonical <- registry_merge_nonnull(previous, state)
     if (!is.null(previous) && identical(previous, canonical)) return(invisible(FALSE))
@@ -1127,7 +1009,6 @@ shinyServer(function(input, output, session) {
   }
 
   cache_remove <- function(id) {
-    invalidate_graph_source_module(id, "graph-delete")
     ca <- isolate(graph_state_cache())
     ca[[id]] <- NULL
     graph_state_cache(ca)
@@ -1137,92 +1018,6 @@ shinyServer(function(input, output, session) {
   # v3.70.0 source split: server_figure_controls_runtime
   sys.source(file.path(getwd(), "server_figure_lifecycle_runtime.R"), envir = environment())
   sys.source(file.path(getwd(), "server_figure_controls_runtime.R"), envir = environment())
-
-  # ------------------------------------------------------------------
-  # UI shell lifecycle (independent from graphServer)
-  # ------------------------------------------------------------------
-  ensure_graph_ui <- function(id, visible = FALSE) {
-    meta <- isolate(graph_meta())
-    if (!id %in% meta$id) return(invisible(FALSE))
-    if (!ui_mounted(id)) {
-      st <- if (cache_has(id)) cache_get(id) else NULL
-      nm <- meta$name[match(id, meta$id)]
-      if (!length(nm) || is.na(nm)) nm <- id
-      diag_log(
-        "UI-MOUNT",
-        paste0("build source Graph UI state_only=TRUE server_exists=", module_exists(id)),
-        id = id
-      )
-      mount_t0 <- proc.time()[["elapsed"]]
-      ui_shell <- div(
-        id = paste0("panel_", id),
-        class = "graph-module-panel",
-        style = if (isTRUE(visible)) NULL else "display:none;",
-        graphUI(id, initial_state = st)
-      )
-      build_dt <- proc.time()[["elapsed"]] - mount_t0
-      insertUI(
-        selector = "#graph_panels",
-        where = "beforeEnd",
-        ui = ui_shell,
-        immediate = TRUE
-      )
-      mount_dt <- proc.time()[["elapsed"]] - mount_t0
-      diag_log(
-        "UI-MOUNT-DISPATCH",
-        sprintf("insert dispatched build=%.3fs total=%.3fs", build_dt, mount_dt),
-        id = id
-      )
-      mark_ui_mounted(id, TRUE)
-    }
-    if (isTRUE(visible)) {
-      for (z in mounted_ids()) {
-        if (!identical(z, id)) try(shinyjs::hide(paste0("panel_", z), anim = FALSE), silent = TRUE)
-      }
-      try(shinyjs::show(paste0("panel_", id), anim = FALSE), silent = TRUE)
-    }
-    invisible(TRUE)
-  }
-
-  # ------------------------------------------------------------------
-  # Background source UI lifecycle
-  # ------------------------------------------------------------------
-  # Per-Graph graphServer instances exist only to materialize Figure/Export
-  # sources for compatibility paths. Their browser DOM is disposable; the
-  # canonical GraphState registry remains authoritative while the server module
-  # itself survives DOM eviction for namespace safety.
-  evict_graph_source_ui <- function(id, reason = "materialized", force = FALSE) {
-    id <- as.character(id %||% "")[1]
-    if (!nzchar(id) || !ui_mounted(id)) return(invisible(FALSE))
-    if (!isTRUE(force) && identical(id, as.character(isolate(active_graph()) %||% ""))) {
-      return(invisible(FALSE))
-    }
-
-    mod <- if (module_exists(id)) modules[[id]] else NULL
-    held_state <- if (cache_has(id)) cache_get(id) else NULL
-    if (!is.null(mod) && is.function(mod$cancel_remount)) {
-      try(mod$cancel_remount(held_state, reason = reason), silent = TRUE)
-    }
-    try(removeUI(selector = paste0("#panel_", id), immediate = TRUE), silent = TRUE)
-    mark_ui_mounted(id, FALSE)
-    graph_materialization_forget_ui_state(id)
-    diag_log(
-      "SOURCE-UI-EVICT",
-      paste0("reason=", reason, " module_exists=", module_exists(id)),
-      id = id
-    )
-    invisible(TRUE)
-  }
-
-  evict_other_graph_source_uis <- function(keep_id, reason = "switch") {
-    keep_id <- as.character(keep_id %||% "")[1]
-    in_flight <- graph_materialization_current_id()
-    keep <- unique(c(keep_id, in_flight[nzchar(in_flight)]))
-    ids <- setdiff(mounted_ids(), keep)
-    if (!length(ids)) return(invisible(FALSE))
-    for (z in ids) evict_graph_source_ui(z, reason = reason, force = TRUE)
-    invisible(TRUE)
-  }
 
   # ------------------------------------------------------------------
   # Graph-owned SVG preview lifecycle
@@ -1441,29 +1236,45 @@ shinyServer(function(input, output, session) {
     TRUE
   }
 
+  invalidate_figure_main_snapshot_for_import <- function(id) {
+    persisted <- isolate(figure_persisted_previews())
+    preserve_figure_inset_snapshot_before_main_replace(id, persisted[[id]])
+    persisted[[id]] <- NULL
+    figure_persisted_previews(persisted)
+    for (registry in list(figure_loaded_plots, figure_loaded_exports, figure_loaded_assets)) {
+      records <- isolate(registry())
+      records[[id]] <- NULL
+      registry(records)
+    }
+    bump_figure_snapshot_revision(id)
+    invisible(TRUE)
+  }
+
   seed_figure_editor_from_source <- function(id, state, reason = "explicit-source-refresh", reload_editor = TRUE) {
     id <- as.character(id %||% "")[1]
     if (!nzchar(id) || !is.list(state)) return(invisible(FALSE))
     store_figure_edit_state(id, state, reason = reason)
 
-    # v3.60.0: explicit source refresh updates canonical Figure-owned state.
-    # Reload the heavy single editor only when this Graph already owns it; a
-    # selected-but-not-editing panel stays lightweight.
-    if (isTRUE(reload_editor) && identical(as.character(isolate(figure_editing_graph()) %||% "")[1], id)) {
-      session$onFlushed(function() ensure_figure_editor(id), once = TRUE)
-    }
+    if (isTRUE(reload_editor)) reload_visible_figure_editor_after_snapshot(id, reason)
     invisible(TRUE)
   }
 
+  reload_visible_figure_editor_after_snapshot <- function(ids, reason = "source-import-complete") {
+    owner <- as.character(isolate(figure_editing_graph()) %||% "")[1]
+    if (!nzchar(owner) || !owner %in% ids || !figure_workspace_is_active() ||
+        !isTRUE(isolate(figure_single_editor_show_when_ready()))) return(invisible(FALSE))
+    state <- isolate(figure_edit_states())[[owner]]
+    if (!is.list(state) || is.null(figure_editor_module(owner))) return(invisible(FALSE))
+    # Enter replay immediately after the snapshot commit: no deferred callback
+    # can switch owners or write the old editor values back before this gate.
+    ok <- ensure_figure_editor(owner, force_reload = TRUE, preserve_current = FALSE,
+                               show_when_ready = TRUE, state_override = state)
+    diag_log("FIGURE-SOURCE-SYNC", paste0("visible editor resync reason=", reason), id = owner)
+    invisible(ok)
+  }
+
   reload_selected_figure_editor_after_bulk <- function(ids, reason = "bulk-import-complete") {
-    ids <- unique(as.character(ids %||% character(0)))
-    editing_id <- as.character(isolate(figure_editing_graph()) %||% "")[1]
-    if (!nzchar(editing_id) || !editing_id %in% ids) return(invisible(FALSE))
-    state <- isolate(figure_edit_states())[[editing_id]]
-    if (!is.list(state)) return(invisible(FALSE))
-    diag_log("FIGURE-BULK-IMPORT", paste0("single editor reload once reason=", reason), id = editing_id)
-    session$onFlushed(function() ensure_figure_editor(editing_id), once = TRUE)
-    invisible(TRUE)
+    reload_visible_figure_editor_after_snapshot(ids, reason)
   }
 
   show_figure_editor_wrapper <- function(id = "") {
@@ -1492,7 +1303,6 @@ shinyServer(function(input, output, session) {
     figure_single_editor_show_when_ready(TRUE)
     figure_single_editor_target_state(NULL)
     figure_single_editor_mode("IDLE")
-    figure_single_editor_settle(list(generation=0L, id="", last_state=NULL, stable=0L, attempts=0L))
     figure_single_editor_generation(as.integer(isolate(figure_single_editor_generation()) %||% 0L) + 1L)
     if (isTRUE(clear_states)) figure_edit_states(list())
     invisible(NULL)
@@ -1587,7 +1397,6 @@ shinyServer(function(input, output, session) {
     figure_single_editor_mode("REPLAY")
     next_generation <- as.integer(isolate(figure_single_editor_generation()) %||% 0L) + 1L
     figure_single_editor_generation(next_generation)
-    figure_single_editor_settle(list(generation=next_generation, id=id, last_state=NULL, stable=0L, attempts=0L))
     show_figure_editor_wrapper("")
     diag_log(
       "FIGURE-SINGLE-EDITOR",
@@ -1617,7 +1426,6 @@ shinyServer(function(input, output, session) {
       diag_log("FIGURE-EDIT-INIT-TIMING", "mark=CALLSITE-BEFORE-GRAPHSERVER source=figure-single-editor", id = id)
       mod <- graph_server_runtime(
         editor_id,
-        initial_state = NULL,
         style_clipboard = style_clipboard,
         diag_log = function(tag, ..., id = NULL) {
           owner <- as.character(isolate(figure_editing_graph()) %||% "")[1]
@@ -1694,6 +1502,22 @@ shinyServer(function(input, output, session) {
     if (is.function(mod$replay_active) && isTRUE(tryCatch(mod$replay_active(), error = function(e) FALSE))) return()
     if (!isTRUE(tryCatch(mod$ready(), error = function(e) FALSE))) return()
 
+    # Value replay is complete in the browser. Release the requested Figure
+    # GraphState as one final semantic render target now, rather than leaving
+    # any intermediate controls-only render produced while inputs were being
+    # replayed. This is a single post-barrier release, not a compare/retry loop.
+    target_state <- isolate(figure_single_editor_target_state())
+    render_release <- FALSE
+    if (is.list(target_state) && is.function(mod$release_render_state)) {
+      render_release <- isTRUE(tryCatch(
+        mod$release_render_state(target_state, reason = "figure-replay-ready"),
+        error = function(e) {
+          diag_log("FIGURE-SINGLE-EDITOR", paste0("final render release ERROR: ", conditionMessage(e)), id = id)
+          FALSE
+        }
+      ))
+    }
+
     figure_single_editor_loading(FALSE)
     figure_single_editor_mode("READY")
     if (isTRUE(figure_single_editor_show_when_ready())) {
@@ -1703,13 +1527,11 @@ shinyServer(function(input, output, session) {
     }
     diag_log(
       "FIGURE-SINGLE-EDITOR",
-      paste0("load-ready generation=", as.integer(gen), " mode=value-replay visible=", isTRUE(figure_single_editor_show_when_ready())),
+      paste0("load-ready generation=", as.integer(gen), " mode=value-replay visible=", isTRUE(figure_single_editor_show_when_ready()),
+             " final_render_release=", render_release),
       id = id
     )
   })
-
-  # v3.67.0 source split: server_graph_materialization_runtime
-  sys.source(file.path(getwd(), "server_graph_materialization_runtime.R"), envir = environment())
 
   # v3.67.0 source split: server_graph_workspace_runtime
   sys.source(file.path(getwd(), "server_graph_workspace_runtime.R"), envir = environment())
@@ -1803,8 +1625,8 @@ shinyServer(function(input, output, session) {
     id <- if (is.list(req) && nzchar(as.character(req$id %||% ""))) as.character(req$id) else selected_graph_id()
     if (project_load_action_blocked("graph-duplicate", id)) return()
 
-    # v3.64.1-lazyui2: GraphState Registry is canonical. The ordinary editor is
-    # the persistent graph_editor_single module, not modules[[id]].  Before a
+    # GraphState Registry is canonical. The ordinary editor is the persistent
+    # graph_editor_single module. Before a
     # duplicate of the current editor owner is created, synchronously commit its
     # live state so an immediate Copy cannot lag behind the last UI edit.
     owner <- graph_single_owner()
@@ -1961,16 +1783,11 @@ shinyServer(function(input, output, session) {
       return()
     }
 
-    # Do not tear down a Graph while its restore/materialization lifecycle is in-flight.
-    # Deleting an in-flight module can leave queue/restore observers holding a
-    # half-removed id and is harder to recover from than waiting a few seconds.
+    # Only the one persistent Graph Editor can own an in-flight Graph transaction.
     single_editor_in_flight <- identical(id, graph_single_owner()) &&
       isTRUE(isolate(graph_single_editor_loading()))
-    if (isTRUE(single_editor_in_flight) ||
-        graph_materialization_current_is(id) ||
-        identical(isolate(restore_target()), id) ||
-        (!is.null(modules[[id]]) && !isTRUE(tryCatch(isolate(modules[[id]]$ready()), error = function(e) FALSE)))) {
-      showNotification("Graphの準備が終わってから削除してください。", type = "warning")
+    if (isTRUE(single_editor_in_flight)) {
+      showNotification("Graphの切替が終わってから削除してください。", type = "warning")
       return()
     }
 
@@ -2016,13 +1833,6 @@ shinyServer(function(input, output, session) {
 
     pos <- match(id, meta$id)
     was_editing <- identical(id, as.character(isolate(editing_graph_id()) %||% "")[1])
-    invalidate_graph_source_module(id, "graph-delete")
-
-    if (ui_mounted(id)) {
-      removeUI(selector = paste0("#panel_", id), immediate = TRUE)
-      mark_ui_mounted(id, FALSE)
-    }
-    if (module_exists(id)) modules[[id]] <- NULL
     cache_remove(id)
     if (exists(id, envir = graph_single_editor_visit_cache, inherits = FALSE)) {
       rm(list = id, envir = graph_single_editor_visit_cache)
@@ -2048,12 +1858,6 @@ shinyServer(function(input, output, session) {
     clear_figure_geometry_cache(id)
     clear_figure_geometry_source_state(id)
 
-    remove_graph_materialization_item(id, reason = "graph-delete")
-    if (identical(isolate(pending_display_graph()), id)) pending_display_graph(NULL)
-    if (identical(isolate(restore_target()), id)) {
-      restore_target(NULL)
-      restore_status("idle")
-    }
     figure_requested_ids(setdiff(isolate(figure_requested_ids()), id))
     clear_figure_svg_cache()
 
@@ -2087,6 +1891,7 @@ shinyServer(function(input, output, session) {
   })
 
   # v3.70.0 source split: server_project_io_runtime
+  sys.source(file.path(getwd(), "server_figure_inset_persistence_runtime.R"), envir = environment())
   sys.source(file.path(getwd(), "server_project_io_runtime.R"), envir = environment())
 
   # v3.70.0 source split: server_export_prepare_runtime

@@ -1,21 +1,28 @@
-# v3.70.0: extracted from server.R; sourced into the same server function environment.
+# v3.73.2.36: Graph export renders directly from canonical GraphState.
+# Bulk/current export never creates hidden graphUI/graphServer instances.
+
+  graph_export_sync_visible_owner <- function(ids) {
+    owner <- graph_single_owner()
+    if (!nzchar(owner) || !owner %in% as.character(ids %||% character(0))) return(invisible(FALSE))
+    if (isTRUE(isolate(graph_single_editor_loading())) || !graph_single_ready(owner)) return(invisible(FALSE))
+    graph_single_commit("export-direct-state")
+    invisible(TRUE)
+  }
+
+  graph_export_payload <- function(id) {
+    id <- as.character(id %||% "")[1]
+    state <- if (nzchar(id) && cache_has(id)) cache_get(id) else NULL
+    if (!is.list(state)) stop("GraphStateが見つかりません。")
+    tryCatch(
+      graph_state_export_snapshot(state),
+      error = function(e) stop("Graphの書き出し用描画を作成できません: ", conditionMessage(e))
+    )
+  }
 
   write_one_graph <- function(path, id, format) {
-    mod <- source_graph_module(id)
-    if (is.null(mod)) stop("Graph moduleが見つかりません。")
-    if (!isTRUE(isolate(mod$ready()))) {
-      stop("Graphの復元がまだ完了していません。")
-    }
-
-    p <- isolate(mod$plot())
-    ex <- tryCatch(
-      isolate(mod$export()),
-      error = function(e) list(
-        plot_width_px = 600,
-        plot_height_px = 600,
-        reference_res = 120
-      )
-    )
+    payload <- graph_export_payload(id)
+    p <- payload$plot
+    ex <- payload$meta %||% list()
 
     pw <- as.numeric(ex$plot_width_px %||% 600)
     ph <- as.numeric(ex$plot_height_px %||% 600)
@@ -70,10 +77,10 @@
 
     if (!length(ids)) stop("出力するGraphがありません。")
 
-    not_ready <- ids[!vapply(ids, source_graph_ready, logical(1))]
-
-    if (length(not_ready)) {
-      stop("まだ書き出し準備中のGraphがあります。")
+    graph_export_sync_visible_owner(ids)
+    missing_state <- ids[!vapply(ids, graph_export_state_ready, logical(1))]
+    if (length(missing_state)) {
+      stop("GraphStateを取得できないGraphがあります。")
     }
 
     ext <- switch(
@@ -139,6 +146,3 @@
       write_graph_export(file, ids, fmt)
     }
   )
-
-
-

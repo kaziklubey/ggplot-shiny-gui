@@ -4,21 +4,7 @@
   
   # Y-axis tick sequence helper
   y_break_values <- function(ymin, ymax) {
-    if (isTRUE(input$y_breaks_auto)) return(waiver())
-
-    step <- suppressWarnings(as.numeric(input$y_breaks_step))
-    if (!is.finite(step) || step <= 0 || !is.finite(ymin) || !is.finite(ymax) || ymax <= ymin) {
-      return(waiver())
-    }
-
-    start <- ceiling(ymin / step) * step
-    end <- floor(ymax / step) * step
-
-    vals <- seq(start, end, by = step)
-
-    # Include exact limits when they fall on the requested interval.
-    if (length(vals) > 5000) return(waiver())
-    vals
+    manual_y_break_values(ymin, ymax, input$y_breaks_step, input$y_breaks_auto)
   }
 
 make_plot <- reactive({
@@ -27,12 +13,6 @@ make_plot <- reactive({
     # Opening this gate at READY invalidates make_plot once with the completed
     # canonical state.
     shiny::req(isTRUE(render_gate()))
-
-    # v3.3.54: while a saved Graph is being restored, input updates arrive over
-    # several Shiny flushes. Do not rebuild ggplot for each intermediate state.
-    # The transition initial_restore_done(FALSE -> TRUE) invalidates this reactive
-    # once and permits the final plot build after restore completes.
-    shiny::req(isTRUE(initial_restore_done()))
 
     # A Graph attach keeps one semantic target pending while the outer render
     # gate is closed. Never allow a consumer to build until the accepted target

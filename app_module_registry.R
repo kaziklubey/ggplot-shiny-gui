@@ -2,6 +2,7 @@
 source("graph_state.R", local = TRUE)
 source("app_state_diff.R", local = TRUE)
 source("graph_core_functions.R", local = TRUE)
+source("graph_snapshot_value_helpers.R", local = TRUE)
 source("graph_render_state.R", local = TRUE)
 source("graph_data_transform.R", local = TRUE)
 source("graph_style_state_migration.R", local = TRUE)
@@ -15,8 +16,8 @@ source("graph_state_plot.R", local = TRUE)
 source("graph_module.R", local = TRUE)
 
 # v3.57: compile graphServer once during application startup, before any Graph
-# hydrate begins.  The compiled closure is reused by source Graphs and Figure
-# editors; canonical state / restore behavior is unchanged.
+# replay begins. The compiled closure is reused by the one persistent Graph
+# Editor and the one reusable Figure Editor.
 graph_server_precompile_info <- list(
   ok = FALSE,
   elapsed_ms = NA_real_,

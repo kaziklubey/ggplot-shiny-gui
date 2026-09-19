@@ -233,19 +233,5 @@ ensure_raw_group_colors <- function(variable_name, levels_now) {
   }
 
 y_break_values <- function(ymin, ymax) {
-    if (isTRUE(input$y_breaks_auto)) return(waiver())
-
-    step <- suppressWarnings(as.numeric(input$y_breaks_step))
-    if (!is.finite(step) || step <= 0 || !is.finite(ymin) || !is.finite(ymax) || ymax <= ymin) {
-      return(waiver())
-    }
-
-    start <- ceiling(ymin / step) * step
-    end <- floor(ymax / step) * step
-
-    vals <- seq(start, end, by = step)
-
-    # Include exact limits when they fall on the requested interval.
-    if (length(vals) > 5000) return(waiver())
-    vals
+    manual_y_break_values(ymin, ymax, input$y_breaks_step, input$y_breaks_auto)
   }

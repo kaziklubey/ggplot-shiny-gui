@@ -1,3 +1,12 @@
+# v3.73.2.36-phase2-direct-state1
+
+## Phase 2 — hidden materialization removal
+
+- Figure / Export / Shared Styleのsource生成をcanonical `GraphState` direct-state経路へ統一。
+- dormant Graphのためのhidden `graphUI()` / `graphServer()` materializerと、そのqueue / mount ACK / browser drain / revision leaseを削除。
+- Figure Shared StyleはFigure-owned stateからdirect snapshotを再生成し、Figure Editor sequential queueを使用しない。
+- 通常Graphのpersistent single editor、Figure snapshot independence、Phase 1.2の`figure-replay-ready` render ownershipは維持。
+
 # v3.73.2.34-github-clean1
 
 ## GitHub / Release tree cleanup

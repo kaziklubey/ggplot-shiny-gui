@@ -1,5 +1,5 @@
-# v3.72.27: Statistics runtime extracted from graph_restore_runtime.R.
-# Statistics owns analysis recipes/data preparation and no longer owns Plot restore.
+# Statistics owns analysis recipes/data preparation and its own recipe replay.
+# It does not participate in GraphState hydration or persistent-Editor ownership.
 
   # ============================================================
   # Graph-linked Statistics (experimental)
@@ -803,7 +803,7 @@
     if (!is.finite(attempt) || attempt < 1L) attempt <- 1L
 
     session$sendCustomMessage(
-      "graph-editor-reconcile-barrier",
+      "stats-restore-browser-barrier",
       list(
         id = id,
         generation = 1L,
@@ -1157,10 +1157,8 @@
   # variables, data source, options).  Calculated test results are deliberately
   # not serialized; opening Statistics recalculates them from the selected Analysis dataset.
   #
-  # This must be a reactive gate rather than observeEvent(graph_main_tab): when
-  # the user opens Statistics before Graph restore reaches READY, the old event
-  # fired once, returned early, and was never retried.  Keep the pending recipe
-  # until both the tab and Graph restore are ready, then restore it exactly once.
+  # Keep the pending recipe until the Statistics tab is active, then replay it
+  # exactly once. Graph ownership/value replay is handled by the outer Editor.
   observe({
     req(identical(input$graph_main_tab, "Statistics"))
 
@@ -1174,8 +1172,12 @@
       return()
     }
 
-    req(isTRUE(initial_restore_done()))
-    req(project_restore_stage() == 0)
+
+    # A saved Statistics recipe may itself restore graph_main_tab=Statistics.
+    # Wait until the outer persistent-Editor value replay has completed before
+    # touching recipe controls; this replaces the deleted structural-restore
+    # gate without reintroducing a second Graph hydration protocol.
+    req(!isTRUE(graph_state_replay_active()))
 
     diag("STATS-RESTORE", paste0(
       "apply recipe id=", id,
@@ -1852,9 +1854,8 @@
   stats_auto_result <- reactive({
     req(stats_selected_id())
 
-    # Graph本体のProject復元が完全に終わるまではStatisticsを動かさない。
-    req(isTRUE(initial_restore_done()))
-    req(project_restore_stage() == 0)
+    # Persistent-Editor value replay中はStatisticsを動かさない。
+    req(!isTRUE(graph_state_replay_active()))
 
     # Statisticsタブを実際に開いている時だけ計算する。
     req(identical(input$graph_main_tab, "Statistics"))

@@ -149,3 +149,38 @@ graph_state_figure_snapshot <- function(state) {
                         legend_component = TRUE, external_asset = FALSE))
   list(components = comp, plot = plot, meta = meta, render_revision = NA_integer_)
 }
+
+# Synchronous GraphState -> export payload. This is the non-Shiny counterpart
+# of graphServer's panel_sized_plot()/export() pair: the saved width/height are
+# panel dimensions, while the export device uses the full measured visual box.
+graph_state_export_snapshot <- function(state) {
+  if (!is.list(state)) stop("GraphState is required")
+  state <- unserialize(serialize(state, NULL))
+  scope <- graph_snapshot_context(state)
+  plot <- graph_build_plot(scope)
+  size <- graph_saved_plot_size_from_state(state)
+  reference_res <- 120
+
+  export_plot <- apply_fixed_panel_size(
+    plot, size$width, size$height, reference_res = reference_res
+  )
+  dims <- tryCatch(
+    measure_plot_size_px(
+      export_plot, reference_res = reference_res,
+      fallback_width = size$width, fallback_height = size$height
+    ),
+    error = function(e) list(width = size$width, height = size$height)
+  )
+
+  list(
+    plot = export_plot,
+    meta = list(
+      plot_width_px = as.numeric(dims$width),
+      plot_height_px = as.numeric(dims$height),
+      panel_width_px = as.numeric(size$width),
+      panel_height_px = as.numeric(size$height),
+      reference_res = reference_res
+    ),
+    render_revision = NA_integer_
+  )
+}

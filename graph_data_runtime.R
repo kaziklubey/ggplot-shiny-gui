@@ -21,143 +21,10 @@
   # 元データへフォールバックして利用者へ表示する。
   reshape_warning <- reactiveVal(NULL)
 
-  # Project restore seed / binding gate for the dynamic reshape_columns UI.
-  # The saved selection is kept separately from input$reshape_columns so a
-  # renderUI replacement cannot fall back to defaults while restore is active.
+  # Short-lived value seed used only while canonical GraphState replay updates
+  # Wide→Long selections in the persistent Editor. No browser binding handshake
+  # or staged restore transaction is involved.
   reshape_restore_seed <- reactiveVal(NULL)
-  reshape_parent_binding_generation <- reactiveVal(0L)
-  reshape_parent_binding_pending <- reactiveVal(NULL)
-  reshape_binding_generation <- reactiveVal(0L)
-  reshape_binding_pending <- reactiveVal(NULL)
-
-  # v3.50 diagnostics-only restore timing. These marks never participate in
-  # restore decisions; they only correlate existing restore gates by attempt
-  # and binding generation so real round-trip latency can be measured.
-  restore_timing_attempt <- 0L
-  restore_timing_marks <- new.env(parent = emptyenv())
-  restore_timing_last_mapping_generation <- NA_integer_
-
-  restore_timing_now_ms <- function() {
-    as.numeric(proc.time()[["elapsed"]]) * 1000
-  }
-
-  restore_timing_reset <- function() {
-    restore_timing_attempt <<- restore_timing_attempt + 1L
-    restore_timing_last_mapping_generation <<- NA_integer_
-    rm(list = ls(envir = restore_timing_marks, all.names = TRUE), envir = restore_timing_marks)
-    restore_timing_marks[["BEGIN"]] <- restore_timing_now_ms()
-    diag("RESTORE", paste0("timing attempt=", restore_timing_attempt, " mark=BEGIN"))
-    invisible(restore_timing_attempt)
-  }
-
-  restore_timing_mark <- function(mark, generation = NA_integer_, from = NULL) {
-    now <- restore_timing_now_ms()
-    key <- if (is.na(generation)) mark else paste0(mark, ":g", generation)
-    restore_timing_marks[[key]] <- now
-    parts <- c(paste0("attempt=", restore_timing_attempt), paste0("mark=", mark))
-    if (!is.na(generation)) parts <- c(parts, paste0("generation=", generation))
-    if (!is.null(from)) {
-      from_key <- if (is.na(generation)) from else paste0(from, ":g", generation)
-      from_val <- restore_timing_marks[[from_key]]
-      if (is.null(from_val) && !is.null(restore_timing_marks[[from]])) from_val <- restore_timing_marks[[from]]
-      if (!is.null(from_val)) parts <- c(parts, paste0("delta_ms=", sprintf("%.1f", now - from_val)), paste0("from=", from))
-    }
-    diag("RESTORE", paste0("timing ", paste(parts, collapse = " ")))
-    invisible(now)
-  }
-
-  reset_reshape_binding_wait <- function(clear_seed = FALSE) {
-    reshape_parent_binding_pending(NULL)
-    reshape_binding_pending(NULL)
-    session$sendCustomMessage(
-      "mapping-restore-binding-cancel",
-      list(ackId = session$ns("reshape_parent_restore_binding_ack"))
-    )
-    session$sendCustomMessage(
-      "mapping-restore-binding-cancel",
-      list(ackId = session$ns("reshape_restore_binding_ack"))
-    )
-    if (isTRUE(clear_seed)) reshape_restore_seed(NULL)
-    invisible(NULL)
-  }
-
-  request_reshape_parent_binding_ack <- function(expected) {
-    next_generation <- isolate(reshape_parent_binding_generation()) + 1L
-    reshape_parent_binding_generation(next_generation)
-    pending <- list(
-      generation = next_generation,
-      expected = expected,
-      values_sent = FALSE,
-      server_observed = FALSE
-    )
-    reshape_parent_binding_pending(pending)
-
-    diag(
-      "RESHAPE-PARENT",
-      paste0(
-        "request generation=", next_generation,
-        " enabled=", isTRUE(expected$enabled),
-        " row_id=", isTRUE(expected$row_id),
-        " x=", expected$x_name,
-        " y=", expected$y_name
-      )
-    )
-
-    restore_timing_mark("RESHAPE-PARENT-REQUEST", next_generation, from = "BEGIN")
-
-    session$sendCustomMessage(
-      "mapping-restore-binding-check",
-      list(
-        generation = next_generation,
-        fields = list(
-          list(field = "reshape_wide", id = session$ns("reshape_wide")),
-          list(field = "reshape_row_id", id = session$ns("reshape_row_id")),
-          list(field = "reshape_x_name", id = session$ns("reshape_x_name")),
-          list(field = "reshape_y_name", id = session$ns("reshape_y_name"))
-        ),
-        ackId = session$ns("reshape_parent_restore_binding_ack")
-      )
-    )
-    invisible(pending)
-  }
-
-  request_reshape_binding_ack <- function(wanted) {
-    wanted <- unique(as.character(wanted))
-    wanted <- wanted[nzchar(wanted)]
-    next_generation <- isolate(reshape_binding_generation()) + 1L
-    reshape_binding_generation(next_generation)
-    pending <- list(
-      generation = next_generation,
-      wanted = wanted,
-      values_sent = FALSE
-    )
-    reshape_binding_pending(pending)
-
-    diag(
-      "RESHAPE-BIND",
-      paste0(
-        "request generation=", next_generation,
-        " saved_cols={", paste(wanted, collapse = ","), "}"
-      )
-    )
-
-    restore_timing_mark("RESHAPE-BIND-REQUEST", next_generation)
-
-    # Reuse the already-tested generic browser binding checker used by Mapping.
-    # A distinct ack input keeps the two restore gates independent.
-    session$sendCustomMessage(
-      "mapping-restore-binding-check",
-      list(
-        generation = next_generation,
-        fields = list(list(
-          field = "reshape_columns",
-          id = session$ns("reshape_columns")
-        )),
-        ackId = session$ns("reshape_restore_binding_ack")
-      )
-    )
-    invisible(pending)
-  }
 
   set_reshape_warning <- function(msg = NULL) {
     old <- isolate(reshape_warning())
@@ -237,7 +104,7 @@
     res <- graph_apply_data_transform(
       d0,
       rec,
-      # During dynamic UI restore, an incomplete column selection is transient.
+      # During value replay, an incomplete column selection is transient.
       incomplete_is_warning = FALSE
     )
     set_reshape_warning(res$warning)
@@ -252,7 +119,7 @@
 
   # Incompatible selected columns (for example integer ID + character Group)
   # mean this is not a valid wide measurement selection. Automatically switch
-  # the converter off so Project restore and Mapping can continue on raw data.
+  # the converter off so value replay and Mapping can continue on raw data.
   observe({
     # A replay can transiently expose the new Wide toggle before its saved
     # column selection reaches the browser. Defer only this destructive
@@ -272,19 +139,18 @@
     }
   })
 
-  # Project復元時、plot-type依存のdynamic UIが生成される前に
-  # 保存済み値を保持しておく。updateSelectInput()のタイミング依存を避ける。
+  # Replay時、plot-type依存のdynamic UI choice更新より先にcanonical値を
+  # 保持しておく。updateSelectInput()のタイミング依存を避ける。
   restore_position_seed <- reactiveVal(NULL)
   restore_linetype_seed <- reactiveVal(NULL)
-  # Project restore中、Error bar列のdynamic selectInputが自動候補で
-  # 保存値を上書きしないよう一時的に保持するseed。
+  # Replay中、Error bar列のdynamic selectInputが自動候補で
+  # canonical値を上書きしないよう一時的に保持するseed。
   restore_external_error_seed <- reactiveVal(NULL)
   restore_external_ymin_seed <- reactiveVal(NULL)
   restore_external_ymax_seed <- reactiveVal(NULL)
 
   observe({
     seed <- restore_position_seed()
-    if (!isTRUE(initial_restore_done())) return()
     if (is.null(seed) || !length(seed)) return()
     expected <- as.character(seed)[1]
     actual <- input$groupvar %||% ""
@@ -295,7 +161,6 @@
 
   observe({
     seed <- restore_linetype_seed()
-    if (!isTRUE(initial_restore_done())) return()
     if (is.null(seed) || !length(seed)) return()
     expected <- as.character(seed)[1]
     actual <- input$linetypevar %||% "__color__"
@@ -339,7 +204,7 @@
     selected_id <- keep(input$idvar, cols, default_id, allow_empty = TRUE)
     selected_facet <- keep(input$facetvar, cols, "", allow_empty = TRUE)
 
-    cfg <- isolate(graph_state_replay_target() %||% pending_project() %||% deferred_initial_state() %||% remount_state_seed())
+    cfg <- isolate(graph_state_replay_target())
     mp <- cfg$mapping
     if (!is.null(mp)) {
       if (json_chr(mp$x) %in% cols) selected_x <- json_chr(mp$x)
@@ -479,8 +344,7 @@
     )
   })
 
-  # 保存値が実inputへ反映されたらseedを解放する。
-  # 反映前はseedを維持するため、hidden/lazy Graphでも復元値が失われない。
+  # canonical replay値が実inputへ反映されたらseedを解放する。
   observe({
     d <- tryCatch(dat(), error = function(e) NULL)
     if (is.null(d)) return()
@@ -503,9 +367,6 @@
   })
 
   observeEvent(input$plot_type, {
-    # Project復元中はtarget plot typeへ切替中なのでseedを保持する。
-    if (project_restore_stage() != 0) return()
-
     pt <- input$plot_type %||% "line"
     if (!pt %in% c("line", "bar", "box")) restore_position_seed(NULL)
     if (!pt %in% c("line", "scatter")) restore_linetype_seed(NULL)

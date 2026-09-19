@@ -1,3 +1,30 @@
+# v3.73.2.37-phase2.03-cleanup1 checkpoint
+
+Phase 2.03 removes the unreachable Graph structural-restore/remount architecture. Normal Graph hydration has exactly one implementation: canonical `GraphState` value replay into the one persistent Editor, followed by one browser completion barrier and outer canonical acceptance. There is no Graph-side staged restore, semantic browser compare/reconcile, restore retry, Mapping binding handshake, DOM remount seed, or hidden-Graph restore fallback.
+
+Active ownership boundaries:
+- Persistent Editor local guards/seeds: `graph_editor_primitives_runtime.R`.
+- Graph live state capture: `graph_state_runtime.R` (`project_settings()` + guarded canonical commit).
+- GraphState -> Editor hydration: `server_graph_state_replay_runtime.R`.
+- Generic Graph style import/export: `graph_style_persistence_runtime.R`.
+- Render acceptance/revision: `graph_state_boundary_runtime.R`.
+- Project package load: `server_project_io_runtime.R` writes canonical GraphState; the selected Graph is then replayed normally.
+- Statistics keeps its own Analysis-recipe replay barrier. That barrier is named `stats-restore-browser-barrier` and must not be reused as GraphState reconciliation.
+
+Deleted architecture includes `graph_restore_runtime.R`, `prepare_restore`, `activate`, `load_state`, `sync_state`, `prepare_remount`, `remount`, remount render epochs, Mapping/reshape restore binding ACKs, and their browser handlers. Do not reintroduce them as compatibility fallbacks.
+
+# v3.73.2.36-phase2-direct-state1 checkpoint
+
+Graph source authority is now canonical `GraphState` values only. Normal Graph editing still uses exactly one persistent Graph Editor. Figure, Export, and dormant Shared Style propagation must never instantiate per-Graph hidden `graphUI()` / `graphServer()` modules.
+
+Direct-state boundaries:
+- Export: canonical GraphState -> `graph_state_export_snapshot()` -> file.
+- Figure Main/Inset/import: canonical or Figure-owned GraphState -> `request_figure_source_snapshot()` / inset wrapper -> Figure-owned SVG snapshot.
+- Shared Style Graph: update canonical GraphState; replay only the currently visible singleton owner when necessary. Dormant Graphs remain state-only.
+- Shared Style Figure: update Figure-owned GraphState -> direct-state snapshots. A visible Figure Editor may be replayed only as presentation sync, never as a snapshot-generation backend.
+
+Do not reintroduce hidden materialization queues, disposable per-Graph DOM, source-module revision leases, browser drain barriers, retry/reconcile loops, or semantic browser validation to these workflows.
+
 # v3.73.2.29-graph-settings-figure-edit1 checkpoint
 
 Graph Settings popout is now an explicit Graph/Figure value editor. Preserve the three ownership paths: Graph-only writes canonical GraphState, Figure-only writes Figure-owned GraphState and direct-state snapshot, Graph+Figure does both. `FigureをGraphから更新` is an explicit full source refresh and must remain direct-state (no persisted SVG shortcut, no hidden Graph editor/replay).

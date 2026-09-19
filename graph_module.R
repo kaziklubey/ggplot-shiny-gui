@@ -3,7 +3,7 @@
 # Each module owns its own input/reactive/style/data state.
 # ============================================================
 
-graphServer <- function(id, initial_state = NULL, style_clipboard = NULL, diag_log = NULL, ui_preseeded = FALSE, on_state_change = NULL, controls_only = FALSE, render_gate = NULL, persistent_shell = FALSE, shared_style_library = NULL, on_shared_style_library_change = NULL, statistics_plot_preview = NULL) {
+graphServer <- function(id, style_clipboard = NULL, diag_log = NULL, ui_preseeded = FALSE, on_state_change = NULL, controls_only = FALSE, render_gate = NULL, persistent_shell = FALSE, shared_style_library = NULL, on_shared_style_library_change = NULL, statistics_plot_preview = NULL) {
   init_timing_outer_ms <- as.numeric(proc.time()[["elapsed"]]) * 1000
   init_timing_last_ms <- init_timing_outer_ms
   init_timing_emit <- function(mark, detail = NULL) {
@@ -30,7 +30,7 @@ graphServer <- function(id, initial_state = NULL, style_clipboard = NULL, diag_l
     if (is.function(diag_log)) diag_log(tag, ..., id = id)
     invisible(NULL)
   }
-  diag("MODULE", paste0("graphServer entered initial_state=", !is.null(initial_state), " ui_preseeded=", isTRUE(ui_preseeded)))
+  diag("MODULE", paste0("graphServer entered ui_preseeded=", isTRUE(ui_preseeded), " replay_only=TRUE"))
   init_timing_emit("DIAG-READY")
 
   # server.Rからsession単位の共有clipboardを受け取る。
@@ -41,7 +41,7 @@ graphServer <- function(id, initial_state = NULL, style_clipboard = NULL, diag_l
 
   # Shared Label / Style Library is session/project state.  Only the persistent
   # interactive Graph Editor receives the live project reactive/callback;
-  # background materializers and the Figure snapshot editor use this isolated
+  # the persistent Graph Editor and Figure snapshot editor use this isolated
   # fallback so they remain read-only with respect to the central Library.
   if (is.null(shared_style_library) || !is.function(shared_style_library)) {
     shared_style_library <- reactiveVal(shared_style_default_library())
@@ -52,7 +52,7 @@ graphServer <- function(id, initial_state = NULL, style_clipboard = NULL, diag_l
 
   # Statistics uses a separate read-only Plot preview for interpreting test
   # results. The persistent Editor may inject a reactive provider backed by the
-  # Graph preview cache; background/materialization modules intentionally get
+  # Graph preview cache; controls-only Figure editing intentionally gets
   # this inert fallback and never depend on workspace preview state.
   if (is.null(statistics_plot_preview) || !is.function(statistics_plot_preview)) {
     statistics_plot_preview <- function() NULL
@@ -111,6 +111,7 @@ graphServer <- function(id, initial_state = NULL, style_clipboard = NULL, diag_l
 
 
   init_timing_emit("HELPERS-BEGIN")
+  sys.source(file.path(getwd(), "graph_editor_primitives_runtime.R"), envir = environment())
   sys.source(file.path(getwd(), "graph_helpers_runtime.R"), envir = environment())
   init_timing_emit("DATA-BEGIN")
   sys.source(file.path(getwd(), "graph_data_runtime.R"), envir = environment())
@@ -132,7 +133,7 @@ graphServer <- function(id, initial_state = NULL, style_clipboard = NULL, diag_l
   # changed by the split.
   sys.source(file.path(getwd(), "graph_plot_runtime.R"), envir = environment())
   sys.source(file.path(getwd(), "graph_output_runtime.R"), envir = environment())
-  sys.source(file.path(getwd(), "graph_restore_runtime.R"), envir = environment())
+  sys.source(file.path(getwd(), "graph_style_persistence_runtime.R"), envir = environment())
   init_timing_emit("STATISTICS-BEGIN")
   sys.source(file.path(getwd(), "graph_statistics_runtime.R"), envir = environment())
   sys.source(file.path(getwd(), "server_graph_state_replay_runtime.R"), envir = environment())
@@ -193,47 +194,21 @@ graphServer <- function(id, initial_state = NULL, style_clipboard = NULL, diag_l
   # carries a second UI-input commit protocol for Figure overrides.
 
 
-  restore_timing_ready_logged_attempt <- 0L
-  observe({
-    geometry_ready_timing <- is.null(plot_width_restore_seed()) &&
-      is.null(plot_height_restore_seed())
-    ready_now_timing <- isTRUE(initial_restore_done()) &&
-      isTRUE(restore_stage3_done()) &&
-      isTRUE(restore_final_done()) &&
-      is.null(restore_error()) &&
-      isTRUE(geometry_ready_timing) &&
-      is.null(pending_project()) &&
-      project_restore_stage() == 0
-    if (isTRUE(ready_now_timing) && restore_timing_attempt > 0L &&
-        restore_timing_ready_logged_attempt != restore_timing_attempt) {
-      restore_timing_ready_logged_attempt <<- restore_timing_attempt
-      restore_timing_mark("READY", from = "FINAL-END")
-    }
-  })
-
   init_timing_emit("MODULE-API-BEGIN")
 
   module_api <- list(
     # 未初期化Graphは、ブラウザinputではなく保存済みstateをそのまま返す。
     state = reactive({
-      # During a READY DOM remount, browser inputs are intentionally ephemeral.
-      # Expose the canonical remount seed to eviction/pre-save safety paths until
-      # the browser ack + semantic input gate has completed.
+      # While a value replay is crossing the browser, canonical GraphState is
+      # already authoritative. Otherwise expose the arbitration snapshot.
       if (isTRUE(graph_state_replay_active()) && is.list(graph_state_replay_target())) {
         return(graph_state_replay_target())
-      }
-      if (!is.null(remount_state_seed())) {
-        return(remount_state_seed())
-      }
-      if (!isTRUE(initial_restore_done()) && !is.null(deferred_initial_state())) {
-        return(deferred_initial_state())
       }
       graph_editor_arbitration_state_snapshot("module-api-state")
     }),
 
     # SVG一括出力ではreadyなGraphだけPlotを生成する。
     plot = reactive({
-      shiny::req(isTRUE(initial_restore_done()))
       diag("PLOT-CONSUMER", "request=module-plot")
       panel_sized_plot()
     }),
@@ -241,7 +216,6 @@ graphServer <- function(id, initial_state = NULL, style_clipboard = NULL, diag_l
     # Figure editorでは元ggplotをsnapshotし、Figureセル寸法に合わせて
     # panelサイズだけを非破壊で再指定する。元Graph設定自体は変更しない。
     figure_plot = reactive({
-      shiny::req(isTRUE(initial_restore_done()))
       diag("PLOT-CONSUMER", "request=figure-plot")
       make_plot()
     }),
@@ -251,7 +225,6 @@ graphServer <- function(id, initial_state = NULL, style_clipboard = NULL, diag_l
     # build/draw the full plot once merely to measure legend/axis decorations.
     # Figure itself measures its overridden plot geometry where needed.
     figure_meta = reactive({
-      shiny::req(isTRUE(initial_restore_done()))
       list(
         panel_width_px = as.numeric(effective_plot_width_px()),
         panel_height_px = as.numeric(effective_plot_height_px()),
@@ -264,7 +237,6 @@ graphServer <- function(id, initial_state = NULL, style_clipboard = NULL, diag_l
     # bundle and may cache only its preview representation. The ggplot object
     # remains authoritative for export and future style overrides.
     figure_components = reactive({
-      shiny::req(isTRUE(initial_restore_done()))
       diag("PLOT-CONSUMER", "request=figure-components")
       list(
         source_type = "internal_graph",
@@ -285,17 +257,6 @@ graphServer <- function(id, initial_state = NULL, style_clipboard = NULL, diag_l
 
     export = reactive({
       diag("PLOT-CONSUMER", "request=export-meta")
-      if (!isTRUE(initial_restore_done()) && !is.null(deferred_initial_state())) {
-        sz <- saved_plot_size_from_state(deferred_initial_state())
-        return(list(
-          plot_width_px = as.numeric(sz$width),
-          plot_height_px = as.numeric(sz$height),
-          panel_width_px = as.numeric(sz$width),
-          panel_height_px = as.numeric(sz$height),
-          reference_res = 120
-        ))
-      }
-
       dims <- plot_total_dimensions()
       list(
         plot_width_px = as.numeric(dims$width),
@@ -306,8 +267,6 @@ graphServer <- function(id, initial_state = NULL, style_clipboard = NULL, diag_l
       )
     }),
 
-    cancel_remount = cancel_remount_ui,
-    cancel_restore = cancel_initial_restore,
 
     # Project persistence stores only reproducible Statistics recipes.  Results
     # are deliberately excluded and are recalculated when Statistics is opened.
@@ -316,24 +275,9 @@ graphServer <- function(id, initial_state = NULL, style_clipboard = NULL, diag_l
     }),
 
     ready = reactive({
-      geometry_ready <- is.null(plot_width_restore_seed()) &&
-        is.null(plot_height_restore_seed())
-
-      # READY belongs to the restore transaction.  Mapping/reshape/style
-      # binding ACKs and stage-3 verification have already completed before
-      # these flags become TRUE.  Do not add a second full project_settings()
-      # gate here: dynamic browser controls may be transiently unreadable even
-      # after the canonical restore itself is complete.  Live GraphState is
-      # still used by the ordinary edit/commit path once it is available.
-      !isTRUE(graph_state_replay_active()) &&
-        is.null(graph_state_replay_error()) &&
-        isTRUE(initial_restore_done()) &&
-        isTRUE(restore_stage3_done()) &&
-        isTRUE(restore_final_done()) &&
-        is.null(restore_error()) &&
-        isTRUE(geometry_ready) &&
-        is.null(pending_project()) &&
-        project_restore_stage() == 0
+      # READY now means only that the single value-replay transaction has
+      # completed. Canonical GraphState is not re-read/reconciled in-browser.
+      !isTRUE(graph_state_replay_active()) && is.null(graph_state_replay_error())
     }),
 
     # Outer persistent-Editor transaction calls this exactly once after it has
@@ -345,43 +289,25 @@ graphServer <- function(id, initial_state = NULL, style_clipboard = NULL, diag_l
     },
 
     render_revision = reactive({ as.integer(plot_render_revision()) }),
+    # Figure persistent-editor replay uses the browser completion barrier for
+    # value synchronization, then releases exactly one semantic RenderState.
+    # This prevents the controls-only editor from leaving an intermediate plot
+    # (for example the previous bar plot after replaying a line GraphState).
+    release_render_state = function(state, reason = "explicit-release") {
+      graph_release_render_revision(state, reason = reason)
+    },
     rendered_state = reactive({ last_render_state() }),
-    browser_active = reactive({ isTRUE(browser_ui_active()) }),
     main_tab = reactive({ as.character(input$graph_main_tab %||% "Plot")[1] }),
 
-    restore_error = reactive({ restore_error() }),
-
-    # Figure controls-only fast path.  The caller must invoke this only after
-    # the browser mount ACK for the pre-seeded controls DOM.
-    accept_preseeded_controls = accept_preseeded_controls_state,
-
-    # v3.73.2.18 normal persistent-editor transaction. Saved UI choices and
-    # values are overwritten in one batch and cross one browser completion
-    # barrier. Structural restore remains available below only as fallback.
+    # Normal persistent-editor transaction. Saved UI choices and values are
+    # overwritten in one batch and cross one browser completion barrier.
+    # There is no staged structural restore fallback.
     replay_state = function(state, transaction = NULL) {
       if (!is.list(state)) return(invisible(FALSE))
       graph_apply_state_replay(state, transaction = transaction)
     },
     replay_active = reactive({ isTRUE(graph_state_replay_active()) }),
-    replay_error = reactive({ graph_state_replay_error() }),
-    # Legacy fixed-shell sync is retained for old restore/migration callers only.
-    sync_state = function(state) {
-      if (!is.list(state)) return(invisible(FALSE))
-      sync_editor_from_state(state)
-    },
-    # F1-5p: reusable editor modules (Figure-owned Graph snapshots) may need
-    # to replace their current state with a newly refreshed source snapshot.
-    # This uses the same staged restore machinery as Project load, so mapping /
-    # reshape / style restoration keeps one code path. Source Graph modules may
-    # expose it as well, but ordinary Graph workflow does not call it.
-    load_state = function(state, parent_preseed = FALSE) {
-      if (!is.list(state)) return(invisible(FALSE))
-      start_state_restore(state, notify = FALSE, parent_preseed_match = isTRUE(parent_preseed))
-    },
-    prepare_restore = prepare_restore_from_canonical,
-    activate = activate_initial_state,
-    prepare_remount = prepare_remount_state,
-    remount = remount_ui
+    replay_error = reactive({ graph_state_replay_error() })
   )
 
 

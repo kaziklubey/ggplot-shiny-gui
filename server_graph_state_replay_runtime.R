@@ -1,7 +1,8 @@
 # v3.73.2.18: normal Graph state replay for the one persistent Editor.
 # Sourced inside graphServer after data/style/statistics runtimes are installed.
-# This runtime deliberately does not use project_restore_stage, Mapping/reshape
-# binding handshakes, timers, or per-Graph DOM/module instances.
+# This runtime is the only GraphState-to-Editor hydration path. It uses one
+# value batch plus one browser completion barrier—no staged restore, semantic
+# comparison, retry, or per-Graph DOM/module instances.
 
   graph_capture_editor_ui_snapshot <- function() {
     graph_ui_snapshot_normalize(list(

@@ -123,9 +123,7 @@
   }
 
   reset_figure_workspace <- function(reset_layout = TRUE) {
-    shared_style_figure_queue(character(0))
-    shared_style_figure_restore_owner("")
-    shared_style_figure_apply_active(FALSE)
+    shared_style_graph_replay_pending(NULL)
     figure_inspector_folds(list())
     close_figure_load_progress()
     if (exists("reset_figure_legend_materializer", mode = "function", inherits = TRUE)) reset_figure_legend_materializer()
@@ -738,6 +736,7 @@
     # explicit point-in-time assets and continue to be packaged.
     previews <- list()
     figure_previews <- collect_figure_snapshot_preview_records()
+    inset_previews <- collect_figure_inset_preview_records()
     diag_log(
       "PACK-SAVE",
       paste0(
@@ -748,10 +747,11 @@
         if (length(figure_previews)) paste0(" figure_ids=", paste(names(figure_previews), collapse = ",")) else ""
       )
     )
-    # Manifest v4 persists only lightweight Figure snapshot assets. The empty
+    # Manifest v5 adds independent Inset snapshot assets. The empty
     # `previews` field is retained as a compatibility placeholder for readers of
     # older packages; no new Graph SVG files are written.
-    manifest <- list(version = 4L, previews = list(), figure_previews = list())
+    manifest <- list(version = 5L, previews = list(), figure_previews = list(),
+                     figure_inset_previews = write_figure_inset_preview_entries(root, inset_previews))
     if (length(figure_previews)) {
       for (id in names(figure_previews)) {
         rec <- figure_previews[[id]]
@@ -1080,6 +1080,7 @@
   read_project_file <- function(path) {
     project_read_error(NULL)
     project_bundle_pending_previews(list())
+    project_bundle_pending_inset_previews(list())
     project_bundle_pending_graph_previews(list())
     diag_log("PACK", paste0("read_project_file path=", basename(path), " bytes=", tryCatch(file.info(path)$size, error = function(e) NA)))
 
@@ -1153,6 +1154,7 @@
             manifest_candidates <- unique(manifest_candidates[file.exists(manifest_candidates)])
             graph_previews <- list()
             figure_previews <- list()
+            inset_previews <- list()
             diag_log("PACK", paste0("manifest existing candidates=", length(manifest_candidates)))
             if (length(manifest_candidates)) {
               manifest_path <- manifest_candidates[[1]]
@@ -1259,6 +1261,7 @@
               }
               graph_previews <- read_preview_entries(graph_entries, "graph")
               figure_previews <- read_preview_entries(figure_entries, "figure")
+              inset_previews <- read_preview_entries(man$figure_inset_previews %||% list(), "inset")
             } else {
               diag_log("PACK", "no preview/manifest.rds found after extraction")
             }
@@ -1269,6 +1272,7 @@
             )
             project_bundle_pending_graph_previews(graph_previews)
             project_bundle_pending_previews(figure_previews)
+            project_bundle_pending_inset_previews(inset_previews)
             return(cfg)
           }
         }
@@ -1308,34 +1312,17 @@
   # Project bootstrap is state-first. The persistent Editor already exists;
   # loading a Project replaces canonical GraphState and replays the selected
   # Graph values into that same Editor.
-  project_remove_obsolete_panels <- function() {
-    old_ids <- isolate(obsolete_panels())
-    if (!length(old_ids)) return(invisible(FALSE))
-    for (old_id in old_ids) {
-      try(removeUI(selector = paste0("#panel_", old_id), immediate = TRUE), silent = TRUE)
-      mark_ui_mounted(old_id, FALSE)
-    }
-    obsolete_panels(character(0))
-    invisible(TRUE)
-  }
-
   project_stage_state_target <- function(target, legacy_graph_preview_count, figure_preview_count) {
     target <- as.character(target %||% "")[1]
     if (!nzchar(target)) return(invisible(FALSE))
 
-    pending_display_graph(NULL)
-    restore_kind("project")
-    restore_target(NULL)
-    restore_status("idle")
-
     figure_visible <- identical(as.character(isolate(input$workspace_main_tab) %||% "")[1], "figure_workspace")
     figure_geometry_bootstrap_deferred(!figure_visible)
-    project_remove_obsolete_panels()
 
     # Project bootstrap is state-first. Old packaged Graph SVGs are accepted by
     # the reader only for migration compatibility and are deliberately ignored
     # as a display/runtime authority. Other Graphs remain state-only until they
-    # are selected (or explicitly materialized for Figure/export work).
+    # are selected; Figure and Export render directly from canonical state.
     active_graph(target)
     publish_client_preview_catalog(
       reason = "project-state-first", selected = target, enter_browse = FALSE
@@ -1367,12 +1354,7 @@
     # A new load owns its own bootstrap lifecycle. Clear any deferred work left
     # by a previous Project before validating/replacing canonical state.
     figure_geometry_bootstrap_deferred(FALSE)
-    restore_status("idle")
-    restore_target(NULL)
-    pending_display_graph(NULL)
     project_file_read(FALSE)
-    export_queue(character(0))
-    export_prepare_active(FALSE)
 
     cfg <- read_project_file(input$upload_project_all$datapath)
 
@@ -1455,23 +1437,10 @@
       }
     }
 
-    # 現在見えている完成済みGraphは、新しいProjectの最初のGraphが
-    # 描画完了するまで残す。これにより標準/空のGraphへの瞬間的な切替を防ぐ。
-    old <- isolate(graph_meta())
-    for (old_id in as.character(old$id)) invalidate_graph_source_module(old_id, "project-replace")
-    old_panels <- unique(c(
-      old$id[vapply(old$id, module_exists, logical(1))],
-      intersect(as.character(old$id), mounted_ids())
-    ))
-    obsolete_panels(old_panels)
-
-    # 旧moduleの参照はregistryから外す。Graph SVG observer/cache ownershipは
-    # v3.73.2.18で廃止済みなので、Project replacement時のpreview teardownは不要。
+    # Project replacement is state-first. Dormant Graphs have no hidden UI/module
+    # to tear down; replace the canonical Registry after invalidating the one
+    # persistent Editor owner below.
     project_legacy_graph_previews(list())
-    for (id in old_panels) {
-      modules[[id]] <- NULL
-    }
-    reset_graph_materialization_service(reason = "project-replace")
 
     # Project replacement invalidates the old Graph owner before the canonical
     # Registry is cleared.  This prevents the outgoing Graph from being
@@ -1607,6 +1576,9 @@
     # install them into the live Graph workspace.
     project_legacy_graph_previews(mapped_graph_previews)
     figure_persisted_previews(mapped_figure_previews)
+    mapped_inset_previews <- map_preview_records(isolate(project_bundle_pending_inset_previews()), "inset")
+    figure_inset_preview_cache(mapped_inset_previews)
+    for (id in names(mapped_inset_previews)) bump_figure_snapshot_revision(id)
     # v3.72 lifecycle rule: Figure owns state/cache only for sources that are
     # currently referenced by the restored Figure layout (or enabled insets).
     # This also cleans older packages that persisted snapshots for every Graph.
@@ -1617,6 +1589,7 @@
     }
     project_bundle_pending_graph_previews(list())
     project_bundle_pending_previews(list())
+    project_bundle_pending_inset_previews(list())
 
     target_index <- match(old_active, source_ids)
     if (is.na(target_index)) target_index <- 1L

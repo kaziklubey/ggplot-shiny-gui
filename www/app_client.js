@@ -105,30 +105,10 @@ function ggplotGuiReadBoundInputValue(el) {
   }
 }
 
-function ggplotGuiBindingValueMatches(actual, expected, mode) {
-  mode = String(mode || 'scalar');
-  if (!actual || !actual.readable) return null;
-  if (mode === 'logical') {
-    var av = actual.value === true || String(actual.value).toLowerCase() === 'true' || String(actual.value) === '1' || String(actual.value).toLowerCase() === 'on';
-    var ev = expected === true || String(expected).toLowerCase() === 'true' || String(expected) === '1' || String(expected).toLowerCase() === 'on';
-    return av === ev;
-  }
-  if (mode === 'set') {
-    var aa = Array.isArray(actual.value) ? actual.value.map(String) : (actual.value == null ? [] : [String(actual.value)]);
-    var ee = Array.isArray(expected) ? expected.map(String) : (expected == null ? [] : [String(expected)]);
-    aa.sort(); ee.sort();
-    return aa.length === ee.length && aa.every(function(v, i) { return v === ee[i]; });
-  }
-  var avs = actual.value == null ? '' : String(Array.isArray(actual.value) ? (actual.value[0] == null ? '' : actual.value[0]) : actual.value);
-  var evs = expected == null ? '' : String(Array.isArray(expected) ? (expected[0] == null ? '' : expected[0]) : expected);
-  return avs === evs;
-}
-
-// v3.72.26: canonical reconcile is judged only after one explicit browser
-// round-trip. This is a transaction barrier, not a delay/poll: updateInput()
-// messages from the preceding sync are applied first, then the next animation
-// frame acknowledges that the browser has crossed that client turn.
-Shiny.addCustomMessageHandler('graph-editor-reconcile-barrier', function(msg) {
+// Statistics recipe replay uses one explicit browser-turn barrier after its
+// updateInput() batch. This is not GraphState reconciliation and performs no
+// semantic comparison or retry of the persistent Graph Editor.
+Shiny.addCustomMessageHandler('stats-restore-browser-barrier', function(msg) {
   if (!msg || !msg.ackId) return;
   var payload = {
     id: String(msg.id || ''),
@@ -148,203 +128,11 @@ Shiny.addCustomMessageHandler('graph-editor-reconcile-barrier', function(msg) {
   }
 });
 
-var restoreBindingGenerations = {};
-var restoreBindingCleanups = {};
-Shiny.addCustomMessageHandler('mapping-restore-binding-check', function(msg) {
-  if (!msg || !msg.ackId) return;
-  var generation = Number(msg.generation || 0);
-  var fields = Array.isArray(msg.fields) ? msg.fields : [];
-  var started = Date.now();
-  var requestKey = String(msg.ackId || '');
-
-  if (typeof restoreBindingCleanups[requestKey] === 'function') {
-    restoreBindingCleanups[requestKey]();
-  }
-  restoreBindingGenerations[requestKey] = generation;
-
-  function collectBindingState() {
-    var states = [];
-    var missing = [];
-    for (var i = 0; i < fields.length; i++) {
-      var item = fields[i] || {};
-      var field = String(item.field || '');
-      var id = String(item.id || '');
-      var el = id ? document.getElementById(id) : null;
-      var bound = !!(el && el.classList && el.classList.contains('shiny-bound-input'));
-      var read = ggplotGuiReadBoundInputValue(el);
-      states.push({field: field, id: id, exists: !!el, bound: bound, valueReadable: !!read.readable, value: read.value});
-      if (!bound) missing.push(field || id);
-    }
-    return {
-      states: states,
-      missing: missing,
-      domInputCount: document.querySelectorAll('input,select,textarea').length,
-      boundInputCount: document.querySelectorAll('.shiny-bound-input').length
-    };
-  }
-
-  var boundHandler = null;
-  var inspectScheduled = false;
-  function cleanup() {
-    if (boundHandler && window.jQuery) {
-      window.jQuery(document).off('shiny:bound shiny:unbound shiny:inputchanged', boundHandler);
-    }
-    boundHandler = null;
-    if (restoreBindingCleanups[requestKey] === cleanup) delete restoreBindingCleanups[requestKey];
-  }
-  restoreBindingCleanups[requestKey] = cleanup;
-
-  function inspectMappingBindings() {
-    if (restoreBindingGenerations[requestKey] !== generation) {
-      cleanup();
-      return;
-    }
-    var snapshot = collectBindingState();
-    if (snapshot.missing.length !== 0) return;
-
-    cleanup();
-    Shiny.setInputValue(msg.ackId, {
-      generation: generation,
-      status: 'ready',
-      missing: snapshot.missing,
-      states: snapshot.states,
-      elapsedMs: Date.now() - started,
-      domInputCount: snapshot.domInputCount,
-      boundInputCount: snapshot.boundInputCount,
-      nonce: Date.now()
-    }, {priority: 'event'});
-    restoreBindingGenerations[requestKey] = null;
-  }
-
-  function scheduleBindingInspection() {
-    if (restoreBindingGenerations[requestKey] !== generation || inspectScheduled) return;
-    inspectScheduled = true;
-    var run = function() {
-      inspectScheduled = false;
-      inspectMappingBindings();
-    };
-    if (typeof window.requestAnimationFrame === 'function') {
-      window.requestAnimationFrame(run);
-    } else {
-      run();
-    }
-  }
-
-  // v3.72.24: no 50 ms timer polling. Inspect once at the next browser frame
-  // and thereafter only when Shiny reports a binding/input transition.
-  if (window.jQuery) {
-    boundHandler = function() {
-      if (restoreBindingGenerations[requestKey] !== generation) {
-        cleanup();
-        return;
-      }
-      scheduleBindingInspection();
-    };
-    window.jQuery(document).on('shiny:bound shiny:unbound shiny:inputchanged', boundHandler);
-  }
-  scheduleBindingInspection();
-});
-
-Shiny.addCustomMessageHandler('mapping-restore-binding-cancel', function(msg) {
-  if (!msg || !msg.ackId) return;
-  var requestKey = String(msg.ackId || '');
-  restoreBindingGenerations[requestKey] = null;
-  if (typeof restoreBindingCleanups[requestKey] === 'function') {
-    restoreBindingCleanups[requestKey]();
-  }
-});
-
 // Browser-confirm the newly inserted Graph shell before graphServer is
 // created.  insertUI() returning on the server does not mean the DOM or
 // Shiny input bindings are ready in the client.
 var graphUiMountGenerations = {};
 var graphUiMountCleanups = {};
-// READY graphServer modules persist across DOM virtualization.  A remounted
-// graphUI needs an explicit browser-side transition from persisted preview
-// to the live output surface before the server invalidates renderPlot.
-var graphRemountGenerations = {};
-Shiny.addCustomMessageHandler('graph-ui-remount-prepare', function(msg) {
-  var started = Date.now();
-  var timeoutMs = Number(msg.timeoutMs || 8000);
-  var generation = Number(msg.generation || 0);
-  var fields = Array.isArray(msg.fields) ? msg.fields : [];
-  var remountKey = String(msg.graphId || '');
-  graphRemountGenerations[remountKey] = generation;
-
-  function snapshotBindings(panel) {
-    var states = [];
-    var missing = [];
-    var mismatched = [];
-    for (var i = 0; i < fields.length; i++) {
-      var item = fields[i] || {};
-      var field = String(item.field || '');
-      var id = String(item.id || '');
-      var el = id ? document.getElementById(id) : null;
-      var bound = !!(el && el.classList && el.classList.contains('shiny-bound-input'));
-      var read = ggplotGuiReadBoundInputValue(el);
-      var match = bound && read.readable ? ggplotGuiBindingValueMatches(read, item.expected, item.mode) : null;
-      states.push({
-        field: field, id: id, exists: !!el, bound: bound,
-        valueReadable: !!read.readable, value: read.value, matchesExpected: match
-      });
-      if (!bound || !read.readable) missing.push(field || id);
-      else if (match === false) mismatched.push(field || id);
-    }
-    var panelGeneration = panel ? Number(panel.getAttribute('data-graph-remount-generation') || NaN) : NaN;
-    return {
-      states: states, missing: missing, mismatched: mismatched,
-      panelGeneration: panelGeneration
-    };
-  }
-
-  function acknowledge(status, live, cached, plot, panel, snap) {
-    if (!(window.Shiny && msg.ackId)) return;
-    snap = snap || {states:[], missing:[], mismatched:[], panelGeneration:NaN};
-    Shiny.setInputValue(msg.ackId, {
-      generation: generation,
-      domGeneration: snap.panelGeneration,
-      graphId: msg.graphId || '',
-      status: status,
-      elapsedMs: Date.now() - started,
-      liveExists: !!live,
-      cachedExists: !!cached,
-      plotExists: !!plot,
-      panelExists: !!panel,
-      boundInputsReady: !!panel && snap.missing.length === 0 && snap.mismatched.length === 0,
-      missing: snap.missing,
-      mismatched: snap.mismatched,
-      states: snap.states,
-      nonce: Date.now()
-    }, {priority: 'event'});
-  }
-
-  function probe() {
-    if (graphRemountGenerations[remountKey] !== generation) return;
-    var live = document.getElementById(msg.liveId);
-    var cached = document.getElementById(msg.cachedId);
-    var plot = document.getElementById(msg.plotOutputId);
-    var panel = msg.panelId ? document.getElementById(String(msg.panelId)) : null;
-    if (panel) panel.setAttribute('data-graph-remount-generation', String(generation));
-    var snap = snapshotBindings(panel);
-
-    // READY remount ACK belongs to this DOM generation only when the
-    // remounted panel, live plot surface, and all canonical input bindings
-    // are present and the browser values already match the remount seed.
-    if (live && plot && panel && snap.missing.length === 0 && snap.mismatched.length === 0 && snap.panelGeneration === generation) {
-      acknowledge('ready', live, cached, plot, panel, snap);
-      graphRemountGenerations[remountKey] = null;
-      return;
-    }
-    if (Date.now() - started >= timeoutMs) {
-      acknowledge('timeout', live, cached, plot, panel, snap);
-      graphRemountGenerations[remountKey] = null;
-      return;
-    }
-    window.setTimeout(probe, 25);
-  }
-
-  probe();
-});
 
 // v3.51 Graph Preview mode switch.  A persisted SVG stays mounted as a
 // display cache; it is never the canonical state.  The stage changes
@@ -1420,7 +1208,7 @@ Shiny.addCustomMessageHandler('graph-global-preview-target', function(msg) {
     if (!!msg.preferLive) {
       stage.classList.add('graph-preview-live-pending');
       stage.setAttribute('data-preview-pending-graph', nextGraph);
-      reportGraphPreviewReveal(stage, 'hidden', 'ready-remount');
+      reportGraphPreviewReveal(stage, 'hidden', 'live-target-pending');
     } else {
       stage.classList.remove('graph-preview-live-pending');
       stage.removeAttribute('data-preview-pending-graph');
@@ -1865,33 +1653,6 @@ Shiny.addCustomMessageHandler('graph-ui-mount-cancel', function(msg) {
   var key = ackId + ':' + graphId;
   graphUiMountGenerations[key] = null;
   if (typeof graphUiMountCleanups[key] === 'function') graphUiMountCleanups[key]();
-});
-
-// Serial graph-materialization browser-drain barrier.  The server sends this
-// message only after its flush boundary. Cross two animation frames before ACK
-// so DOM unbinding/removal has reached a stable browser frame; no timer/polling
-// fallback is used.
-Shiny.addCustomMessageHandler('graph-materialization-browser-drain', function(msg) {
-  if (!msg || !msg.ackId) return;
-  var generation = Number(msg.generation || 0);
-  var started = Date.now();
-  function ack() {
-    Shiny.setInputValue(msg.ackId, {
-      generation: generation,
-      graphId: String(msg.graphId || ''),
-      elapsedMs: Date.now() - started,
-      domInputCount: document.querySelectorAll('input,select,textarea').length,
-      boundInputCount: document.querySelectorAll('.shiny-bound-input').length,
-      nonce: Date.now()
-    }, {priority: 'event'});
-  }
-  if (typeof window.requestAnimationFrame !== 'function') {
-    ack();
-    return;
-  }
-  window.requestAnimationFrame(function() {
-    window.requestAnimationFrame(ack);
-  });
 });
 
 Shiny.addCustomMessageHandler('figure-label-overlay-update', function(msg) {
@@ -2571,10 +2332,6 @@ Shiny.addCustomMessageHandler('set-plot-dimensions', function(msg) {
   if (stage) {
     var msgReason = msg.reason ? String(msg.reason) : '';
     var reportReason = 'set-plot-dimensions' + (msgReason ? ':' + msgReason : '');
-    if (msgReason === 'remount-ack' && stage.classList.contains('graph-preview-live-pending')) {
-      reportGraphPreviewReveal(stage, 'dimensions-applied', 'remount-ack');
-      revealPendingGraphPreview(stage, 'remount-dimensions-applied');
-    }
     requestAnimationFrame(function() { reportGraphPreviewDims(stage, reportReason); });
   }
 

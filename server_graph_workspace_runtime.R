@@ -78,155 +78,16 @@
   }
 
   # ------------------------------------------------------------------
-  # Restore progress
+  # Graph workspace actions
   # ------------------------------------------------------------------
-  observe({
-    # Module registry entries are not reactive. Queue transitions wake this
-    # observer after a queued Graph is instantiated or reaches READY.
-    graph_materialization_signal()
-    if (!identical(restore_status(), "restoring")) return()
-
-    id <- restore_target()
-    if (is.null(id) || !nzchar(id)) return()
-
-    mod <- modules[[id]]
-    if (is.null(mod)) return()
-
-    ready <- isTRUE(source_graph_ready(id))
-    ready_key <- paste0(id, ":", ready)
-    if (!exists(ready_key, envir = diag_ready_seen, inherits = FALSE)) {
-      assign(ready_key, TRUE, envir = diag_ready_seen)
-      diag_log("READY", paste0("mod$ready()=", ready), id = id)
-    }
-
-    # Project復元の完了条件は「設定/stateの復元完了」にする。
-    # hidden panel内のPlot描画(draw)を待つと、Bootstrapのdisplay:none中に
-    # plotOutputサイズが確定せず85%で待ち続けるため、drawnは条件にしない。
-    if (ready) {
-      target <- isolate(pending_display_graph())
-
-      if (!is.null(target) && identical(target, id)) {
-        meta <- isolate(graph_meta())
-
-        # stateが完成した時点で新Graphを先に表示する。
-        # Plotは表示後の正常なbrowserサイズで描画させる。
-        for (z in meta$id) {
-          if (ui_mounted(z)) shinyjs::hide(paste0("panel_", z), anim = FALSE)
-        }
-        previous_id <- as.character(isolate(active_graph()) %||% "")
-        shinyjs::show(paste0("panel_", id), anim = FALSE)
-        active_graph(id)
-        pending_display_graph(NULL)
-
-        # v3.3.76: show_graph() returns early for any saved-state restore
-        # (Project restore and newly duplicated Graphs).  Therefore the normal
-        # refresh-visible-graph-ui message in show_graph() is skipped.  Send
-        # the same refresh here, after the restored panel has actually become
-        # visible.  The browser handler double-rAFs before measuring geometry.
-        session$sendCustomMessage("refresh-visible-graph-ui", list(id = id))
-        diag_log("FOLLOW-REFRESH", "requested after restore-ready reveal", id = id)
-        if (identical(as.character(isolate(restore_kind()) %||% ""), "client-edit")) {
-          editing_graph_id(id)
-          session$sendCustomMessage("graph-client-edit-ready", list(id = id))
-          diag_log("CLIENT-BROWSE", "editor READY; browser preview released", id = id)
-          diag_log("EDITOR-SHELL", "ready", id = id)
-        }
-
-        # 新しいGraphを表示してから前Projectのpanelを削除。
-        old_ids <- isolate(obsolete_panels())
-        if (length(old_ids)) {
-          for (old_id in old_ids) {
-            removeUI(selector = paste0("#panel_", old_id), immediate = TRUE)
-          mark_ui_mounted(old_id, FALSE)
-          }
-          obsolete_panels(character(0))
-        }
-      }
-
-      restore_status("complete")
-
-      # Project/Graph復元直後は保存済み状態なのでdirtyを解除。
-    }
-  })
-
-  output$project_load_progress <- renderUI({
-    st <- restore_status()
-    if (identical(st, "idle")) return(NULL)
-
-    kind <- restore_kind()
-    id <- restore_target()
-    mod <- if (!is.null(id)) modules[[id]] else NULL
-
-    ready <- !is.null(mod) && isTRUE(source_graph_ready(id))
-
-    # hidden Plot描画は復元完了条件にしない。
-    # readyになったらGraphを表示して100%へ進む。
-    graph_pct <- if (ready) {
-      100
-    } else if (!is.null(mod)) {
-      45
-    } else {
-      10
-    }
-
-    if (identical(st, "complete")) {
-      return(
-        div(
-          class = "restore-done",
-          HTML("&#10003;&nbsp;"),
-          if (identical(kind, "project")) "Project・Graph復元完了" else "Graph復元完了"
-        )
-      )
-    }
-
-    parts <- list()
-
-    if (identical(kind, "project")) {
-      parts <- c(parts, list(
-        div(
-          class = "project-progress-line",
-          div(class = "project-progress-label", "Projectファイル"),
-          div(
-            class = "progress compact-progress",
-            div(
-              class = "progress-bar progress-bar-success",
-              role = "progressbar",
-              style = "width:100%;",
-              "100%"
-            )
-          )
-        )
-      ))
-    }
-
-    parts <- c(parts, list(
-      div(
-        class = "project-progress-line",
-        div(
-          class = "project-progress-label",
-          if (identical(kind, "project")) "表示Graphを復元しています…" else "Graphを復元しています…"
-        ),
-        div(
-          class = "progress compact-progress",
-          div(
-            class = "progress-bar progress-bar-striped active",
-            role = "progressbar",
-            style = paste0("width:", graph_pct, "%;"),
-            paste0(graph_pct, "%")
-          )
-        )
-      )
-    ))
-
-    tagList(parts)
-  })
+  # Project restore is state-first; there is no hidden per-Graph restore UI or
+  # materialization progress lifecycle.
 
   # ------------------------------------------------------------------
-  # Cache-first Graph workspace preview
+  # Persistent Graph workspace
   # ------------------------------------------------------------------
-  # v3.3.55: the old simplified cached Parameters UI was removed.
-  # The real graphUI() is mounted once, pre-seeded from Project state, and
-  # contains the persisted SVG until graphServer becomes ready.
+  # The real graphUI() shell is mounted once. Graph identity changes only by
+  # replaying canonical GraphState values into that same persistent Editor.
 
   # ------------------------------------------------------------------
   # Graph actions

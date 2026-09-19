@@ -54,21 +54,8 @@
         next
       }
 
-      imported_live <- FALSE
-      if (exists("snapshot_ready_graph_for_figure", mode = "function", inherits = TRUE) &&
-          isTRUE(source_graph_ready(id))) {
-        imported_live <- isTRUE(tryCatch(
-          snapshot_ready_graph_for_figure(
-            id, import_editor_state = TRUE,
-            import_reason = reason, reload_editor = FALSE
-          ),
-          error = function(e) FALSE
-        ))
-      }
-      if (!isTRUE(imported_live)) {
-        request_figure_source_snapshot(id, reason = reason, import_editor_state = TRUE)
-        queued <- c(queued, id)
-      }
+      request_figure_source_snapshot(id, reason = reason, import_editor_state = TRUE)
+      queued <- c(queued, id)
     }
 
     if (length(queued)) {

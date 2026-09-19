@@ -57,7 +57,7 @@ app_function_catalog <- function() {
       shared_style_update_library_from_graph_state = list(kind = "pure write-through adapter", input = "Shared Library + linked GraphState", output = "updated Library definition"),
       shared_style_resolve_writeback = list(kind = "pure conflict resolver", input = "current semantic value + linked candidates", output = "unambiguous write-through value"),
       shared_style_commit_library = list(kind = "server semantic transaction", input = "Shared Library + source", output = "affected Graph/Figure propagation"),
-      shared_style_queue_figure_states = list(kind = "Figure semantic transaction", input = "Shared Library + reason", output = "single-editor sequential snapshot rebuild queue")
+      shared_style_apply_figure_states = list(kind = "Figure semantic transaction", input = "Shared Library + reason", output = "direct-state Figure snapshot rebuilds")
     ),
     figure_workflow = list(
       figureWorkflowHeaderUI = list(kind = "UI component", input = "none", output = "workflow header"),
@@ -78,7 +78,6 @@ app_function_catalog <- function() {
       graph_plot_type_specs = list(kind = "pure contract", input = "none", output = "plot specs"),
       graph_plot_type_normalize = list(kind = "pure contract", input = "plot type", output = "canonical plot type"),
       graph_plot_supports_mapping = list(kind = "pure contract", input = "plot type + mapping", output = "logical"),
-      graph_plot_restore_input_ids = list(kind = "pure contract", input = "plot type", output = "input IDs")
     ),
     graph_ui = list(
       graph_ui_seeded_args = list(kind = "pure UI helper", input = "seed + args", output = "seeded args"),
@@ -95,7 +94,7 @@ app_function_catalog <- function() {
       graphServer = list(kind = "Shiny module owner", input = "id/state/callbacks", output = "module API"),
       select_graph_preview = list(kind = "server compatibility selection transaction", input = "Graph id + source", output = "selection/Preview publication without browse-mode ownership"),
       request_graph_editor = list(kind = "server editor-first transaction", input = "Graph id + source", output = "persistent Editor replay or latest-target queue"),
-      resume_graph_workspace = list(kind = "server workspace lifecycle", input = "current selection/owner", output = "same-owner show/reconcile or selected Graph replay"),
+      resume_graph_workspace = list(kind = "server workspace lifecycle", input = "current selection/owner", output = "same-owner canonical resync or selected Graph replay"),
       graph_single_load = list(kind = "internal editor transaction", input = "Graph id", output = "side effects: canonical value replay + one live render"),
       graph_single_default_state_snapshot = list(kind = "editor default-state source", input = "reason", output = "deep-copied canonical default GraphState"),
       graph_accept_attached_canonical = list(kind = "render acceptance boundary", input = "outer-accepted canonical GraphState", output = "module attachment + pending render target"),
@@ -103,16 +102,9 @@ app_function_catalog <- function() {
       graph_release_attached_render_target = list(kind = "render transaction boundary", input = "accepted attached GraphState", output = "single render revision release"),
       seed_new_graph_default_state = list(kind = "new-Graph canonical initializer", input = "Graph id + reason", output = "Registry default-state commit"),
       graph_single_abort_activation = list(kind = "editor transaction fail-safe", input = "Graph id + reason", output = "stale shell clear + explicit reselection"),
-      schedule_graph_materialization = list(kind = "source materialization queue", input = "Graph ids + reason", output = "serial read-only source preparation"),
-      request_graph_materialization = list(kind = "source materialization request", input = "Graph id + reason", output = "priority-aware serial preparation"),
-      graph_materialization_signal = list(kind = "source materialization signal", input = "none", output = "reactive service revision"),
-      graph_materialization_forget_ui_state = list(kind = "source materialization lifecycle", input = "Graph id", output = "discard browser/init readiness state"),
-      reset_graph_materialization_service = list(kind = "source materialization reset", input = "reason", output = "queue/barrier/lease reset side effects"),
-      remove_graph_materialization_item = list(kind = "source materialization mutation", input = "Graph id + reason", output = "remove queued/in-flight source state"),
-      reset_graph_materialization_source = list(kind = "source materialization retry", input = "Graph id + reason", output = "canonical restore restart"),
-      source_graph_module = list(kind = "read-only source resolver", input = "Graph id", output = "current leased materializer or persistent Editor"),
-      source_graph_ready = list(kind = "read-only source readiness", input = "Graph id", output = "logical"),
-      graph_preview_record_from_plot = list(kind = "temporary vector materializer", input = "GraphState + plot + export meta", output = "caller-owned SVG record or NULL"),
+      graph_preview_record_from_plot = list(kind = "direct-state vector snapshot helper", input = "GraphState + plot + export meta", output = "caller-owned SVG record or NULL"),
+      graph_state_export_snapshot = list(kind = "pure direct-state export renderer", input = "GraphState", output = "plot + measured export metadata"),
+      request_figure_source_snapshot = list(kind = "direct-state Figure snapshot service", input = "Graph id + optional GraphState override", output = "Figure-owned SVG snapshot"),
       registry_commit = list(kind = "server state mutation", input = "Graph id + state", output = "canonical Registry update")
     )
   )

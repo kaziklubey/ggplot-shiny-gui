@@ -564,26 +564,10 @@
           figure_evict_source_state(src, reason = "new-assignment-reset")
           figure_mark_new_import(src)
 
-          imported_now <- FALSE
-          if (exists("snapshot_ready_graph_for_figure", mode = "function", inherits = TRUE) &&
-              isTRUE(source_graph_ready(src))) {
-            imported_now <- isTRUE(tryCatch(
-              snapshot_ready_graph_for_figure(
-                src,
-                import_editor_state = TRUE,
-                import_reason = "new-assignment-live",
-                reload_editor = FALSE
-              ),
-              error = function(err) FALSE
-            ))
-          }
-          if (isTRUE(imported_now)) {
-            figure_clear_new_import(src)
-            diag_log("FIGURE-SOURCE-SYNC", "new assignment imported immediately from READY Graph", id = src)
-          } else {
-            request_figure_source_snapshot(src, reason = "figure-assignment", import_editor_state = TRUE)
-            diag_log("FIGURE-SOURCE-SYNC", "new assignment queued for direct GraphState snapshot", id = src)
-          }
+          request_figure_source_snapshot(
+            src, reason = "figure-assignment", import_editor_state = TRUE
+          )
+          diag_log("FIGURE-SOURCE-SYNC", "new assignment queued for direct GraphState snapshot", id = src)
         } else if (nzchar(src) && src %in% meta$id) {
           # Existing Figure ownership is a snapshot. Selecting/reassigning the
           # same source is not permission to refresh it from Graph.
@@ -1417,6 +1401,45 @@
     capture_current_figure_override("none", "height")
   }, ignoreInit = TRUE)
 
+  # Phase 2.1: the first explicit Inset enable/source selection should be
+  # immediately visible without requiring a second refresh click. Freeze one
+  # direct-state snapshot only when the user changes these controls and no
+  # Figure-owned Inset snapshot exists yet. Later Graph edits remain snapshot-
+  # based and require the explicit refresh action, as before.
+  observeEvent(
+    list(input$figure_inset_enabled, input$figure_inset_source),
+    {
+      if (isTRUE(isolate(figure_drag_syncing())) || isTRUE(isolate(figure_inspector_syncing()))) return()
+      if (!isTRUE(isolate(input$figure_inset_enabled))) return()
+
+      owner_id <- as.character(isolate(figure_selected_graph() %||% ""))[1]
+      source_id <- as.character(isolate(input$figure_inset_source %||% ""))[1]
+      if (!nzchar(owner_id) || !nzchar(source_id)) return()
+
+      ext <- isolate(figure_external_assets())
+      if (source_id %in% names(ext %||% list())) return()
+      if (!cache_has(source_id)) return()
+
+      existing <- isolate(figure_inset_preview_cache())[[source_id]]
+      if (is.list(existing) && isTRUE(valid_graph_preview_record(existing))) return()
+      if (isTRUE(figure_source_snapshot_target_pending(source_id, "inset", owner_id))) return()
+
+      revision <- request_figure_inset_snapshot(
+        owner_id, source_id, reason = "figure-inset-initial-source"
+      )
+      if (is.numeric(revision) && length(revision) == 1L && is.finite(revision)) {
+        diag_log(
+          "FIGURE-INSET",
+          paste0("initial source queued direct state revision=", as.integer(revision),
+                 " owner=", owner_id),
+          id = source_id
+        )
+      }
+    },
+    ignoreInit = TRUE,
+    priority = -10
+  )
+
   observeEvent(input$figure_override_reset, {
     id <- as.character(isolate(figure_selected_graph() %||% ""))
     if (!nzchar(id)) return()
@@ -1580,36 +1603,16 @@
       id=id
     )
 
-    # v3.43: canonical GraphState is the commit target.  Do NOT call
-    # mod$load_state() while the user is on the Figure tab: the source Graph's
-    # browser controls may be virtualized/absent, which used to launch a
-    # restore against missing reshape/mapping bindings and time out.  Instead
-    # retire any mounted source-Graph DOM without re-persisting its stale live
-    # state, and hold the newly committed canonical state as the remount seed.
-    source_ui_evicted <- FALSE
-    mod <- modules[[id]]
-    source_ready <- graph_is_ready(id)
-    if (!isTRUE(source_ready)) {
-      cancel_graph_restore_for_canonical_update(
-        id, committed_state, reason = "figure-editor-apply"
-      )
-    }
-    if (isTRUE(ui_mounted(id))) {
-      source_ui_evicted <- isTRUE(evict_graph_source_ui(
-        id,
-        reason = "figure-editor-apply",
-        force = TRUE
-      ))
-    } else if (isTRUE(source_ready) && !is.null(mod) && is.function(mod$cancel_remount)) {
-      try(mod$cancel_remount(cache_get(id), reason = "figure-editor-apply"), silent = TRUE)
-    }
-
+    # Canonical GraphState is the only Graph-side commit target. Dormant Graphs
+    # stay state-only; if this Graph currently owns the persistent Editor, the
+    # stale marker above makes the normal Graph-workspace resume path replay it.
     diag_log(
       "FIGURE-COMMIT",
       paste0(
         "full-graphstate applied registry_changed=", isTRUE(changed),
-        " source_ui_evicted=", source_ui_evicted,
-        " deferred_replay=TRUE figure_snapshot_unchanged=TRUE"
+        " dormant_state_only=TRUE deferred_visible_replay=",
+        identical(id, graph_single_owner()),
+        " figure_snapshot_unchanged=TRUE"
       ),
       id=id
     )
@@ -1672,8 +1675,24 @@
           paste0("panel select only; automatic source refresh ignored key=", key, " editable_state=", has_edit),
           id = id
         )
-        # v3.60.0: panel selection is browse/inspect only. Figure Graph editor
-        # changes only after explicit "このPanelを編集" intent.
+        # Panel selection stays browse/inspect-only until the user has explicitly
+        # opened the Figure Graph Editor. Once an editor is active, selecting a
+        # different editable Figure panel must move that same persistent editor
+        # to the selected Figure-owned state; otherwise controls from the old
+        # owner can mutate the newly selected panel by mistake.
+        editing_id <- as.character(isolate(figure_editing_graph()) %||% "")[1]
+        editor_active <- nzchar(editing_id) &&
+          isTRUE(isolate(figure_single_editor_show_when_ready()))
+        if (isTRUE(has_edit) && isTRUE(editor_active) && !identical(editing_id, id)) {
+          switched <- isTRUE(ensure_figure_editor(
+            id, preserve_current = TRUE, show_when_ready = TRUE
+          ))
+          diag_log(
+            "FIGURE-EDITOR-SHELL",
+            paste0("selection-follow previous=", editing_id, " switched=", switched),
+            id = id
+          )
+        }
       }
     }
   }, ignoreInit = TRUE)

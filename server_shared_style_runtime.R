@@ -36,6 +36,35 @@
     state
   }
 
+  shared_style_request_visible_graph_replay <- function(ids, reason = "shared-style-library") {
+    ids <- unique(as.character(ids %||% character(0)))
+    owner <- graph_single_owner()
+    if (!nzchar(owner) || !owner %in% ids) return(invisible(FALSE))
+
+    workspace_visible <- identical(
+      as.character(isolate(input$workspace_main_tab) %||% "")[1],
+      "graph_workspace"
+    )
+    if (isTRUE(isolate(graph_single_editor_loading()))) {
+      # Do not interrupt the existing ACK-gated Graph replay. The canonical
+      # revision has already advanced; once the current transaction finishes,
+      # mark that same owner stale and replay it only if Graph is still visible.
+      shared_style_graph_replay_pending(list(id = owner, reason = reason))
+      diag_log("SHARED-STYLE-GRAPH", "owner resync deferred until current replay completes", id = owner)
+      return(invisible(TRUE))
+    }
+
+    shared_style_graph_replay_pending(NULL)
+    graph_single_mark_stale(owner, reason = reason)
+    if (isTRUE(workspace_visible)) {
+      request_graph_editor(owner, source = reason, new_graph = FALSE)
+      diag_log("SHARED-STYLE-GRAPH", "visible owner replay requested from canonical state", id = owner)
+    } else {
+      diag_log("SHARED-STYLE-GRAPH", "owner marked stale; replay deferred until Graph workspace resume", id = owner)
+    }
+    invisible(TRUE)
+  }
+
   shared_style_apply_to_registry <- function(library, skip_graph_id = "", reason = "shared-style-library") {
     lib <- shared_style_normalize_library(library)
     meta <- isolate(graph_meta())
@@ -53,36 +82,37 @@
       render_changed <- isTRUE(graph_render_state_changed(old, new))
       if (isTRUE(registry_commit(id, new, source = reason))) {
         changed_ids <- c(changed_ids, id)
-        if (isTRUE(render_changed)) {
-          render_ids <- c(render_ids, id)
-          if (identical(id, graph_single_owner()) && exists("graph_single_mark_stale", mode = "function", inherits = TRUE)) {
-            graph_single_mark_stale(id, reason = reason)
-          }
-        }
+        if (isTRUE(render_changed)) render_ids <- c(render_ids, id)
       }
     }
 
     changed_ids <- unique(changed_ids)
     render_ids <- unique(render_ids)
-    if (length(render_ids) && exists("schedule_graph_materialization", mode = "function", inherits = TRUE)) {
-      # Binding-only metadata commits are persisted without waking rendering.
-      # Only concrete appearance changes enter the read-only materializer.
-      schedule_graph_materialization(render_ids, reason = reason)
-    }
+    # Dormant Graphs stay state-only. Only the one visible persistent Graph
+    # Editor is replayed, and only when its render-affecting state changed.
+    if (length(render_ids)) shared_style_request_visible_graph_replay(render_ids, reason = reason)
     changed_ids
   }
 
-  shared_style_queue_figure_states <- function(library, reason = "shared-style-figure") {
+  # Direct Figure Shared Style application. Figure-owned GraphStates are updated
+  # first, then snapshots are regenerated from those values through the existing
+  # server-side GraphState renderer. No Figure Editor is created/switched merely
+  # to rebuild snapshots.
+  shared_style_apply_figure_states <- function(library, reason = "shared-style-figure") {
     lib <- shared_style_normalize_library(library)
     states <- isolate(figure_edit_states())
     if (!length(states)) return(character(0))
 
-    # Preserve any live Figure-only edits before this external semantic batch
-    # mutates Figure GraphStates. Once the batch starts, queued canonical states
-    # must not be overwritten by the old editor state during owner switches.
     current_owner <- as.character(isolate(figure_editing_graph()) %||% "")[1]
-    if (nzchar(current_owner) && !isTRUE(isolate(figure_single_editor_loading())) &&
-        identical(as.character(isolate(figure_single_editor_mode()) %||% ""), "READY")) {
+    current_visible <- nzchar(current_owner) &&
+      figure_workspace_is_active() &&
+      isTRUE(isolate(figure_single_editor_show_when_ready())) &&
+      !isTRUE(isolate(figure_single_editor_loading())) &&
+      identical(as.character(isolate(figure_single_editor_mode()) %||% ""), "READY")
+
+    # Preserve unsaved Figure-only controls for the one currently visible editor
+    # before changing its Figure-owned GraphState externally.
+    if (isTRUE(current_visible)) {
       mod_now <- figure_editor_module(current_owner)
       live_state <- tryCatch({
         if (!is.null(mod_now) && is.function(mod_now$state)) isolate(mod_now$state()) else NULL
@@ -96,12 +126,9 @@
       old <- states[[id]]
       if (!is.list(old)) next
 
-      # Figure has no independent semantic-binding editor. Resolve only the
-      # binding metadata from the current source Graph when Shared Style is
-      # explicitly applied. Data, Mapping, statistics and Figure geometry stay
-      # snapshot-owned and are never reloaded here. This also supports the
-      # normal workflow where a Figure snapshot is imported before bindings are
-      # created in Step 3.
+      # Figure has no independent semantic-binding editor. Resolve binding
+      # metadata from the current source Graph while keeping all other Figure
+      # GraphState fields snapshot-owned.
       source_state <- if (cache_has(id)) cache_get(id) else NULL
       source_binding <- if (is.list(source_state)) {
         source_state$style$shared_library %||% NULL
@@ -124,41 +151,60 @@
     changed <- unique(changed)
     render_changed <- unique(render_changed)
     figure_edit_states(states)
-    if (!length(render_changed)) return(character(0))
-
-    # If the currently mounted Figure editor is visually affected, process it
-    # first so a subsequent owner switch cannot preserve an obsolete state.
-    if (nzchar(current_owner) && current_owner %in% render_changed) {
-      render_changed <- c(current_owner, setdiff(render_changed, current_owner))
-    }
 
     for (id in render_changed) {
-      bump_figure_snapshot_revision(id)
-      bump_figure_panel_display_revision(id)
+      request_figure_source_snapshot(
+        id,
+        reason = paste0(reason, "-direct-state"),
+        import_editor_state = FALSE,
+        state_override = states[[id]],
+        target_type = "main"
+      )
     }
 
-    # Reuse the one existing Figure Editor sequentially to rebuild snapshots.
-    # Queue state is event-driven by the editor READY transition below; no
-    # polling/timers and no per-Graph Figure editor instances are introduced.
-    if (!isTRUE(isolate(shared_style_figure_apply_active()))) {
-      shared_style_figure_restore_owner(current_owner)
+    # If the user is actively looking at the affected Figure Editor, replay that
+    # one owner from the updated Figure-owned state. This is presentation sync;
+    # snapshot generation above remains direct-state and editor-independent.
+    if (isTRUE(current_visible) && current_owner %in% render_changed) {
+      ensure_figure_editor(
+        current_owner,
+        force_reload = TRUE,
+        preserve_current = FALSE,
+        show_when_ready = TRUE,
+        state_override = states[[current_owner]]
+      )
+      diag_log("SHARED-STYLE-FIGURE", "visible editor replayed; snapshots queued direct-state", id = current_owner)
     }
-    q <- unique(c(isolate(shared_style_figure_queue()), render_changed))
-    shared_style_figure_queue(q)
-    shared_style_figure_apply_active(TRUE)
-    diag_log("SHARED-STYLE-FIGURE", paste0("queued={", paste(q, collapse=","), "} reason=", reason))
 
-    if (!isTRUE(isolate(figure_single_editor_loading())) && length(q)) {
-      # Block the READY snapshot observer until the queued canonical state has
-      # actually been force-loaded into the reusable Figure editor.
-      figure_single_editor_mode("QUEUED")
-      session$onFlushed(function() {
-        q_now <- isolate(shared_style_figure_queue())
-        if (length(q_now)) ensure_figure_editor(q_now[[1]], force_reload = TRUE, preserve_current = FALSE)
-      }, once = TRUE)
+    if (length(render_changed)) {
+      diag_log(
+        "SHARED-STYLE-FIGURE",
+        paste0("direct-state queued={", paste(render_changed, collapse=","), "} reason=", reason)
+      )
     }
-    unique(render_changed)
+    render_changed
   }
+
+  observe({
+    pending <- shared_style_graph_replay_pending()
+    if (!is.list(pending) || isTRUE(graph_single_editor_loading())) return()
+    id <- as.character(pending$id %||% "")[1]
+    reason <- as.character(pending$reason %||% "shared-style-library")[1]
+    shared_style_graph_replay_pending(NULL)
+    if (!nzchar(id) || !identical(id, graph_single_owner()) || !cache_has(id)) return()
+
+    graph_single_mark_stale(id, reason = reason)
+    workspace_visible <- identical(
+      as.character(isolate(input$workspace_main_tab) %||% "")[1],
+      "graph_workspace"
+    )
+    if (isTRUE(workspace_visible)) {
+      request_graph_editor(id, source = reason, new_graph = FALSE)
+      diag_log("SHARED-STYLE-GRAPH", "deferred visible owner replay started", id = id)
+    } else {
+      diag_log("SHARED-STYLE-GRAPH", "deferred owner marked stale; waits for Graph workspace resume", id = id)
+    }
+  })
 
   shared_style_commit_library <- function(library_now, source = "library-ui", skip_graph_id = "") {
     new_lib <- shared_style_normalize_library(library_now)
@@ -179,7 +225,7 @@
 
     changed_figure <- character(0)
     if (isTRUE(isolate(figure_shared_style_sync()))) {
-      changed_figure <- shared_style_queue_figure_states(new_lib, reason = paste0("auto:", source))
+      changed_figure <- shared_style_apply_figure_states(new_lib, reason = paste0("auto:", source))
     }
 
     diag_log(
@@ -385,78 +431,8 @@
   }, ignoreInit = TRUE)
 
   observeEvent(input$figure_shared_style_apply, {
-    changed <- shared_style_queue_figure_states(isolate(shared_style_library()), reason = "manual-apply")
+    changed <- shared_style_apply_figure_states(isolate(shared_style_library()), reason = "manual-apply")
     if (length(changed)) showNotification(paste0("Shared LibraryをFigureの ", length(changed), " Graphへ反映します。"), type="message")
     else showNotification("Figure側に反映が必要なShared Style変更はありません。", type="message", duration=2)
   }, ignoreInit = TRUE)
 
-  # If the existing bounded Figure-editor settle transaction itself fails,
-  # abort the Shared Style batch rather than leaving a hidden background queue
-  # active forever.  The Figure editor keeps its existing HYDRATING fail-safe
-  # semantics; the user can explicitly retry that Panel.
-  observe({
-    if (!isTRUE(shared_style_figure_apply_active())) return()
-    if (!isTRUE(figure_single_editor_loading())) return()
-    st <- figure_single_editor_settle()
-    attempts <- as.integer(st$attempts %||% 0L)
-    stable <- as.integer(st$stable %||% 0L)
-    if (attempts < 5L || stable >= 2L) return()
-
-    owner <- as.character(figure_editing_graph() %||% "")[1]
-    shared_style_figure_queue(character(0))
-    shared_style_figure_apply_active(FALSE)
-    shared_style_figure_restore_owner("")
-    diag_log("SHARED-STYLE-FIGURE", paste0("batch aborted: Figure editor settle failed attempts=", attempts), id = if (nzchar(owner)) owner else NULL)
-    showNotification(
-      "Shared StyleのFigure反映を中止しました。Figure Graph Editorの復元が安定しなかったため、対象Panelを再度編集してから再実行してください。",
-      type = "warning", duration = 5
-    )
-  }, priority = -10)
-
-  # Event-driven sequential snapshot rebuild using the one Figure Editor.
-  observe({
-    if (!isTRUE(shared_style_figure_apply_active())) return()
-    q <- shared_style_figure_queue()
-    if (!length(q)) return()
-    if (isTRUE(figure_single_editor_loading())) return()
-    if (!identical(as.character(figure_single_editor_mode() %||% ""), "READY")) return()
-    owner <- as.character(figure_editing_graph() %||% "")[1]
-    if (!nzchar(owner) || !identical(owner, q[[1]])) return()
-
-    st <- isolate(figure_edit_states())[[owner]]
-    mod <- figure_editor_module(owner)
-    editor_state <- tryCatch({
-      if (!is.null(mod) && is.function(mod$state)) isolate(mod$state()) else NULL
-    }, error = function(e) NULL)
-
-    # Library may change again while this Panel is hydrating. Never snapshot an
-    # editor that does not represent the latest queued Figure GraphState.
-    if (is.list(st) && (!is.list(editor_state) || !identical(editor_state, st))) {
-      figure_single_editor_mode("QUEUED")
-      session$onFlushed(function() {
-        ensure_figure_editor(owner, force_reload = TRUE, preserve_current = FALSE)
-      }, once = TRUE)
-      diag_log("SHARED-STYLE-FIGURE", "latest state differs from READY editor; force reload queued", id = owner)
-      return()
-    }
-
-    if (is.list(st)) snapshot_ready_figure_editor(owner, st)
-    q <- q[-1]
-    shared_style_figure_queue(q)
-    diag_log("SHARED-STYLE-FIGURE", paste0("snapshot rebuilt remaining={", paste(q, collapse=","), "}"), id=owner)
-
-    session$onFlushed(function() {
-      q2 <- isolate(shared_style_figure_queue())
-      if (length(q2)) {
-        ensure_figure_editor(q2[[1]], force_reload = TRUE, preserve_current = FALSE)
-        return(invisible(NULL))
-      }
-      restore_owner <- as.character(isolate(shared_style_figure_restore_owner()) %||% "")[1]
-      shared_style_figure_apply_active(FALSE)
-      shared_style_figure_restore_owner("")
-      if (nzchar(restore_owner) && restore_owner %in% names(isolate(figure_edit_states()))) {
-        ensure_figure_editor(restore_owner)
-      }
-      invisible(NULL)
-    }, once = TRUE)
-  }, priority = -20)

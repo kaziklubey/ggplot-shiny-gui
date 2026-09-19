@@ -1,56 +1,3 @@
-  instantiate_graph <- function(id, context = c("display", "export", "materialization"), activate_initial = TRUE) {
-    context <- match.arg(context)
-    meta <- isolate(graph_meta())
-    diag_log("MODULE", paste0("instantiate request context=", context), id = id)
-    if (!id %in% meta$id) {
-      diag_log("MODULE", "instantiate aborted: id not in graph_meta", id = id)
-      return(invisible(FALSE))
-    }
-    if (module_exists(id)) {
-      diag_log("MODULE", "instantiate skipped: already exists", id = id)
-      return(invisible(TRUE))
-    }
-
-    initial_state <- if (cache_has(id)) cache_get(id) else NULL
-    ui_was_mounted <- ui_mounted(id)
-    diag_log(
-      "MODULE",
-      paste0("creating graphServer initial_state=", !is.null(initial_state),
-             " ui_preseeded=", ui_was_mounted && !is.null(initial_state)),
-      id = id
-    )
-
-    # UI may already exist in cache-first mode.  Never create a second copy.
-    ensure_graph_ui(id, visible = FALSE)
-
-    diag_log("INIT-TIMING", "mark=CALLSITE-BEFORE-GRAPHSERVER source=graph", id = id)
-    modules[[id]] <- graph_server_runtime(
-      id, initial_state = initial_state, style_clipboard = style_clipboard, diag_log = diag_log,
-      ui_preseeded = isTRUE(ui_was_mounted && !is.null(initial_state)),
-      controls_only = FALSE,
-      # Per-Graph modules are source materializers only. Canonical GraphState is
-      # owned by the Registry/persistent single Editor, never by this hidden UI.
-      on_state_change = NULL
-    )
-    diag_log("INIT-TIMING", "mark=CALLSITE-AFTER-GRAPHSERVER source=graph", id = id)
-
-    if (!is.null(initial_state) && isTRUE(activate_initial)) {
-      mod <- modules[[id]]
-      if (!is.null(mod) && is.function(mod$activate)) {
-        diag_log("RESTORE", "activate() after instantiate", id = id)
-        mod$activate()
-      }
-    }
-
-    diag_log("MODULE", "instantiate complete", id = id)
-    invisible(TRUE)
-  }
-
-  graph_is_ready <- function(id) {
-    mod <- modules[[id]]
-    !is.null(mod) && isTRUE(tryCatch(isolate(mod$ready()), error = function(e) FALSE))
-  }
-
   # ------------------------------------------------------------------
   # v3.61.0 Graph single editor
   # ------------------------------------------------------------------
@@ -323,7 +270,6 @@
     diag_log("GRAPH-SINGLE-EDITOR", "instantiate fixed module")
     mod <- graph_server_runtime(
       graph_single_editor_id,
-      initial_state = NULL,
       style_clipboard = style_clipboard,
       diag_log = function(tag, ..., id = NULL) {
         owner <- graph_single_owner()

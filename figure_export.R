@@ -336,6 +336,20 @@ figure_draw_detached_legend_plot <- function(p_raw, ov, ex, rect, canvas_w, canv
   list(sp=sp, legend_job=job)
 }
 
+figure_export_inset_record <- function(id, inset_snapshots = list(), persisted_previews = list()) {
+  id <- as.character(id %||% "")[1]
+  if (!nzchar(id)) return(list())
+  rec <- inset_snapshots[[id]]
+  if (is.list(rec) && (isTRUE(valid_graph_preview_record(rec)) || !is.null(rec$figure_plot))) return(rec)
+
+  # Legacy Project compatibility mirrors the Viewer: old packs may have only
+  # a persisted Figure preview and no dedicated Inset snapshot. New sessions
+  # create a dedicated Inset snapshot on first source selection.
+  legacy <- persisted_previews[[id]]
+  if (is.list(legacy) && nzchar(as.character(legacy$svg %||% "")[1])) return(legacy)
+  list()
+}
+
 figure_draw_to_device <- function(layout, canvas_w, canvas_h, overrides, plots, exports,
                                   gap_x = 12, gap_y = 12, rects = NULL,
                                   external_assets = list(), inset_snapshots = list(),
@@ -451,18 +465,34 @@ figure_draw_to_device <- function(layout, canvas_w, canvas_h, overrides, plots, 
     inset_pos <- figure_layer_inset_canvas_position(rect, sp, ov)
     if (!is.null(inset_pos)) {
       iid <- as.character(inset$source_id %||% "")[1]
-      inset_rec <- inset_snapshots[[iid]] %||% list()
-      ip <- inset_rec$figure_plot %||% plots[[iid]]
+      inset_rec <- figure_export_inset_record(iid, inset_snapshots, persisted_previews)
+      ibox <- figure_inset_export_content_box(inset_pos, inset)
+      ip <- inset_rec$figure_plot
       iex <- inset_rec$figure_export %||% exports[[iid]] %||% list(
         plot_width_px = 600, plot_height_px = 600,
         panel_width_px = 600, panel_height_px = 600, reference_res = 120
       )
-      if (nzchar(iid) && !is.null(ip)) {
-        # Inset content is the Graph-tab snapshot, not the source Graph's own
-        # Figure override.  Position/size belong to the owner Panel only.
+      if (nzchar(iid) && !is.null(ibox) && nzchar(inset_rec$svg %||% "")) {
+        # WYSIWYG contract: Preview displays the frozen Figure-owned Inset SVG,
+        # so export must consume that same SVG rather than rebuilding ggplot at
+        # a new device size (which changes margins, axes and typography).
+        ig <- figure_svg_snapshot_grob(inset_rec$svg, ibox$width, ibox$height)
+        if (!is.null(ig)) {
+          inset_jobs[[length(inset_jobs)+1L]] <- list(
+            kind = "snapshot", grob = ig,
+            x = inset_pos$x, y = inset_pos$y,
+            width = inset_pos$width, height = inset_pos$height,
+            content_x = ibox$x, content_y = ibox$y,
+            content_width = ibox$width, content_height = ibox$height,
+            border = isTRUE(inset$border), border_width = ibox$border_width
+          )
+        }
+      } else if (nzchar(iid) && !is.null(ibox) && !is.null(ip)) {
+        # Legacy/in-memory compatibility only: modern Inset snapshots always
+        # carry SVG. Keep a plot fallback for unusual pre-snapshot records.
         iov <- figure_default_override(iid)
         fake_rect <- list(
-          x = 0, y = 0, width = inset_pos$width, height = inset_pos$height,
+          x = 0, y = 0, width = ibox$width, height = ibox$height,
           graph_width = NA_real_, graph_height = NA_real_, auto_fit = FALSE
         )
         prepared_inset <- tryCatch(figure_export_plot_spec(ip, iov, iex, fake_rect), error = function(e) NULL)
@@ -472,19 +502,9 @@ figure_draw_to_device <- function(layout, canvas_w, canvas_h, overrides, plots, 
             kind = "plot", grob = ggplot2::ggplotGrob(isp$plot),
             x = inset_pos$x, y = inset_pos$y,
             width = inset_pos$width, height = inset_pos$height,
-            border = isTRUE(inset$border), border_width = inset$border_width %||% 1
-          )
-        }
-      } else if (nzchar(iid) && nzchar(inset_rec$svg %||% "")) {
-        # Explicit Inset snapshots are also Figure-owned. After Project restore
-        # their frozen SVG may exist before a renderable plot object does.
-        ig <- figure_svg_snapshot_grob(inset_rec$svg, inset_pos$width, inset_pos$height)
-        if (!is.null(ig)) {
-          inset_jobs[[length(inset_jobs)+1L]] <- list(
-            kind = "plot", grob = ig,
-            x = inset_pos$x, y = inset_pos$y,
-            width = inset_pos$width, height = inset_pos$height,
-            border = isTRUE(inset$border), border_width = inset$border_width %||% 1
+            content_x = ibox$x, content_y = ibox$y,
+            content_width = ibox$width, content_height = ibox$height,
+            border = isTRUE(inset$border), border_width = ibox$border_width
           )
         }
       } else if (nzchar(iid) && iid %in% names(external_assets)) {
@@ -513,14 +533,36 @@ figure_draw_to_device <- function(layout, canvas_w, canvas_h, overrides, plots, 
       width=job$width/canvas_w, height=job$height/canvas_h,
       just=c("center","center"), clip="on"
     ))
+
+    # Match the Viewer box model: white background belongs to the outer Inset
+    # box, content is confined inside the border, and the border is painted last.
     if (isTRUE(job$border)) {
-      grid::grid.rect(gp = grid::gpar(fill = "white", col = "grey30", lwd = job$border_width %||% 1))
+      grid::grid.rect(gp = grid::gpar(fill = "white", col = NA))
     }
-    if (identical(job$kind %||% "", "plot") && !is.null(job$grob)) {
+
+    if ((job$kind %||% "") %in% c("snapshot", "plot") && !is.null(job$grob)) {
+      cw <- suppressWarnings(as.numeric(job$content_width %||% job$width)[1])
+      ch <- suppressWarnings(as.numeric(job$content_height %||% job$height)[1])
+      cx <- suppressWarnings(as.numeric(job$content_x %||% job$x)[1])
+      cy <- suppressWarnings(as.numeric(job$content_y %||% job$y)[1])
+      if (!all(is.finite(c(cw, ch, cx, cy))) || cw <= 0 || ch <= 0) {
+        cw <- job$width; ch <- job$height; cx <- job$x; cy <- job$y
+      }
+      grid::pushViewport(grid::viewport(
+        x=(cx - job$x + cw/2)/job$width,
+        y=1-(cy - job$y + ch/2)/job$height,
+        width=cw/job$width, height=ch/job$height,
+        just=c("center","center"), clip="on"
+      ))
       grid::grid.draw(job$grob)
+      grid::popViewport()
     } else if (identical(job$kind %||% "", "asset-placeholder")) {
       grid::grid.rect(gp = grid::gpar(fill = NA, col = "grey70", lty = 2))
       grid::grid.text(paste0("Asset: ", job$name %||% ""), gp = grid::gpar(fontsize = 8))
+    }
+
+    if (isTRUE(job$border)) {
+      grid::grid.rect(gp = grid::gpar(fill = NA, col = "grey30", lwd = job$border_width %||% 1))
     }
     grid::popViewport()
   }
@@ -628,21 +670,75 @@ figure_svg_fragment_parts <- function(svg_text, prefix = "fig") {
 }
 
 figure_svg_place_fragment <- function(svg_text, x, y, width, height, prefix,
-                                      clip_id = NULL, opacity = 1) {
+                                      clip_id = NULL, opacity = 1,
+                                      fit = c("stretch", "meet")) {
   z <- figure_svg_fragment_parts(svg_text, prefix = prefix)
   if (is.null(z)) return(NULL)
+  fit <- match.arg(fit)
   vb <- z$viewbox
-  sx <- width / vb[3]; sy <- height / vb[4]
-  tr <- sprintf(
-    "translate(%.6f %.6f) scale(%.9f %.9f) translate(%.6f %.6f)",
-    x, y, sx, sy, -vb[1], -vb[2]
-  )
+
+  if (identical(fit, "meet")) {
+    # Match the Viewer contract (`preserveAspectRatio="xMidYMid meet"`): keep
+    # the snapshot aspect ratio and centre it inside the requested box.
+    sc <- min(width / vb[3], height / vb[4])
+    draw_w <- vb[3] * sc
+    draw_h <- vb[4] * sc
+    tx <- x + (width - draw_w) / 2
+    ty <- y + (height - draw_h) / 2
+    tr <- sprintf(
+      "translate(%.6f %.6f) scale(%.9f %.9f) translate(%.6f %.6f)",
+      tx, ty, sc, sc, -vb[1], -vb[2]
+    )
+  } else {
+    sx <- width / vb[3]; sy <- height / vb[4]
+    tr <- sprintf(
+      "translate(%.6f %.6f) scale(%.9f %.9f) translate(%.6f %.6f)",
+      x, y, sx, sy, -vb[1], -vb[2]
+    )
+  }
+
   attrs <- c(sprintf('transform="%s"', tr))
-  if (!is.null(clip_id) && nzchar(clip_id)) attrs <- c(attrs, sprintf('clip-path="url(#%s)"', clip_id))
   if (is.finite(opacity) && opacity < 1) attrs <- c(attrs, sprintf('opacity="%.6f"', opacity))
-  out <- paste0("<g ", paste(attrs, collapse=" "), ">", z$inner, "</g>")
+  fragment <- paste0("<g ", paste(attrs, collapse=" "), ">", z$inner, "</g>")
+
+  # clipPathUnits=userSpaceOnUse is expressed in the root Figure coordinate
+  # system. Apply that clip outside the translated/scaled fragment so the clip
+  # rectangle is not transformed a second time.
+  out <- if (!is.null(clip_id) && nzchar(clip_id)) {
+    paste0('<g clip-path="url(#', clip_id, ')">', fragment, '</g>')
+  } else {
+    fragment
+  }
   attr(out, "textlength_removed") <- as.integer(z$textlength_removed %||% 0L)
   out
+}
+
+figure_inset_export_content_box <- function(inset_pos, inset) {
+  if (!is.list(inset_pos)) return(NULL)
+  x <- suppressWarnings(as.numeric(inset_pos$x %||% NA_real_)[1])
+  y <- suppressWarnings(as.numeric(inset_pos$y %||% NA_real_)[1])
+  w <- suppressWarnings(as.numeric(inset_pos$width %||% NA_real_)[1])
+  h <- suppressWarnings(as.numeric(inset_pos$height %||% NA_real_)[1])
+  if (any(!is.finite(c(x, y, w, h))) || w <= 0 || h <= 0) return(NULL)
+
+  bw <- 0
+  if (isTRUE((inset %||% list())$border)) {
+    bw <- suppressWarnings(as.numeric((inset %||% list())$border_width %||% 1)[1])
+    if (!is.finite(bw) || bw < 0) bw <- 0
+    bw <- min(bw, max(0, min(w, h) / 2 - 0.5))
+  }
+
+  list(
+    x = x + bw,
+    y = y + bw,
+    width = max(1, w - 2 * bw),
+    height = max(1, h - 2 * bw),
+    border_width = bw,
+    outer_x = x,
+    outer_y = y,
+    outer_width = w,
+    outer_height = h
+  )
 }
 
 figure_write_svg_vector <- function(path, layout, canvas_w, canvas_h, overrides, plots, exports,
@@ -729,26 +825,48 @@ figure_write_svg_vector <- function(path, layout, canvas_w, canvas_h, overrides,
     inset_pos <- figure_layer_inset_canvas_position(rect, sp, ov)
     if (!is.null(inset_pos)) {
       iid <- as.character(inset$source_id %||% "")[1]
-      inset_rec <- inset_snapshots[[iid]] %||% list()
-      ip <- inset_rec$figure_plot %||% plots[[iid]]
+      inset_rec <- figure_export_inset_record(iid, inset_snapshots, persisted_previews)
+      ibox <- figure_inset_export_content_box(inset_pos, inset)
+      ip <- inset_rec$figure_plot
       iex <- inset_rec$figure_export %||% exports[[iid]] %||% list(plot_width_px=600,plot_height_px=600,panel_width_px=600,panel_height_px=600,reference_res=reference_res)
       isvg <- ""
-      if (nzchar(iid) && !is.null(ip)) {
+
+      # Viewer and vector export must consume the exact same frozen Inset SVG.
+      # Re-rendering `figure_plot` at the small Inset box changes ggplot layout,
+      # margins and text metrics and therefore cannot be WYSIWYG.
+      if (nzchar(iid) && nzchar(inset_rec$svg %||% "")) {
+        isvg <- as.character(inset_rec$svg)[1]
+      } else if (nzchar(iid) && !is.null(ibox) && !is.null(ip)) {
+        # Compatibility fallback for unusual legacy/in-memory records lacking SVG.
         iov <- figure_default_override(iid)
-        fake_rect <- list(x=0,y=0,width=inset_pos$width,height=inset_pos$height,graph_width=NA_real_,graph_height=NA_real_,auto_fit=FALSE)
+        fake_rect <- list(x=0,y=0,width=ibox$width,height=ibox$height,graph_width=NA_real_,graph_height=NA_real_,auto_fit=FALSE)
         pi <- tryCatch(figure_export_plot_spec(ip,iov,iex,fake_rect), error=function(e) NULL)
         isp <- if (is.list(pi)) pi$sp else NULL
-        if (!is.null(isp) && !is.null(isp$plot)) isvg <- figure_plot_svg_text(isp$plot, inset_pos$width, inset_pos$height, iex$reference_res %||% reference_res) %||% ""
-      } else if (nzchar(iid) && nzchar(inset_rec$svg %||% "")) {
-        isvg <- as.character(inset_rec$svg)[1]
+        if (!is.null(isp) && !is.null(isp$plot)) isvg <- figure_plot_svg_text(isp$plot, ibox$width, ibox$height, iex$reference_res %||% reference_res) %||% ""
       }
-      if (nzchar(isvg)) {
-        iclip <- make_clip(inset_pos$x, inset_pos$y, inset_pos$width, inset_pos$height)
-        if (isTRUE(inset$border)) inset_jobs <- c(inset_jobs, sprintf('<rect x="%.6f" y="%.6f" width="%.6f" height="%.6f" fill="#FFFFFF" stroke="#4D4D4D" stroke-width="%.6f"/>', inset_pos$x,inset_pos$y,inset_pos$width,inset_pos$height, as.numeric(inset$border_width %||% 1)))
-        z <- figure_svg_place_fragment(isvg, inset_pos$x, inset_pos$y, inset_pos$width, inset_pos$height, next_prefix("inset"), clip_id=iclip)
+
+      if (nzchar(isvg) && !is.null(ibox)) {
+        if (isTRUE(inset$border)) {
+          inset_jobs <- c(inset_jobs, sprintf(
+            '<rect x="%.6f" y="%.6f" width="%.6f" height="%.6f" fill="#FFFFFF" stroke="none"/>',
+            inset_pos$x, inset_pos$y, inset_pos$width, inset_pos$height
+          ))
+        }
+        iclip <- make_clip(ibox$x, ibox$y, ibox$width, ibox$height)
+        z <- figure_svg_place_fragment(
+          isvg, ibox$x, ibox$y, ibox$width, ibox$height,
+          next_prefix("inset"), clip_id=iclip, fit="meet"
+        )
         if (!is.null(z)) {
           textlength_removed_n <- textlength_removed_n + as.integer(attr(z, "textlength_removed") %||% 0L)
           inset_jobs <- c(inset_jobs,z)
+        }
+        if (isTRUE(inset$border)) {
+          inset_jobs <- c(inset_jobs, sprintf(
+            '<rect x="%.6f" y="%.6f" width="%.6f" height="%.6f" fill="none" stroke="#4D4D4D" stroke-width="%.6f"/>',
+            inset_pos$x, inset_pos$y, inset_pos$width, inset_pos$height,
+            ibox$border_width
+          ))
         }
       }
     }

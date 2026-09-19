@@ -7,23 +7,9 @@
   # ============================================================
   has_selection <- graph_has_selection
 
-  # Shinyの復元途中ではinputがNULL / numeric(0)になることがある。
-  # Plot size系では必ず長さ1のfinite numericへ正規化してから使う。
+  # Plot size inputs may briefly be NULL / numeric(0) while browser values are
+  # replayed. Always normalize to one finite numeric before use.
   safe_num1 <- graph_safe_num1
-
-  # Project復元ではPlotサイズを他のAppearanceより先に確定する。
-  # initial_stateはjsonlite由来のlist/atomicどちらでも来るためscalar化する。
-  restore_size_value <- graph_restore_size_value
-
-  saved_plot_size_from_state <- graph_saved_plot_size_from_state
-
-  initial_plot_size_seed <- saved_plot_size_from_state(initial_state)
-  plot_width_restore_seed <- reactiveVal(
-    if (is.null(initial_state)) NULL else initial_plot_size_seed$width
-  )
-  plot_height_restore_seed <- reactiveVal(
-    if (is.null(initial_state)) NULL else initial_plot_size_seed$height
-  )
 
   parse_order_text <- graph_parse_order_text
 

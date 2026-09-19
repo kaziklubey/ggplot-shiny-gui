@@ -45,22 +45,12 @@
   }, ignoreInit = FALSE)
 
   effective_plot_width_px <- reactive({
-    seed <- plot_width_restore_seed()
-    if (!is.null(seed) && length(seed) && is.finite(seed[1])) {
-      return(max(250, min(2000, as.numeric(seed[1]))))
-    }
-
     z <- safe_num1(input$plot_width_px_direct, NA_real_)
     if (!is.finite(z)) z <- safe_num1(input$plot_width_px, 600)
     max(250, min(2000, z))
   })
 
   effective_plot_height_px <- reactive({
-    seed <- plot_height_restore_seed()
-    if (!is.null(seed) && length(seed) && is.finite(seed[1])) {
-      return(max(180, min(1400, as.numeric(seed[1]))))
-    }
-
     z <- safe_num1(input$plot_height_px_direct, NA_real_)
     if (!is.finite(z)) z <- safe_num1(input$plot_height_px, 600)
     max(180, min(1400, z))
@@ -92,31 +82,15 @@
     )
   })
 
-  # Browser側の直接数値inputが保存値へ追いついたらseedを解除する。
-  # それまではhidden Graphのpanel/device寸法を保存値で固定する。
-  observe({
-    sw <- plot_width_restore_seed()
-    if (!is.null(sw) && length(sw) && is.finite(sw[1])) {
-      cur <- safe_num1(input$plot_width_px_direct, NA_real_)
-      if (is.finite(cur) && abs(cur - as.numeric(sw[1])) <= 0.5) {
-        plot_width_restore_seed(NULL)
-      }
-    }
-
-    sh <- plot_height_restore_seed()
-    if (!is.null(sh) && length(sh) && is.finite(sh[1])) {
-      cur <- safe_num1(input$plot_height_px_direct, NA_real_)
-      if (is.finite(cur) && abs(cur - as.numeric(sh[1])) <= 0.5) {
-        plot_height_restore_seed(NULL)
-      }
-    }
-  })
-
   output$plot_container <- renderUI({
     # IMPORTANT:
     # Plot width/height changes must NOT recreate this DOM.
     # Rebuilding plot_follow while sticky caused a temporary vertical jump.
-    # Dimensions are applied in-place by JavaScript instead.
+    # Dimensions are applied in-place by JavaScript instead. Seed the initial
+    # DOM once from the currently bound values without taking a reactive
+    # dependency; subsequent size changes are handled in-place by JS.
+    initial_plot_width_px <- isolate(effective_plot_width_px())
+    initial_plot_height_px <- isolate(effective_plot_height_px())
     div(
       id = session$ns("plot_anchor"),
       div(
@@ -144,12 +118,12 @@
                 class = "plot-panel",
                 style = sprintf(
                   "width:%dpx; max-width:none; margin-left:auto; margin-right:auto;",
-                  as.integer(round(initial_plot_size_seed$width + 26))
+                  as.integer(round(initial_plot_width_px + 26))
                 ),
                 plotOutput(
                   "plot",
-                  width = paste0(as.integer(round(initial_plot_size_seed$width)), "px"),
-                  height = paste0(as.integer(round(initial_plot_size_seed$height)), "px")
+                  width = paste0(as.integer(round(initial_plot_width_px)), "px"),
+                  height = paste0(as.integer(round(initial_plot_height_px)), "px")
                 )
               )
             )
@@ -185,9 +159,8 @@
   # Plot DOMは固定したまま、native device寸法をbrowserへ通知する。
   # v3.58: Graph PreviewのAuto/manual表示倍率はbrowser側だけで適用し、
   # renderPlot/export device寸法そのものはplot_total_dimensions()のnative値を保つ。
-  # The singleton Preview live subtree is recreated on READY remount.
-  # The normal reactive dimension message may have fired before that new DOM
-  # existed, so keep one reusable sender and replay it after remount ACK.
+  # The singleton Preview uses one persistent live subtree. Keep dimension
+  # publication separate from DOM ownership so Graph replay only changes values.
   send_plot_dimensions <- function(dims, reason = "reactive") {
     pw <- suppressWarnings(as.numeric(dims$width %||% NA_real_)[1])
     ph <- suppressWarnings(as.numeric(dims$height %||% NA_real_)[1])
@@ -218,7 +191,6 @@
     # Editor state must not resize that target while HYDRATING.  The gate-open
     # transition at READY re-runs this observer and publishes one final size.
     shiny::req(isTRUE(render_gate()))
-    shiny::req(isTRUE(initial_restore_done()))
     diag("PLOT-CONSUMER", "request=dimensions")
     dims <- plot_total_dimensions()
     send_plot_dimensions(dims, reason = "reactive")
@@ -253,27 +225,16 @@
 
   output$plot <- renderPlot({
     # Keep renderPlot itself behind the same transaction gate as make_plot().
-    # This blocks remount/dimension/input invalidations from drawing an
-    # intermediate Graph while a persistent-Editor switch is in flight.
+    # This blocks dimension/input invalidations from drawing an intermediate
+    # Graph while a persistent-Editor value replay is in flight.
     shiny::req(isTRUE(render_gate()), cancelOutput = TRUE)
     diag("PLOT-CONSUMER", "request=live-render")
     diag("DRAW", "output$plot renderPlot entered")
-    # A persistent graphServer may outlive its browser DOM.  Depend explicitly
-    # on the acknowledged remount epoch so a newly materialized DOM always gets
-    # one fresh live render even when all user inputs are unchanged.
-    remount_render_epoch()
-    # Project/duplicate Graphは、全設定の復元完了前にはPlotを描かない。
-    # cancelOutput=TRUEにより、途中のdefault色・default Mappingの一瞬の描画を禁止。
-    shiny::req(
-      isTRUE(initial_restore_done()) &&
-        !isTRUE(restoring_style_state()) &&
-        project_restore_stage() == 0,
-      cancelOutput = TRUE
-    )
+    # Value replay is already blocked by render_gate. Style application keeps its
+    # own short-lived guard so intermediate style controls never draw.
+    shiny::req(!isTRUE(restoring_style_state()), cancelOutput = TRUE)
 
     # non-Plotタブ表示中はhidden Plotを更新しない。
-    # graph_main_tabはmodule生成時にPlotが既定なので、Projectのhidden restore時に
-    # 必要な最初の描画はこれまで通り可能。
     # 実際のPNG deviceは下の固定1000×600で生成し、タブ切替時の一時的な
     # client幅0/極小値による "figure margins too large" を回避する。
     shiny::req(
@@ -288,7 +249,6 @@
     # can disappear between make_plot() completion and renderPlot publication.
     last_render_state(isolate(plot_last_built_render_state()))
     plot_render_revision(as.integer(isolate(plot_render_revision()) %||% 0L) + 1L)
-    plot_drawn(TRUE)
 
     # v3.51: do not manipulate cached/live DOM here.  The browser switches the
     # stable preview stage only after the plot <img> has actually loaded.

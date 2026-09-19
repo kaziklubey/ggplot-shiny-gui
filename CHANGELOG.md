@@ -1,3 +1,57 @@
+## v3.73.2.37-phase2.03-cleanup1 — dead Graph restore/remount cleanup
+
+- persistent single Editorの現行GraphState replayだけを残し、callerを失ったstaged Project restore / fixed-shell sync / canonical retry-reconcile / READY DOM remount APIとstate machineを削除。
+- `graph_restore_runtime.R`を削除し、persistent Editorのlocal guards/seedsを`graph_editor_primitives_runtime.R`、実際に使用中のGraph style import/exportを`graph_style_persistence_runtime.R`へ分離。
+- browser側の`mapping-restore-binding-check/cancel`と`graph-ui-remount-prepare`を削除。Statistics固有のbrowser-turn barrierは`stats-restore-browser-barrier`へ改名してGraph reconcile経路と分離。
+- Plot-size restore seed、remount render epoch、legacy Graph-level project upload/download、restore timing/binding diagnosticsを削除。通常Graphはcanonical GraphState -> one value replay -> one completion barrier -> accepted renderだけ。
+- Figure DIRECT-STATE、Inset WYSIWYG、Settings Manager、Shared Style、bulk ExportのPhase 2.02挙動には変更なし。
+
+## v3.73.2.36-phase2.1.1-inset-wysiwyg1 — Inset WYSIWYG export follow-up
+
+- Figure Viewerが表示しているFigure-owned Inset snapshot SVGを、SVG/PNG/PDF exportでも最優先でそのまま使用。`figure_plot`をInsetサイズで再レンダリングして軸・余白・文字サイズが変わる経路をlegacy fallbackへ降格。
+- SVG vector compositorのInset配置をViewerの`preserveAspectRatio="xMidYMid meet"`相当に変更し、縦横比を維持して中央配置。
+- Inset枠ありの場合はViewerのborder-boxに合わせ、contentをborder内側へ配置。背景→snapshot→borderの順で描画し、枠が内容に覆われる差も除去。
+- Main Graph、Figure Editor、DIRECT-STATE snapshot ownership、hidden materialization撤去には変更なし。
+
+## v3.73.2.36-phase2.1-inset-snapshot1 — Inset Viewer/Export follow-up
+
+- Insetを有効化してinternal Graph sourceをユーザーが初回選択した時、専用snapshotが無ければcanonical GraphStateからDIRECT-STATE Inset snapshotを1回生成。以後のGraph変更は自動追従せず、従来どおり「InsetをGraphから更新」で明示更新。
+- Figure Viewer / raster export / vector exportのInset source解決をFigure-owned Inset snapshot中心に統一。新規sessionではlive Graph plotへの独自fallbackを廃止し、旧Project互換のみpersisted Figure preview fallbackを維持。
+- SVG vector compositorのroot-canvas clipPathをfragment transformの外側へ移動。Inset/Panel cropでclip座標が二重変換され、内容が消える経路を修正。
+- hidden Graph materialization、Figure Editor replay、通常Graph persistent single editorには変更なし。
+
+## v3.73.2.36-phase2-direct-state1 — Phase 2 candidate
+
+- B-2: Export / Figure / Shared Styleからhidden per-Graph materializationを撤去。`server_graph_materialization_runtime.R`、hidden `graphUI()` / `graphServer()` source lifecycle、browser drain handlerを削除。
+- Exportはcanonical `GraphState`から`graph_state_export_snapshot()`で直接plot/export metadataを生成。現在表示中Graphだけはstable時に1回canonical commitしてから値をfreezeする。
+- Figureの新規割当、選択Panel再読込、Inset更新、一括読込、missing snapshot bootstrapをcanonical/Figure-owned `GraphState` → direct-state snapshotへ統一。READY Graph専用module fast pathを廃止。
+- B-3: Shared StyleのFigure反映はFigure-owned stateを更新後、`request_figure_source_snapshot(..., state_override=..., import_editor_state=FALSE)`で直接再生成。snapshot生成目的のFigure Editor sequential queue/retryを削除。
+- Shared StyleのGraph反映ではdormant Graphをcanonical state-onlyのまま保持し、現在visibleなpersistent Graph Editorだけ必要時に通常replayする。
+- Project restore/deleteから旧hidden module/materialization teardown/progress経路を削除。通常Graph persistent single editorとPhase 1.2 Figure replay ownershipは維持。
+- 新しいblocking / sleep / polling / retry / semantic browser compareは追加していない。
+
+## v3.73.2.35-release-stabilization3 — Phase 1.2 candidate
+
+- B-4 follow-up: controls-only Figure Editorでは `accepted-canonical` の自動render releaseを行わず、既存のbrowser replay completion barrier後の `figure-replay-ready` 明示releaseだけにownershipを一本化。replay途中に旧ownerのbrowser inputで1回描画される経路を除去。
+- 新しいlock / busy wait / retry / reconcile / semantic browser compareは追加しない。通常Graphのpersistent render gateとlive-edit経路は変更しない。
+- Phase 2のhidden materialization / Shared Style cleanupには未着手。
+
+## v3.73.2.35-release-stabilization2 — Phase 1.1 candidate
+
+- B-4 follow-up: Figure Graph Editorを一度明示的に開いた後は、別のeditable Figure Panel選択時にpersistent Editor ownerも選択先へ切替。閲覧だけのPanel選択は従来どおりEditorを生成・切替しない。
+- B-4 follow-up: Figure Editorのvalue replay完了barrier後、target Figure GraphStateを1回だけsemantic render targetとしてreleaseし、旧owner/途中stateのPlotが残らないようにした。compare/retry/reconcileは追加しない。
+- Phase 2のhidden materialization / Shared Style cleanupには未着手。
+
+## v3.73.2.35-release-stabilization1 — Phase 1 candidate
+
+- A-1: `.ggplotpack` manifest v5に独立した `figure_inset_previews` を追加。Inset SVG/geometryを保存し、source IDを再割当てして復元。Exportでも復元済みInsetをMainより優先。
+- B-1: `valid_graph_preview_record()` を共通helperに定義。SVGと必須geometryを検証。
+- B-4: Graph→Figureのsnapshot生成成功後にeditable stateをcommitし、表示中の同一ownerだけ明示stateでforce replay。
+- B-5: 明示読込ではpersisted Main SVGを無効化し、READY Graphまたは現在のcanonical GraphStateから生成。Insetは独立して保持。
+- B-6: Y目盛計算を共通化し、空範囲と非有限値を処理。目盛生成前に5000件上限を判定。
+- Phase 2のhidden materialization撤去、Shared Style architecture cleanup、dead code整理は対象外。
+- 静的・分離チェック済み。Shiny/ブラウザによる実機確認は未実施。正式Release前の候補版。
+
 ## v3.73.2.34-github-clean1
 
 - GitHub `main` / Release向けに配布ツリーを整理。

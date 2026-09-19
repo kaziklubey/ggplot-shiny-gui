@@ -245,165 +245,10 @@
     }
   })
 
-  # Figure Graph loading is cache-first. A persisted packaged SVG is already a
-  # complete display snapshot, so assigning/reloading that Graph in Figure must
-  # not instantiate graphServer merely to reproduce the same picture.
-  #
-  # Priority:
-  #   1) already-live/ready Graph -> refresh the Figure snapshot from live state
-  #   2) persisted SVG preview   -> reuse it directly, no Graph hydrate
-  #   3) no usable cache         -> direct GraphState calculation
-  #
-  # This preserves the meaning of "Graphを読み込む" after a Graph was edited: a
-  # ready live module still wins over the older packaged preview.
-  snapshot_ready_graph_for_figure <- function(id, strict_validate = FALSE, import_editor_state = FALSE, import_reason = "explicit-source-refresh", reload_editor = TRUE) {
-    mod <- source_graph_module(id)
-    if (is.null(mod) || !isTRUE(tryCatch(isolate(mod$ready()), error = function(e) FALSE))) {
-      return(FALSE)
-    }
+  # Internal Figure sources are regenerated only from canonical GraphState.
+  # The direct-state snapshot service owns Main/Inset vector materialization;
+  # no Graph UI/module is borrowed for Figure rendering.
 
-    comp <- tryCatch({
-      if (is.function(mod$figure_components)) isolate(mod$figure_components()) else NULL
-    }, error = function(e) {
-      diag_log("FIGURE-CACHE", paste0("live components ERROR: ", conditionMessage(e)), id = id)
-      NULL
-    })
-    p <- tryCatch({
-      if (is.list(comp) && !is.null(comp$plot)) comp$plot
-      else if (is.function(mod$figure_plot)) isolate(mod$figure_plot())
-      else isolate(mod$plot())
-    }, error = function(e) {
-      diag_log("FIGURE-CACHE", paste0("live plot ERROR: ", conditionMessage(e)), id = id)
-      NULL
-    })
-    ex <- tryCatch({
-      if (is.list(comp) && is.list(comp$meta)) comp$meta
-      else if (is.function(mod$figure_meta)) isolate(mod$figure_meta())
-      else isolate(mod$export())
-    }, error = function(e) {
-      diag_log("FIGURE-CACHE", paste0("live meta ERROR: ", conditionMessage(e)), id = id)
-      NULL
-    })
-
-    if (is.null(p) || !is.list(ex)) return(FALSE)
-    # GraphState ownership stays canonical. The source module contributes only
-    # the rendered plot/export snapshot; Figure editor state is seeded from the
-    # Registry so an otherwise-current materializer can never reintroduce stale
-    # non-render metadata (for example Statistics recipes or project fields).
-    source_state <- if (cache_has(id)) cache_get(id) else NULL
-    # v3.46: a live Graph becoming READY is not permission to overwrite the
-    # Figure-owned editable GraphState.  Import source state only at an explicit
-    # selected-panel refresh or explicit bulk Figure import boundary.
-    if (isTRUE(import_editor_state) && is.list(source_state)) {
-      seed_figure_editor_from_source(
-        id, source_state, reason = import_reason, reload_editor = reload_editor
-      )
-    } else if (is.list(source_state) && id %in% names(isolate(figure_edit_states()))) {
-      diag_log("FIGURE-SOURCE-SYNC", "ignored automatic graph snapshot; Figure-owned state preserved", id = id)
-    }
-    epw <- suppressWarnings(as.numeric(ex$panel_width_px %||% NA_real_)[1])
-    eph <- suppressWarnings(as.numeric(ex$panel_height_px %||% NA_real_)[1])
-    if (!is.finite(epw) || epw <= 0 || !is.finite(eph) || eph <= 0) return(FALSE)
-    # Strict gtable remeasurement is only required for Figure -> source commit
-    # confirmation. Ordinary Figure loading already has a READY Graph plus valid
-    # export geometry metadata; revalidating every selected Graph synchronously
-    # made the single R thread block for seconds per Graph.
-    if (isTRUE(strict_validate)) {
-      validated <- tryCatch(
-        figure_plot_for_scale(p, figure_default_override(id), ex, 1),
-        error = function(e) {
-          diag_log("FIGURE-CACHE", paste0("commit validation ERROR: ", conditionMessage(e)), id=id)
-          NULL
-        }
-      )
-      if (is.null(validated) || !identical(validated$geometry_source %||% "unknown", "gtable")) return(FALSE)
-    }
-    plots <- isolate(figure_loaded_plots())
-    exports <- isolate(figure_loaded_exports())
-    assets <- isolate(figure_loaded_assets())
-    plots[[id]] <- p
-    exports[[id]] <- ex
-    assets[[id]] <- figure_make_internal_asset(id, comp = comp, plot = p, meta = ex)
-    figure_loaded_plots(plots)
-    figure_loaded_exports(exports)
-    figure_loaded_assets(assets)
-    refresh_figure_geometry_source_revision(id, source_state)
-    bump_figure_snapshot_revision(id)
-    # Figure owns this point-in-time source snapshot. Do not publish a
-    # duplicate Graph SVG side cache: normal Graph rendering stays live-only.
-    diag_log("FIGURE-CACHE", "LIVE-HIT refreshed Figure-owned snapshot", id = id)
-    TRUE
-  }
-
-  capture_inset_snapshot_from_ready_graph <- function(owner_id, source_id, reason = "inset-update") {
-    owner_id <- as.character(owner_id %||% "")[1]
-    source_id <- as.character(source_id %||% "")[1]
-    if (!nzchar(owner_id) || !nzchar(source_id)) return(FALSE)
-
-    mod <- source_graph_module(source_id)
-    if (is.null(mod) || !isTRUE(mod$ready())) return(FALSE)
-
-    # F1-5p: Inset refresh must be completely independent from the Main Panel
-    # Figure snapshot. Do NOT call snapshot_ready_graph_for_figure() here: that
-    # would overwrite a Figure-edited Main Graph copy when the same source Graph
-    # is also used by an Inset. Capture plot/meta directly from the source module.
-    comp <- tryCatch({
-      if (is.function(mod$figure_components)) isolate(mod$figure_components()) else NULL
-    }, error=function(e) NULL)
-    inset_plot <- tryCatch({
-      if (is.list(comp) && !is.null(comp$plot)) comp$plot
-      else if (is.function(mod$figure_plot)) isolate(mod$figure_plot())
-      else isolate(mod$plot())
-    }, error=function(e) NULL)
-    inset_export <- tryCatch({
-      if (is.list(comp) && is.list(comp$meta)) comp$meta
-      else if (is.function(mod$figure_meta)) isolate(mod$figure_meta())
-      else isolate(mod$export())
-    }, error=function(e) NULL)
-    if (is.null(inset_plot) || !is.list(inset_export)) return(FALSE)
-
-    # Materialize the vector snapshot directly into Figure ownership. The
-    # Graph workspace no longer maintains an SVG cache, so Inset refresh must
-    # never transit through the retired Graph SVG cache.
-    source_state <- if (cache_has(source_id)) cache_get(source_id) else NULL
-    render_revision <- if (is.function(mod$render_revision)) {
-      tryCatch(isolate(mod$render_revision()), error = function(e) NA_integer_)
-    } else NA_integer_
-    rec <- tryCatch(
-      graph_preview_record_from_plot(
-        id = source_id,
-        state = source_state,
-        plot = inset_plot,
-        export_meta = inset_export,
-        render_revision = render_revision,
-        reason = reason
-      ),
-      error = function(e) NULL
-    )
-    if (!is.list(rec) || !nzchar(rec$svg %||% "")) return(FALSE)
-    rec$figure_plot <- inset_plot
-    rec$figure_export <- inset_export
-
-    inset_cache <- isolate(figure_inset_preview_cache())
-    inset_cache[[source_id]] <- rec
-    figure_inset_preview_cache(inset_cache)
-
-    # The Inset layer depends on the source snapshot revision, so this invalidates
-    # only consumers of that explicit snapshot rather than following every Graph
-    # render.
-    bump_figure_snapshot_revision(source_id)
-    diag_log(
-      "FIGURE-INSET",
-      paste0(
-        "explicit snapshot owner=", owner_id,
-        " source=", source_id,
-        " chars=", nchar(rec$svg %||% ""),
-        " source_revision=", suppressWarnings(as.integer(rec$render_revision %||% NA_integer_)[1])
-      ),
-      id = owner_id
-    )
-    TRUE
-  }
 
   observeEvent(input$figure_inset_refresh, {
     owner_id <- as.character(isolate(figure_selected_graph() %||% ""))[1]
@@ -429,14 +274,8 @@
       return()
     }
 
-    if (capture_inset_snapshot_from_ready_graph(owner_id, source_id)) {
-      figure_inset_refresh_target(list(owner_id = "", source_id = ""))
-      showNotification("InsetをGraphから更新しました。", type = "message", duration = 2)
-      return()
-    }
-
-    # Dormant Graph: build from canonical values synchronously. The Inset
-    # snapshot does not borrow the Figure editor or overwrite the Main copy.
+    # Build from canonical values. The Inset snapshot never borrows a Graph
+    # editor and never overwrites the Main Figure-owned copy.
     expected_revision <- request_figure_inset_snapshot(
       owner_id, source_id, reason = "figure-inset-explicit-refresh"
     )
@@ -488,17 +327,9 @@
       return()
     }
 
-    # This action means "take the current Graph state now".  Do not satisfy it
-    # from a packaged/persisted Figure snapshot.  A READY Graph is snapshotted
-    # immediately; a dormant Graph is replayed through the one persistent Figure renderer.
+    # This action means "take the current canonical GraphState now". Packaged
+    # Figure SVGs and live Graph modules are never used as the source authority.
     clear_figure_svg_cache()
-    if (isTRUE(snapshot_ready_graph_for_figure(id, import_editor_state = TRUE, import_reason = "selected-panel-refresh", reload_editor = TRUE))) {
-      figure_panel_refresh_target(list(id = "", key = ""))
-      diag_log("FIGURE-PANEL-REFRESH", paste0("LIVE-HIT key=", key), id = id)
-      showNotification("選択PanelをGraphから更新しました。", type = "message", duration = 2)
-      return()
-    }
-
     expected_revision <- request_figure_source_snapshot(
       id, reason = "figure-panel-explicit-refresh", import_editor_state = TRUE
     )
@@ -543,95 +374,32 @@
     figure_load_target_ids(ids)
     clear_figure_svg_cache()
 
-    persisted <- isolate(figure_persisted_previews())
-    plots <- isolate(figure_loaded_plots())
-    exports <- isolate(figure_loaded_exports())
-    assets <- isolate(figure_loaded_assets())
-    fallback_ids <- character(0)
-    fallback_expected <- list()
+    expected <- list()
 
-    diag_log("FIGURE-CACHE", paste0("load request ids=", paste(ids, collapse = ",")))
+    diag_log("FIGURE-CACHE", paste0("direct-state load request ids=", paste(ids, collapse = ",")))
 
     for (id in ids) {
-      # A ready live Graph is authoritative because it may contain edits newer
-      # than the packaged SVG. Snapshot it without rebuilding the module.
-      if (snapshot_ready_graph_for_figure(id, import_editor_state = TRUE, import_reason = "bulk-import-live", reload_editor = FALSE)) {
-        # Helper updates the reactive snapshot registries; keep the local copies
-        # in sync so the final assignment below cannot overwrite that refresh.
-        plots <- isolate(figure_loaded_plots())
-        exports <- isolate(figure_loaded_exports())
-        assets <- isolate(figure_loaded_assets())
-        next
-      }
-
-      # Even when the visual snapshot can be satisfied from persisted SVG, the
-      # Figure needs its own editable GraphState copy. Canonical registry/cache
-      # state is enough; no graphServer hydrate is required merely to create it.
-      canonical_state <- tryCatch(cache_get(id), error = function(e) NULL)
-      if (is.list(canonical_state)) {
-        seed_figure_editor_from_source(
-          id, canonical_state, reason = "bulk-import-canonical", reload_editor = FALSE
-        )
-      }
-
-      rec <- persisted[[id]]
-      cache_ok <- is.list(rec) && nzchar(rec$svg %||% "")
-      if (cache_ok) {
-        # Remove stale in-session live snapshots so renderer intentionally falls
-        # through to figure_persisted_previews()[[id]].
-        plots[[id]] <- NULL
-        exports[[id]] <- NULL
-        assets[[id]] <- NULL
-        bump_figure_snapshot_revision(id)
-        diag_log(
-          "FIGURE-CACHE",
-          paste0("HIT persisted SVG chars=", nchar(rec$svg %||% ""), " -> no instantiate"),
-          id = id
-        )
-      } else {
-        plots[[id]] <- NULL
-        exports[[id]] <- NULL
-        assets[[id]] <- NULL
-        fallback_ids <- c(fallback_ids, id)
-        fallback_expected[[id]] <- request_figure_source_snapshot(
-          id, reason = "figure-cache-miss", import_editor_state = TRUE
-        )
-        diag_log("FIGURE-CACHE", "MISS no persisted SVG/live snapshot -> queued single Figure direct state build", id = id)
-      }
+      expected[[id]] <- request_figure_source_snapshot(
+        id, reason = "bulk-import-canonical", import_editor_state = TRUE
+      )
     }
 
-    figure_loaded_plots(plots)
-    figure_loaded_exports(exports)
-    figure_loaded_assets(assets)
-
-    fallback_ids <- unique(fallback_ids)
-    figure_load_expected_revisions(fallback_expected)
-    if (!length(fallback_ids)) {
-      figure_queue(character(0))
-      figure_load_pending(FALSE)
-      figure_load_target_ids(character(0))
-      figure_load_expected_revisions(list())
-      reload_selected_figure_editor_after_bulk(ids, reason = "bulk-import-cache-complete")
-      diag_log("FIGURE-BULK-IMPORT", paste0("complete ids=", paste(ids, collapse = ","), " fallback=0"))
-      showNotification("全GraphをFigureへ読み込みました。以後のGraph更新は自動反映されません。", type = "message", duration = 3)
-      return()
-    }
-
-    prog <- shiny::Progress$new(session, min = 0, max = length(fallback_ids))
+    ids <- unique(ids)
+    figure_load_expected_revisions(expected)
+    prog <- shiny::Progress$new(session, min = 0, max = length(ids))
     prog$set(
       message = "Figure用Graphを読み込み中",
       value = 0,
-      detail = paste0("cache miss 0 / ", length(fallback_ids), " Graph")
+      detail = paste0("0 / ", length(ids), " Graph")
     )
     figure_load_progress(prog)
-    # Only cache misses enter the Figure state calculation queue.
-    figure_load_target_ids(fallback_ids)
+    figure_load_target_ids(ids)
     figure_load_pending(TRUE)
-    figure_queue(fallback_ids)
+    figure_queue(ids)
   }, ignoreInit = TRUE)
 
-  # One cache-miss Graph per turn; all plot inputs come from its frozen state.
-  # The snapshot service has no editor/UI/restore dependency.
+  # One GraphState snapshot job per turn; all plot inputs come from frozen canonical values.
+  # The snapshot service has no Graph editor/UI/restore dependency.
   observe({
     figure_source_snapshot_generation()
     pending <- figure_load_pending()
@@ -695,7 +463,6 @@
     figure_load_target_ids(character(0))
     figure_load_expected_revisions(list())
     close_figure_load_progress()
-    reload_selected_figure_editor_after_bulk(ids, reason = "bulk-import-fallback-complete")
     diag_log(
       "FIGURE-BULK-IMPORT",
       paste0("complete ids=", paste(ids, collapse = ","), " failed=", paste(failed, collapse = ","))
@@ -1941,4 +1708,3 @@
       write_figure_export(file, fmt)
     }
   )
-
