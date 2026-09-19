@@ -1,28 +1,225 @@
 shinyServer(function(input, output, session) {
 
   # ------------------------------------------------------------------
+  # v3.3.56 diagnostic timeline (Graph + Figure responsibility separation experiment)
+  # ------------------------------------------------------------------
+  diag_t0 <- proc.time()[["elapsed"]]
+  diag_log <- function(tag, ..., id = NULL) {
+    elapsed <- proc.time()[["elapsed"]] - diag_t0
+    stamp <- format(Sys.time(), "%H:%M:%OS3")
+    bits <- c(...)
+    bits <- bits[!is.na(bits)]
+    msg <- paste(bits, collapse = " ")
+    id_txt <- if (!is.null(id) && nzchar(as.character(id))) paste0("[", as.character(id), "]") else ""
+    message(sprintf("[DIAG %s +%7.3fs][%s]%s %s", stamp, elapsed, tag, id_txt, msg))
+    invisible(NULL)
+  }
+  diag_log("SESSION", paste0("server start ", app_version()))
+  if (identical(as.character(app_font_catalog$backend %||% "fallback"), "systemfonts")) {
+    diag_log(
+      "FONT-SCAN",
+      paste0(
+        "backend=systemfonts count=", length(app_font_catalog$families %||% character(0)),
+        " japanese_candidates=", paste(app_font_catalog$japanese_candidates %||% character(0), collapse = ","),
+        " cairo=", isTRUE(capabilities("cairo"))
+      )
+    )
+  } else {
+    diag_log(
+      "FONT-SCAN-FALLBACK",
+      paste0(
+        "backend=fallback count=", length(app_font_catalog$families %||% character(0)),
+        " reason=", as.character(app_font_catalog$error %||% "unknown"),
+        " cairo=", isTRUE(capabilities("cairo"))
+      )
+    )
+  }
+  # v3.57: graphServer is byte-compiled once in global.R during app startup.
+  # Reuse the same compiled closure for source Graphs and Figure editors.
+  graph_server_runtime <- if (exists("graphServerCompiled", inherits = TRUE) && is.function(graphServerCompiled)) {
+    graphServerCompiled
+  } else {
+    graphServer
+  }
+  if (exists("graph_server_precompile_info", inherits = TRUE) && is.list(graph_server_precompile_info)) {
+    info <- graph_server_precompile_info
+    diag_log(
+      "PRECOMPILE",
+      paste0(
+        "ok=", isTRUE(info$ok),
+        " elapsed_ms=", sprintf("%.1f", as.numeric(info$elapsed_ms %||% NA_real_)),
+        " env_R_ENABLE_JIT=", as.character(info$env_R_ENABLE_JIT %||% "<unknown>"),
+        " body_type_before=", as.character(info$body_type_before %||% "<unknown>"),
+        " body_type_after=", as.character(info$body_type_after %||% "<unknown>"),
+        if (!is.null(info$error)) paste0(" error=", as.character(info$error)) else ""
+      )
+    )
+  } else {
+    diag_log("PRECOMPILE", "metadata unavailable; using graphServer fallback")
+  }
+
+  diag_ready_seen <- new.env(parent = emptyenv())
+  diag_svg_viewport_seen <- new.env(parent = emptyenv())
+  diag_figure_frame_seen <- new.env(parent = emptyenv())
+  diag_figure_autofit_seen <- new.env(parent = emptyenv())
+  diag_figure_legend_bbox_seen <- new.env(parent = emptyenv())
+  diag_graph_size_meta_seen <- new.env(parent = emptyenv())
+  diag_graph_geometry_seen <- new.env(parent = emptyenv())
+  diag_figure_size_basis_seen <- new.env(parent = emptyenv())
+  diag_svg_colors <- function(svg, n = 8L) {
+    svg <- as.character(svg %||% "")
+    if (!nzchar(svg)) return("colors=<none>")
+    hits <- regmatches(svg, gregexpr("#[0-9A-Fa-f]{6}", svg, perl = TRUE))[[1]]
+    if (!length(hits) || identical(hits, "")) return("colors=<no-hex-colors>")
+    tab <- sort(table(toupper(hits)), decreasing = TRUE)
+    tab <- head(tab, n)
+    paste0("colors=", paste0(names(tab), "x", as.integer(tab), collapse = ","))
+  }
+
+  # ------------------------------------------------------------------
   # Graph registry
   # ------------------------------------------------------------------
   modules <- new.env(parent = emptyenv())
+  # v3.3.55: UI and server lifecycles are independent.  A Graph can have a
+  # fully rendered parameter UI + cached SVG while graphServer is still absent.
+  graph_ui_mounted <- new.env(parent = emptyenv())
+  assign("g001", TRUE, envir = graph_ui_mounted)  # static shell from ui.R
 
-  # 未初期化Graphの保存stateを保持する。
-  # 各要素は list(state = <saved graph state>) として持つことで、
-  # state=NULLとの区別もつけられる。
+  ui_mounted <- function(id) exists(id, envir = graph_ui_mounted, inherits = FALSE)
+  mounted_ids <- function() ls(envir = graph_ui_mounted, all.names = TRUE)
+  mark_ui_mounted <- function(id, value = TRUE) {
+    if (isTRUE(value)) assign(id, TRUE, envir = graph_ui_mounted)
+    else if (ui_mounted(id)) rm(list = id, envir = graph_ui_mounted)
+    invisible(TRUE)
+  }
+
+  # Canonical GraphState registry. Background per-Graph modules are now
+  # read-only materializers for Figure/Export compatibility; they never own
+  # canonical state. A revision lease records which canonical snapshot a
+  # materializer has successfully restored.
   graph_state_cache <- reactiveVal(list())
+  graph_state_revision <- new.env(parent = emptyenv())
+  graph_source_module_lease <- new.env(parent = emptyenv())
+  graph_source_sync_target <- new.env(parent = emptyenv())
+
+  graph_state_revision_value <- function(id) {
+    as.integer(graph_state_revision[[as.character(id %||% "")[1]]] %||% 0L)
+  }
+
+  source_module_claim_revision <- function(id, reason = "materialized") {
+    id <- as.character(id %||% "")[1]
+    if (!nzchar(id) || !cache_has(id)) return(invisible(FALSE))
+    graph_source_module_lease[[id]] <- list(
+      revision = graph_state_revision_value(id),
+      reason = as.character(reason %||% "materialized")[1]
+    )
+    if (exists(id, envir = graph_source_sync_target, inherits = FALSE)) {
+      rm(list = id, envir = graph_source_sync_target)
+    }
+    diag_log(
+      "SOURCE-LEASE",
+      paste0("CLAIM revision=", graph_state_revision_value(id), " reason=", reason),
+      id = id
+    )
+    invisible(TRUE)
+  }
+
+  source_module_revision_is_current <- function(id) {
+    id <- as.character(id %||% "")[1]
+    rec <- graph_source_module_lease[[id]]
+    is.list(rec) && identical(as.integer(rec$revision %||% -1L), graph_state_revision_value(id))
+  }
+
+  invalidate_graph_source_module <- function(id, reason = "canonical-update") {
+    id <- as.character(id %||% "")[1]
+    if (!nzchar(id)) return(invisible(FALSE))
+    had <- exists(id, envir = graph_source_module_lease, inherits = FALSE)
+    if (had) rm(list = id, envir = graph_source_module_lease)
+    if (exists(id, envir = graph_source_sync_target, inherits = FALSE)) {
+      rm(list = id, envir = graph_source_sync_target)
+    }
+    if (had || (!is.null(modules[[id]]))) {
+      diag_log(
+        "SOURCE-LEASE",
+        paste0("INVALIDATE revision=", graph_state_revision_value(id), " reason=", reason),
+        id = id
+      )
+    }
+    invisible(had)
+  }
 
   # Graph間・Project間で使う一時的な「書式クリップボード」。
   # Project stateとは独立しているため、同じShiny session内なら
   # Project Aでコピー -> Project Bで貼り付け ができる。
   style_clipboard <- reactiveVal(NULL)
 
+  # v3.73.0: one semantic Shared Label / Style Library per Project. Graph
+  # bindings live inside each canonical GraphState; Figure remains snapshot-
+  # independent unless its explicit Library sync switch is enabled.
+  shared_style_library <- reactiveVal(shared_style_default_library())
+  figure_shared_style_sync <- reactiveVal(FALSE)
+  shared_style_figure_queue <- reactiveVal(character(0))
+  shared_style_figure_restore_owner <- reactiveVal("")
+  shared_style_figure_apply_active <- reactiveVal(FALSE)
+
   graph_meta <- reactiveVal(data.frame(
     id = "g001", name = "Graph 1", stringsAsFactors = FALSE
   ))
   active_graph <- reactiveVal("g001")
+  # v3.73.1 Editor-first workspace: active_graph is the selected target while
+  # editing_graph_id is the Graph currently owned by the singleton Editor. They
+  # may differ only transiently during an ACK-gated switch or failure fallback.
+  editing_graph_id <- reactiveVal("")
+
+  # v3.61.0: Graph workspace owns exactly one reusable editor DOM/module.
+  # Graph identity is data (editing_graph_id), never module namespace identity.
+  graph_single_editor_id <- "graph_editor_single"
+  graph_single_editor_wrapper_id <- "panel_graph_editor_single"
+  graph_single_editor_module <- reactiveVal(NULL)
+  graph_single_editor_mode <- reactiveVal("IDLE")      # IDLE / REPLAY / RENDERING / READY / STALE
+  graph_single_editor_loading <- reactiveVal(FALSE)
+  # v3.73.1 Editor-first selection may change while the singleton Editor is
+  # still hydrating. Keep only the latest requested target and drain it after
+  # the current ACK-gated transaction reaches READY; never interrupt/commit a
+  # partially restored owner.
+  graph_single_pending_target <- reactiveVal(NULL)
+  graph_single_editor_generation <- reactiveVal(0L)
+  # v3.72.10: the persistent Editor may publish only while it still owns the
+  # canonical GraphState revision it was synchronized from. External canonical
+  # updates (for example Figure -> Graph Apply) invalidate this lease so stale
+  # browser state cannot overwrite a newer Registry revision on tab switch or
+  # a delayed live callback.
+  graph_single_editor_lease <- reactiveVal(NULL)
+  # v3.66.3: transaction-level render gate for the persistent Editor.  Closed
+  # for the entire REPLAY transaction, opened exactly once after the
+  # READY editor state has been accepted against the canonical revision. New sessions start closed so the
+  # pristine shell does not draw a throw-away default Plot before g001 attach.
+  graph_single_render_gate <- reactiveVal(FALSE)
+  # v3.73.2.18: normal Graph switches use the permanently mounted live plot.
+  # When Plot is visible, keep the transaction loading until the browser reports
+  # completion of the new plot output; no cached/live bind or authorize handshake.
+  graph_single_live_render_wait <- reactiveVal(NULL)
+  graph_single_default_state <- reactiveVal(NULL)
+  # v3.73.2.3: the first capture happens before every dynamic browser control
+  # has reported its normalized default. Finalize the reusable new-Graph
+  # template once the startup Graph reaches READY.
+  graph_single_default_state_finalized <- reactiveVal(FALSE)
+  # v3.72.7: lightweight per-Graph editor-visit metadata.  This deliberately
+  # stores revisions only -- never Graph DOM, Shiny modules, prepared data or
+  # ggplot objects -- so revisits can be diagnosed/optimized without memory
+  # growing with the number of editor instances.
+  graph_single_editor_visit_cache <- new.env(parent = emptyenv())
+  # v3.73.2.18: presentation state now belongs to canonical GraphState. This
+  # lightweight server store mirrors the latest browser panel-open snapshot so
+  # ordinary GraphState commits can include it without keeping per-Graph DOM.
+  graph_editor_ui_panel_store <- reactiveVal(list())
+
   id_counter <- reactiveVal(1L)
 
-  # 起動時Graph 1だけは最初からmoduleを持つ。
-  modules[["g001"]] <- graphServer("g001", initial_state = NULL, style_clipboard = style_clipboard)
+  # The static g001 graphUI shell is already present in ui.R. The heavy
+  # server-side Editor is scheduled after the first browser flush. Project load
+  # is state-first and attaches only its selected Graph to this same Editor.
+  diag_log("STARTUP-EDITOR", "eager g001 editor scheduled for first flush", id = "g001")
 
   # ------------------------------------------------------------------
   # Project / Graph restore status
@@ -32,6 +229,116 @@ shinyServer(function(input, output, session) {
   restore_target <- reactiveVal(NULL)
   project_file_read <- reactiveVal(FALSE)
   project_save_destination_available <- reactiveVal(FALSE)
+
+  # Project restore lock.  Legacy/no-preview Projects still keep the original
+  # all-Graph READY barrier.  Phase 12 cache-first Projects release the global
+  # overlay as soon as registry + persisted Preview + Figure state are restored;
+  # Graph hydration then proceeds lazily through the same serial worker.
+  project_load_locked <- reactiveVal(FALSE)
+  project_load_ids <- reactiveVal(character(0))
+  project_load_failure <- reactiveVal(NULL)
+
+  project_graph_label <- function(id) {
+    id <- as.character(id %||% "")
+    meta <- isolate(graph_meta())
+    hit <- match(id, meta$id)
+    if (!is.na(hit)) as.character(meta$name[[hit]] %||% id) else id
+  }
+
+  send_project_load_overlay <- function(mode = c("loading", "hidden", "failed"), message = "", ready = NULL, total = NULL, current = NULL) {
+    mode <- match.arg(mode)
+    ready_n <- suppressWarnings(as.integer(ready %||% NA_integer_)[1])
+    total_n <- suppressWarnings(as.integer(total %||% NA_integer_)[1])
+    current_n <- suppressWarnings(as.integer(current %||% NA_integer_)[1])
+    pct <- if (is.finite(ready_n) && is.finite(total_n) && total_n > 0) {
+      min(100, max(0, round(100 * ready_n / total_n)))
+    } else {
+      NA_integer_
+    }
+    session$sendCustomMessage(
+      "project-load-overlay",
+      list(
+        mode = mode,
+        message = as.character(message %||% ""),
+        ready = if (is.finite(ready_n)) ready_n else NULL,
+        total = if (is.finite(total_n)) total_n else NULL,
+        current = if (is.finite(current_n)) current_n else NULL,
+        percent = if (is.finite(pct)) pct else NULL
+      )
+    )
+    invisible(NULL)
+  }
+
+  project_load_action_blocked <- function(action = "", id = NULL) {
+    if (!isTRUE(isolate(project_load_locked()))) return(FALSE)
+    diag_log(
+      "PROJECT-LOCK",
+      paste0("BLOCKED action=", as.character(action %||% "")),
+      id = as.character(id %||% "")
+    )
+    TRUE
+  }
+
+  begin_project_load_lock <- function() {
+    project_load_locked(TRUE)
+    project_load_ids(character(0))
+    project_load_failure(NULL)
+    diag_log("PROJECT-LOCK", "LOCKED")
+    send_project_load_overlay("loading", "Projectファイルを読み込んでいます…", ready = 0L, total = NULL, current = NULL)
+    invisible(NULL)
+  }
+
+  update_project_load_lock <- function(current_id = NULL) {
+    if (!isTRUE(isolate(project_load_locked()))) return(invisible(NULL))
+    ids <- as.character(isolate(project_load_ids()) %||% character(0))
+    total <- length(ids)
+    ready_n <- if (total) {
+      sum(vapply(ids, graph_is_ready, logical(1)))
+    } else 0L
+    current_id <- as.character(current_id %||% "")
+    current_idx <- if (nzchar(current_id) && current_id %in% ids) match(current_id, ids) else NA_integer_
+    current_label <- if (nzchar(current_id)) project_graph_label(current_id) else ""
+    message <- if (total && is.finite(current_idx)) {
+      paste0("Graph ", current_idx, " / ", total, " を準備中", if (nzchar(current_label)) paste0("（", current_label, "）") else "")
+    } else if (total) {
+      paste0("Graphを準備しています… ", ready_n, " / ", total)
+    } else {
+      "Projectファイルを読み込んでいます…"
+    }
+    send_project_load_overlay(
+      "loading",
+      message,
+      ready = ready_n,
+      total = total,
+      current = current_idx
+    )
+    invisible(NULL)
+  }
+
+  complete_project_load_lock <- function(reason = "all Project Graphs READY") {
+    if (!isTRUE(isolate(project_load_locked()))) return(invisible(NULL))
+    project_load_locked(FALSE)
+    project_load_failure(NULL)
+    diag_log("PROJECT-LOCK", paste0("UNLOCKED reason=", as.character(reason %||% "")))
+    send_project_load_overlay("hidden", "")
+    invisible(NULL)
+  }
+
+  fail_project_load_lock <- function(id = NULL, detail = "") {
+    if (!isTRUE(isolate(project_load_locked()))) return(invisible(NULL))
+    id <- as.character(id %||% "")
+    label <- if (nzchar(id)) project_graph_label(id) else "Project"
+    detail <- as.character(detail %||% "")
+    msg <- if (nzchar(detail)) {
+      paste0(label, " の復元に失敗しました。\n", detail, "\nアプリを再読み込みしてProjectを開き直してください。")
+    } else {
+      paste0(label, " の復元に失敗しました。\nアプリを再読み込みしてProjectを開き直してください。")
+    }
+    project_load_failure(list(id = id, message = msg))
+    diag_log("PROJECT-LOCK", paste0("FAILED id=", id, " detail=", detail))
+    send_project_load_overlay("failed", msg)
+    invisible(NULL)
+  }
 
   # 保存先記憶は表示名ではなくProject UUIDをキーにする。
   new_project_uuid <- function() {
@@ -71,6 +378,607 @@ shinyServer(function(input, output, session) {
   export_queue <- reactiveVal(character(0))
   export_prepare_active <- reactiveVal(FALSE)
 
+  # ------------------------------------------------------------------
+  # Graph source materialization
+  # ------------------------------------------------------------------
+  # Queue/barrier state is owned by `server_graph_materialization_runtime.R`.
+  # Figure/Export/legacy-Project callers use only its named service API.
+
+  # Figure PreviewはExportとは独立した準備queueを持つ。
+  # v3.3.46: Preview中心Figure Editor試作。Layout state一本化 + click/drag編集。
+  # 読み込んだplot/export情報はsnapshotとして保持し、Graph側の編集では自動更新しない。
+  figure_queue <- reactiveVal(character(0))
+  figure_load_pending <- reactiveVal(FALSE)
+  figure_load_target_ids <- reactiveVal(character(0))
+  # F1-5b: Inset source refresh is explicit and independent from the main
+  # Figure Graph load action.  Store only the currently requested asynchronous
+  # Inset source here; the shared Graph materialization machinery remains the
+  # single authority for making a dormant Graph READY.
+  figure_inset_refresh_target <- reactiveVal(list(owner_id = "", source_id = ""))
+  # Explicit Main-Graph refresh for the currently selected Figure panel.  This
+  # is intentionally separate from both bulk Figure loading and Inset refresh.
+  figure_panel_refresh_target <- reactiveVal(list(id = "", key = ""))
+  # Explicit Figure-side Inset snapshots.  Unlike the retired Graph SVG cache, this
+  # cache changes only when the user presses the Inset update action.
+  figure_inset_preview_cache <- reactiveVal(list())
+  figure_requested_ids <- reactiveVal(character(0))
+  figure_requested_layout <- reactiveVal(list())
+  figure_requested_overrides <- reactiveVal(list())
+  figure_override_drafts <- reactiveVal(list())
+  # Plot-affecting subset only. Overlay-only edits (e.g. moving A/B labels)
+  # must not invalidate ggplot rendering.
+  figure_plot_overrides <- reactiveVal(list())
+  figure_plot_revisions <- reactiveValues()
+  # Panel display revision is independent from ggplot regeneration. Alignment,
+  # Crop/Inset and slot-label changes must still invalidate the cell UI while
+  # Auto-fit geometry is Manual/Locked/Fixed.
+  figure_panel_display_revisions <- reactiveValues()
+  # Snapshot invalidation is also per Graph. A newly loaded Graph must not make
+  # every other Figure panel rebuild merely because one shared list changed.
+  figure_snapshot_revisions <- reactiveValues()
+  figure_requested_width <- reactiveVal(1600)
+  figure_requested_height <- reactiveVal(1000)
+  # v3.3.68: auto-fit derives the effective Figure canvas from occupied Graph content.
+  figure_requested_size_mode <- reactiveVal("auto")
+  # Measured bbox used as the global Figure alignment basis.
+  figure_requested_size_basis <- reactiveVal("plot")
+  # Optional Row-level visual alignment for Graph titles. This is independent
+  # from the Plot/Facet/Axis sizing basis and never changes GraphState.
+  figure_requested_title_align <- reactiveVal("none")
+  # v3.4.0-alpha1: Row layout remains the stable default; free layout uses the
+  # same cell identities and persists independent free-canvas geometry.
+  figure_requested_layout_mode <- reactiveVal("row")
+  # v3.4.0-alpha2: auto-fit recomputation policy. live follows every geometry
+  # change; manual recomputes only on Refit; lock freezes the last geometry.
+  figure_requested_autofit_policy <- reactiveVal("live")
+  figure_autofit_revision <- reactiveVal(0L)
+  # Increment only when an override can change measured/layout geometry.
+  # STYLE_ONLY edits redraw the source but do not force Auto-fit measurement.
+  figure_geometry_revision <- reactiveVal(0L)
+  # v3.72.9: Project cache-first bootstrap must not synchronously remeasure every
+  # Figure source before the persisted Graph/Figure SVGs have reached the browser.
+  # While TRUE, figure_source_sizes() uses persisted snapshot metadata only.
+  # Exact gtable geometry is promoted lazily when the Figure workspace is opened.
+  figure_geometry_bootstrap_deferred <- reactiveVal(FALSE)
+  figure_workspace_active <- reactiveVal(FALSE)
+  release_figure_geometry_bootstrap <- function(reason = "explicit-demand") {
+    if (!isTRUE(isolate(figure_geometry_bootstrap_deferred()))) return(invisible(FALSE))
+    figure_geometry_bootstrap_deferred(FALSE)
+    figure_geometry_revision(as.integer(isolate(figure_geometry_revision()) %||% 0L) + 1L)
+    diag_log("FIGURE-GEOMETRY-DEFER", paste0("released reason=", reason))
+    invisible(TRUE)
+  }
+  figure_reorder_undo <- reactiveVal(NULL)
+  figure_requested_free_padding <- reactiveVal(24)
+  figure_external_assets <- reactiveVal(list())
+  figure_requested_external_assets <- reactiveVal(list())
+  figure_requested_gap_x <- reactiveVal(12)
+  figure_requested_gap_y <- reactiveVal(12)
+  # During Project restore the browser-side numericInputs update one flush later.
+  # Keep restored Figure dimensions authoritative until those inputs catch up,
+  # otherwise old-Project input values can overwrite the newly restored state.
+  figure_control_restore_seed <- reactiveVal(NULL)
+  figure_loaded_plots <- reactiveVal(list())
+  figure_loaded_exports <- reactiveVal(list())
+  # Generic in-session Figure assets. Internal Graphs are the only implemented
+  # source today, but the container shape is intentionally source-agnostic so
+  # external SVG/raster assets and inset sources can be added without changing
+  # the Row/Panel layout schema again.
+  figure_loaded_assets <- reactiveVal(list())
+
+  # F1-5p: editable GraphState snapshots owned by Figure. These are copied from
+  # the source Graph only on an explicit Figure load/refresh, then diverge
+  # independently. Figure editor modules commit here, never to GraphState registry.
+  figure_edit_states <- reactiveVal(list())
+  figure_editor_modules <- new.env(parent = emptyenv())
+  figure_editor_mounted <- new.env(parent = emptyenv())
+  figure_editor_activated <- new.env(parent = emptyenv())
+  # Epoch prevents callbacks from editor modules belonging to an older Project
+  # from touching a newly restored Figure after workspace reset.
+  figure_editor_epoch <- reactiveVal(1L)
+  figure_editor_mount_generation <- reactiveVal(0L)
+  figure_editor_mount_pending <- reactiveVal(list(id = "", editor_id = "", wrapper_id = "", generation = 0L))
+  # v3.60.0: Figure owns one reusable controls-only Graph editor. Panel
+  # selection and editor ownership are independent; selecting a panel never
+  # mounts/loads the heavy editor. The fixed editor is loaded only by explicit
+  # Graph-settings edit intent.
+  figure_editing_graph <- reactiveVal("")
+  figure_single_editor_loading <- reactiveVal(FALSE)
+  figure_single_editor_show_when_ready <- reactiveVal(TRUE)
+  # State currently being replayed by the one Figure renderer.  This may be a
+  # temporary source GraphState (Inset/refresh) that must never be committed to
+  # Figure-owned editable state.
+  figure_single_editor_target_state <- reactiveVal(NULL)
+  figure_single_editor_generation <- reactiveVal(0L)
+  # v3.60.1: HYDRATING is a real transaction.  The reusable Figure editor is
+  # kept hidden until its state has remained stable across consecutive Shiny
+  # flushes; load completion itself never commits back into FigureState.
+  figure_single_editor_mode <- reactiveVal("IDLE")
+  figure_single_editor_settle_tick <- reactiveVal(0L)
+  figure_single_editor_settle <- reactiveVal(list(
+    generation = 0L, id = "", last_state = NULL, stable = 0L, attempts = 0L
+  ))
+
+  figure_load_progress <- reactiveVal(NULL)
+  figure_load_expected_revisions <- reactiveVal(list())
+  # Persistent preview assets loaded from a packaged Project. These are display
+  # caches only; Graph/Figure state remains authoritative. Keys always use the
+  # current session Graph IDs after Project ID remapping.
+  figure_persisted_previews <- reactiveVal(list())
+  # v3.72: Graphs newly assigned to Figure are explicit source imports.  While
+  # a source is hydrating, keep only its id here; READY consumes the request
+  # exactly once.  Existing Figure-owned snapshots are never auto-refreshed.
+  figure_pending_new_imports <- reactiveVal(character(0))
+  # Canonical GraphState revisions and render-state revisions are different.
+  # Only the latter wakes preview publication after a canonical commit.
+  graph_render_state_revisions <- reactiveValues()
+
+  bump_graph_render_state_revision <- function(id) {
+    id <- as.character(id %||% "")[1]
+    if (!nzchar(id)) return(invisible(FALSE))
+    cur <- suppressWarnings(as.integer(isolate(graph_render_state_revisions[[id]] %||% 0L)))
+    graph_render_state_revisions[[id]] <- cur + 1L
+    invisible(TRUE)
+  }
+
+  # v3.72 Figure source lifecycle -------------------------------------------
+  # A Figure-owned Graph snapshot exists only while that Graph is referenced
+  # by the current Figure (main panel or enabled inset of a current panel).
+  # Removing the last reference ends Figure ownership; a later re-add is a
+  # fresh import from the current canonical/live Graph.
+  figure_referenced_graph_ids <- function(layout = NULL, overrides = NULL) {
+    if (is.null(layout)) layout <- isolate(figure_layout_state())
+    if (is.null(overrides)) overrides <- isolate(figure_override_drafts())
+    meta_ids <- as.character(isolate(graph_meta())$id %||% character(0))
+
+    main_ids <- unique(unlist(lapply(layout %||% list(), function(row) {
+      vapply(row$cells %||% list(), function(cell) {
+        st <- as.character(cell$source_type %||% "internal_graph")[1]
+        id <- as.character(cell$id %||% "")[1]
+        if (identical(st, "internal_graph") && nzchar(id)) id else ""
+      }, character(1))
+    }), use.names = FALSE))
+    main_ids <- intersect(main_ids[nzchar(main_ids)], meta_ids)
+
+    inset_ids <- character(0)
+    for (owner in main_ids) {
+      ov <- overrides[[owner]] %||% list()
+      inset <- ov$inset %||% list()
+      sid <- as.character(inset$source_id %||% "")[1]
+      if (isTRUE(inset$enabled) && nzchar(sid) && sid %in% meta_ids) {
+        inset_ids <- c(inset_ids, sid)
+      }
+    }
+    unique(c(main_ids, inset_ids))
+  }
+
+  figure_source_cache_ids <- function() {
+    unique(c(
+      names(isolate(figure_edit_states())),
+      names(isolate(figure_loaded_plots())),
+      names(isolate(figure_loaded_exports())),
+      names(isolate(figure_loaded_assets())),
+      names(isolate(figure_persisted_previews())),
+      names(isolate(figure_override_drafts())),
+      names(isolate(figure_inset_preview_cache()))
+    ))
+  }
+
+  figure_evict_source_state <- function(id, reason = "unreferenced") {
+    id <- as.character(id %||% "")[1]
+    if (!nzchar(id)) return(invisible(FALSE))
+    if (exists("cancel_figure_source_snapshot_jobs", mode = "function", inherits = TRUE)) {
+      cancel_figure_source_snapshot_jobs(id, reason = reason)
+    }
+
+    drop_named <- function(rv) {
+      x <- isolate(rv())
+      if (id %in% names(x)) {
+        x[[id]] <- NULL
+        rv(x)
+      }
+    }
+    drop_named(figure_edit_states)
+    drop_named(figure_loaded_plots)
+    drop_named(figure_loaded_exports)
+    drop_named(figure_loaded_assets)
+    drop_named(figure_persisted_previews)
+    drop_named(figure_inset_preview_cache)
+    drop_named(figure_override_drafts)
+    drop_named(figure_requested_overrides)
+
+    try(figure_plot_revisions[[id]] <- NULL, silent = TRUE)
+    try(figure_snapshot_revisions[[id]] <- NULL, silent = TRUE)
+    try(figure_panel_display_revisions[[id]] <- NULL, silent = TRUE)
+    commit_revs <- isolate(figure_commit_edit_revisions())
+    if (id %in% names(commit_revs)) {
+      commit_revs[[id]] <- NULL
+      figure_commit_edit_revisions(commit_revs)
+    }
+    try(clear_figure_geometry_cache(id), silent = TRUE)
+    try(clear_figure_geometry_source_state(id), silent = TRUE)
+    try(clear_figure_svg_cache(), silent = TRUE)
+
+    pending <- isolate(figure_pending_new_imports())
+    figure_pending_new_imports(setdiff(pending, id))
+
+    if (identical(as.character(isolate(figure_editing_graph()) %||% "")[1], id) &&
+        exists("reset_figure_editors", mode = "function", inherits = TRUE)) {
+      try(reset_figure_editors(clear_states = FALSE), silent = TRUE)
+    }
+    diag_log("FIGURE-SOURCE-GC", paste0("evicted reason=", reason), id = id)
+    invisible(TRUE)
+  }
+
+  figure_gc_unreferenced_sources <- function(reason = "layout-change") {
+    keep <- figure_referenced_graph_ids()
+    stale <- setdiff(figure_source_cache_ids(), keep)
+    if (length(stale)) {
+      for (id in stale) figure_evict_source_state(id, reason = reason)
+    }
+    diag_log(
+      "FIGURE-SOURCE-GC",
+      paste0("keep={", paste(keep, collapse=","), "} evicted={", paste(stale, collapse=","), "} reason=", reason)
+    )
+    invisible(stale)
+  }
+
+  figure_mark_new_import <- function(id) {
+    id <- as.character(id %||% "")[1]
+    if (!nzchar(id)) return(invisible(FALSE))
+    figure_pending_new_imports(unique(c(isolate(figure_pending_new_imports()), id)))
+    invisible(TRUE)
+  }
+
+  figure_clear_new_import <- function(id) {
+    id <- as.character(id %||% "")[1]
+    figure_pending_new_imports(setdiff(isolate(figure_pending_new_imports()), id))
+    invisible(TRUE)
+  }
+
+  # v3.73.2.18: the client catalog is metadata-only. Graph SVG is not a
+  # workspace authority and is never regenerated merely to populate tabs.
+  publish_client_preview_catalog <- function(reason = "update", selected = NULL, enter_browse = FALSE) {
+    meta <- isolate(graph_meta())
+    if (!nrow(meta)) return(invisible(FALSE))
+    entries <- lapply(seq_len(nrow(meta)), function(i) {
+      list(
+        id = as.character(meta$id[[i]]),
+        name = as.character(meta$name[[i]]),
+        svg = "",
+        width = 600,
+        height = 600
+      )
+    })
+    selected_id <- as.character(selected %||% "")[1]
+    if (!nzchar(selected_id)) selected_id <- as.character(isolate(input$graph_client_selected %||% ""))[1]
+    if (!nzchar(selected_id) || !selected_id %in% meta$id) selected_id <- as.character(isolate(active_graph()) %||% "")[1]
+    if (!nzchar(selected_id) || !selected_id %in% meta$id) selected_id <- as.character(meta$id[[1]])
+
+    editing_id <- as.character(isolate(editing_graph_id()) %||% "")[1]
+    editing_valid <- nzchar(editing_id) && editing_id %in% meta$id
+    editing_ready <- isTRUE(editing_valid) && graph_single_ready(editing_id)
+    editing_name <- if (isTRUE(editing_valid)) {
+      nm <- meta$name[match(editing_id, meta$id)]
+      if (length(nm) && !is.na(nm)) as.character(nm) else editing_id
+    } else ""
+    payload <- list(
+      reason = as.character(reason %||% "update"),
+      selected = selected_id,
+      editing = if (isTRUE(editing_valid)) editing_id else "",
+      editingName = editing_name,
+      editingReady = isTRUE(editing_ready),
+      # Browse-only preview mode is retired. Keep the field for protocol
+      # compatibility but never request entry into it.
+      enterBrowse = FALSE,
+      entries = entries
+    )
+    session$onFlushed(function() {
+      session$sendCustomMessage("graph-client-preview-catalog", payload)
+    }, once = TRUE)
+    invisible(TRUE)
+  }
+
+  selected_graph_id <- function() {
+    meta <- isolate(graph_meta())
+    id <- as.character(isolate(input$graph_client_selected %||% ""))[1]
+    if (nzchar(id) && id %in% meta$id) return(id)
+    as.character(isolate(active_graph()) %||% "")[1]
+  }
+
+  observe({
+    graph_meta()
+    active_graph()
+    editing_graph_id()
+    publish_client_preview_catalog(reason = "registry-metadata-change")
+  })
+
+
+  # v3.73.2.18: fixed Global Preview cached/live router retired. The one
+  # persistent Editor owns the only live Graph plot output.
+
+  project_bundle_pending_previews <- reactiveVal(list())
+  project_bundle_pending_graph_previews <- reactiveVal(list())
+  project_legacy_graph_previews <- reactiveVal(list())
+
+  # v3.3.49 experimental Figure renderer: vector preview snapshots are an
+  # in-session display cache only. They are intentionally NOT reactive and are
+  # never serialized into Project files. The logical Figure state remains the
+  # source of truth, so a cache miss can always be regenerated from the ggplot.
+  figure_svg_cache <- new.env(parent = emptyenv())
+  clear_figure_svg_cache <- function(keys = NULL) {
+    if (is.null(keys)) {
+      rm(list = ls(envir = figure_svg_cache, all.names = TRUE), envir = figure_svg_cache)
+    } else {
+      keys <- intersect(as.character(keys), ls(envir = figure_svg_cache, all.names = TRUE))
+      if (length(keys)) rm(list = keys, envir = figure_svg_cache)
+    }
+    invisible(NULL)
+  }
+
+  # Phase 11: cache only the measured source geometry, never the authored
+  # Graph/Figure state.  Layout-only edits can invalidate figure_source_sizes()
+  # many times even though the underlying Graph snapshot + geometry-affecting
+  # override are unchanged.  Reusing this small immutable metadata avoids
+  # repeated figure_plot_for_scale()/ggplotGrob() work while preserving the
+  # existing downstream target-box fitting semantics.
+  figure_geometry_cache <- new.env(parent = emptyenv())
+  # Phase 12 (11.1): geometry cache invalidation is independent from ordinary
+  # Figure snapshot refreshes.  A panel click / explicit Figure reload may
+  # legitimately take a fresh snapshot without changing the canonical GraphState.
+  # Keep a small semantic source-state mirror so only real GraphState changes
+  # advance the geometry-source revision.
+  figure_geometry_source_states <- new.env(parent = emptyenv())
+  figure_geometry_source_revisions <- reactiveValues()
+  clear_figure_geometry_cache <- function(id = NULL) {
+    keys <- ls(envir = figure_geometry_cache, all.names = TRUE)
+    if (!length(keys)) return(invisible(NULL))
+    if (is.null(id)) {
+      rm(list = keys, envir = figure_geometry_cache)
+    } else {
+      prefix <- paste0(as.character(id)[1], "::")
+      hit <- keys[startsWith(keys, prefix)]
+      if (length(hit)) rm(list = hit, envir = figure_geometry_cache)
+    }
+    invisible(NULL)
+  }
+
+  clear_figure_geometry_source_state <- function(id = NULL) {
+    keys <- ls(envir = figure_geometry_source_states, all.names = TRUE)
+    if (is.null(id)) {
+      if (length(keys)) rm(list = keys, envir = figure_geometry_source_states)
+      rev_ids <- names(isolate(reactiveValuesToList(figure_geometry_source_revisions)))
+      if (length(rev_ids)) {
+        for (rid in rev_ids) try(figure_geometry_source_revisions[[rid]] <- NULL, silent = TRUE)
+      }
+    } else {
+      id <- as.character(id %||% "")[1]
+      if (nzchar(id) && id %in% keys) rm(list = id, envir = figure_geometry_source_states)
+      if (nzchar(id)) try(figure_geometry_source_revisions[[id]] <- NULL, silent = TRUE)
+    }
+    invisible(NULL)
+  }
+
+  # F1-4 removed the transition-time detach snapshot helpers.  Legacy
+  # snapshot fields remain loadable, but layer geometry is derived directly
+  # from the current source-side plot state.
+
+  figure_geometry_override_signature <- function(ov) {
+    z <- modifyList(figure_default_override(), ov %||% list())
+    app <- modifyList(figure_default_appearance_override(), z$appearance %||% list())
+    # Keep this field set aligned with figure_override_change_class()'s
+    # GRAPH_GEOMETRY classification.  Pure layer style / slot geometry must
+    # not evict an otherwise reusable source-gtable measurement.
+    sig <- list(
+      legend = as.character(z$legend %||% "inherit")[1],
+      legend_free_origin = figure_legend_source_origin(z),
+      legend_title = figure_normalize_legend_title_mode(z$legend_title),
+      legend_gap = suppressWarnings(as.numeric(z$legend_gap %||% 8)[1]),
+      appearance = app[c(
+        "title_mode", "title", "xlab_mode", "xlab", "ylab_mode", "ylab",
+        "base_size", "axis_title_size", "axis_text_size", "point_size",
+        "line_width", "ymin", "ymax"
+      )]
+    )
+    paste(capture.output(dput(sig)), collapse = "")
+  }
+
+  figure_geometry_cache_key <- function(id, geometry_revision, ov, ex) {
+    num1 <- function(x, fallback) {
+      z <- suppressWarnings(as.numeric(x)[1])
+      if (!is.finite(z)) fallback else z
+    }
+    # figure_plot_for_scale(..., scale=1) depends on the source export/device
+    # dimensions, not the Row/Panel target rectangle.  Target fitting stays
+    # downstream, so layout structural changes can safely reuse this base
+    # geometry measurement.
+    source_sig <- paste(
+      format(num1(ex$panel_width_px %||% ex$plot_width_px, 600), digits = 15, trim = TRUE),
+      format(num1(ex$panel_height_px %||% ex$plot_height_px, 600), digits = 15, trim = TRUE),
+      format(num1(ex$plot_width_px %||% ex$width, 600), digits = 15, trim = TRUE),
+      format(num1(ex$plot_height_px %||% ex$height, 600), digits = 15, trim = TRUE),
+      format(num1(ex$reference_res, 120), digits = 15, trim = TRUE),
+      sep = "|"
+    )
+    paste0(
+      as.character(id)[1], "::",
+      as.integer(geometry_revision %||% 0L), "::",
+      source_sig, "::",
+      figure_geometry_override_signature(ov)
+    )
+  }
+
+  figure_measure_source_geometry_cached <- function(id, geometry_revision, p_raw, ov, ex) {
+    if (is.null(p_raw)) return(NULL)
+    key <- figure_geometry_cache_key(id, geometry_revision, ov, ex)
+    if (exists(key, envir = figure_geometry_cache, inherits = FALSE)) {
+      diag_log("FIGURE-GEOMETRY-CACHE", paste0("HIT revision=", as.integer(geometry_revision %||% 0L)), id = id)
+      return(get(key, envir = figure_geometry_cache, inherits = FALSE))
+    }
+    diag_log("FIGURE-GEOMETRY-CACHE", paste0("MISS revision=", as.integer(geometry_revision %||% 0L)), id = id)
+    source_ov <- figure_layer_source_override(ov)
+    anchor <- tryCatch(figure_plot_for_scale(p_raw, source_ov, ex, 1), error = function(e) NULL)
+    if (is.null(anchor)) return(NULL)
+
+    # F1-4g: a free legend is an overlay and must not reserve empty source-side
+    # layout space.  Measure the owner Graph from a legend-free body, while
+    # retaining a mapped source legend bbox solely for initial detach/AutoCanvas.
+    rendered <- anchor
+    if (figure_legend_is_detached(ov)) {
+      body_ov <- source_ov; body_ov$legend <- "none"
+      body <- tryCatch(figure_plot_for_scale(p_raw, body_ov, ex, 1), error = function(e) NULL)
+      if (is.list(body)) {
+        rendered <- body
+        rendered$legend_bbox <- figure_layer_map_bbox_to_body(anchor, body, anchor$legend_bbox)
+        rendered$legend_visual_bbox <- figure_layer_map_bbox_to_body(anchor, body, anchor$legend_visual_bbox %||% anchor$legend_bbox)
+        rendered$legend_outside_bbox <- figure_layer_map_bbox_to_body(anchor, body, anchor$legend_outside_bbox)
+        rendered$legend_outside_visual_bbox <- figure_layer_map_bbox_to_body(anchor, body, anchor$legend_outside_visual_bbox %||% anchor$legend_outside_bbox)
+        rendered$legend_state <- anchor$legend_state %||% rendered$legend_state
+      }
+    }
+
+    # Store geometry metadata only.  Never retain a derived ggplot in this
+    # cache: Figure source state and plot ownership remain outside the cache.
+    keep <- c(
+      "width", "height", "panel_left", "panel_top", "panel_width", "panel_height",
+      "panel_bbox", "facet_bbox", "axis_outer_bbox", "content_outer_bbox", "title_bbox",
+      "legend_bbox", "legend_visual_bbox", "legend_outside_bbox", "legend_outside_visual_bbox", "legend_state", "geometry_source"
+    )
+    measured <- rendered[intersect(keep, names(rendered))]
+    assign(key, measured, envir = figure_geometry_cache)
+    measured
+  }
+
+  # v3.3.46: Figure Editor uses an explicit layout state as the single source
+  # of truth. Dynamic inputs only edit this state; they no longer determine
+  # Row/Panel counts themselves. This avoids renderUI <-> input feedback loops.
+  figure_layout_state <- reactiveVal(figure_default_layout_state())
+  figure_selected_row <- reactiveVal(1L)
+  figure_selected_graph <- reactiveVal("")
+  figure_selected_panel_key <- reactiveVal("")
+  figure_layout_initialized <- reactiveVal(FALSE)
+  figure_drag_syncing <- reactiveVal(FALSE)
+  figure_inspector_syncing <- reactiveVal(FALSE)
+  figure_inspector_sync_generation <- reactiveVal(0L)
+  # Per-source, per-commit-field edit revisions. A value-only comparison cannot
+  # distinguish A -> B -> A while a commit is pending, so alpha4 records intent.
+  figure_commit_edit_revisions <- reactiveVal(list())
+  # Structural UI is regenerated only when rows/panels/graph assignments change.
+  # Numeric edits (row height / panel width) update state without rebuilding their
+  # own inputs, which prevents dynamic-input value bounce loops.
+  figure_layout_ui_version <- reactiveVal(0L)
+  figure_inspector_ui_revision <- reactiveVal(0L)
+
+  bump_figure_layout_ui <- function() {
+    figure_layout_ui_version(isolate(figure_layout_ui_version()) + 1L)
+    invisible(NULL)
+  }
+
+  bump_figure_panel_display_revision <- function(id) {
+    id <- as.character(id %||% "")[1]
+    if (!length(id) || is.na(id) || !nzchar(id)) return(invisible(NULL))
+    cur <- isolate(figure_panel_display_revisions[[id]] %||% 0L)
+    figure_panel_display_revisions[[id]] <- as.integer(cur) + 1L
+    invisible(NULL)
+  }
+
+  sync_figure_inspector <- function() {
+    # alpha4: synchronization is acknowledged by a hidden generation input that
+    # is created with the rebuilt Inspector. Server flush count is not evidence
+    # that the browser has registered the new inputs. Old generations can never
+    # release a newer synchronization guard.
+    gen <- isolate(figure_inspector_sync_generation()) + 1L
+    figure_inspector_sync_generation(gen)
+    figure_inspector_syncing(TRUE)
+    figure_inspector_ui_revision(isolate(figure_inspector_ui_revision()) + 1L)
+    invisible(gen)
+  }
+
+  observeEvent(input$figure_inspector_sync_generation, {
+    got <- suppressWarnings(as.integer(input$figure_inspector_sync_generation)[1])
+    want <- isolate(figure_inspector_sync_generation())
+    if (length(got) == 1L && is.finite(got) && identical(as.integer(got), as.integer(want))) {
+      figure_inspector_syncing(FALSE)
+      diag_log("FIGURE-INSPECTOR", paste0("sync-ack generation=", want))
+    }
+  }, ignoreInit = FALSE)
+
+  figure_commit_field_values <- function(ov) {
+    z <- modifyList(figure_default_override(), ov %||% list())
+    app <- modifyList(figure_default_appearance_override(), z$appearance %||% list())
+    list(
+      title = list(mode=app$title_mode, value=app$title),
+      xlab = list(mode=app$xlab_mode, value=app$xlab),
+      ylab = list(mode=app$ylab_mode, value=app$ylab)
+    )
+  }
+
+  bump_figure_commit_edit_revisions <- function(id, old, new) {
+    id <- as.character(id %||% "")[1]
+    if (!nzchar(id)) return(invisible(NULL))
+    a <- figure_commit_field_values(old); b <- figure_commit_field_values(new)
+    allrev <- isolate(figure_commit_edit_revisions())
+    rev <- allrev[[id]] %||% list()
+    for (nm in names(b)) {
+      if (!isTRUE(all.equal(a[[nm]], b[[nm]], check.attributes=FALSE))) {
+        rev[[nm]] <- as.integer(rev[[nm]] %||% 0L) + 1L
+      }
+    }
+    allrev[[id]] <- rev
+    figure_commit_edit_revisions(allrev)
+    invisible(NULL)
+  }
+
+  bump_figure_snapshot_revision <- function(id) {
+    id <- as.character(id %||% "")
+    if (!nzchar(id)) return(invisible(NULL))
+    # Snapshot freshness and source-geometry validity are intentionally separate.
+    # Ordinary panel selection / Figure reload may refresh the snapshot while the
+    # canonical GraphState is unchanged; geometry cache must survive that case.
+    cur <- isolate(figure_snapshot_revisions[[id]] %||% 0L)
+    figure_snapshot_revisions[[id]] <- as.integer(cur) + 1L
+    invisible(NULL)
+  }
+
+  refresh_figure_geometry_source_revision <- function(id, state = NULL) {
+    id <- as.character(id %||% "")
+    if (!nzchar(id)) return(invisible(FALSE))
+    if (is.null(state)) state <- cache_get(id)
+    key <- id
+    had <- exists(key, envir = figure_geometry_source_states, inherits = FALSE)
+    old <- if (had) get(key, envir = figure_geometry_source_states, inherits = FALSE) else NULL
+    changed <- !had || !identical(old, state)
+    if (changed) {
+      assign(key, state, envir = figure_geometry_source_states)
+      cur <- isolate(figure_geometry_source_revisions[[id]] %||% 0L)
+      figure_geometry_source_revisions[[id]] <- as.integer(cur) + 1L
+      clear_figure_geometry_cache(id)
+      diag_log(
+        "FIGURE-GEOMETRY-SOURCE",
+        paste0("CHANGED revision=", as.integer(cur) + 1L),
+        id = id
+      )
+    } else {
+      diag_log(
+        "FIGURE-GEOMETRY-SOURCE",
+        paste0("UNCHANGED revision=", as.integer(isolate(figure_geometry_source_revisions[[id]] %||% 0L))),
+        id = id
+      )
+    }
+    invisible(changed)
+  }
+
+  close_figure_load_progress <- function() {
+    p <- isolate(figure_load_progress())
+    if (!is.null(p)) try(p$close(), silent = TRUE)
+    figure_load_progress(NULL)
+    invisible(NULL)
+  }
+
+  session$onSessionEnded(function() {
+    close_figure_load_progress()
+  })
+
   safe_name <- function(x, fallback = "Graph") {
     x <- trimws(as.character(x %||% ""))
     if (!nzchar(x)) x <- fallback
@@ -87,6 +995,46 @@ shinyServer(function(input, output, session) {
     !is.null(modules[[id]])
   }
 
+  graph_single_mod <- function() isolate(graph_single_editor_module())
+
+  graph_single_owner <- function() {
+    as.character(isolate(editing_graph_id()) %||% "")[1]
+  }
+
+  graph_single_ready <- function(id = NULL) {
+    owner <- graph_single_owner()
+    target <- as.character(id %||% owner)[1]
+    if (!nzchar(owner) || !identical(owner, target)) return(FALSE)
+    mod <- graph_single_mod()
+    !is.null(mod) && identical(as.character(isolate(graph_single_editor_mode()) %||% ""), "READY") &&
+      isTRUE(tryCatch(isolate(mod$ready()), error = function(e) FALSE))
+  }
+
+  source_graph_module <- function(id) {
+    id <- as.character(id %||% "")[1]
+    if (!nzchar(id)) return(NULL)
+    if (identical(id, graph_single_owner())) {
+      mod <- graph_single_mod()
+      if (!is.null(mod) && graph_single_ready(id)) return(mod)
+      if (isTRUE(isolate(graph_single_editor_loading()))) return(NULL)
+    }
+
+    # Background source modules are valid consumers only while their revision
+    # lease matches the canonical GraphState. A stale READY module must never be
+    # exposed to Figure/Export callers merely because its server reactive graph
+    # is still alive after disposable DOM eviction.
+    mod <- modules[[id]]
+    if (is.null(mod) || !source_module_revision_is_current(id)) return(NULL)
+    mod
+  }
+
+  # v3.64.2-format-export1: every export readiness check must resolve the
+  # persistent single Editor first, not only legacy/background modules[[id]].
+  source_graph_ready <- function(id) {
+    mod <- source_graph_module(id)
+    !is.null(mod) && isTRUE(tryCatch(isolate(mod$ready()), error = function(e) FALSE))
+  }
+
   cache_has <- function(id) {
     id %in% names(isolate(graph_state_cache()))
   }
@@ -97,311 +1045,682 @@ shinyServer(function(input, output, session) {
     ca[[id]]$state
   }
 
-  cache_set <- function(id, state) {
+  cache_set <- function(id, state, source = "cache-set") {
     ca <- isolate(graph_state_cache())
+    if (!identical(ca[[id]]$state, state)) {
+      graph_state_revision[[id]] <- graph_state_revision_value(id) + 1L
+      # Background source modules are derived readers. Any canonical change
+      # invalidates their lease; the next Figure/Export materialization restores
+      # the same persistent module from this newer revision before reuse.
+      invalidate_graph_source_module(id, source)
+    }
     ca[[id]] <- list(state = state)
     graph_state_cache(ca)
     invisible(TRUE)
   }
 
+  # v3.4.0 alpha6 GraphState phase 1:
+  # `graph_state_cache` is now treated as the canonical current GraphState
+  # registry, not merely an eviction/load snapshot.  Existing storage shape
+  # is intentionally preserved for .ggplotpack compatibility.
+  #
+  # A remounted Shiny namespace can briefly report NULL for inputs whose DOM
+  # binding has not reappeared yet.  NULL is therefore treated as "not yet
+  # observed" during live commits and the last canonical value is retained.
+  # Explicit user clears from select/text inputs arrive as "" (or another
+  # concrete value), so they are still committed normally.
+  registry_merge_nonnull <- function(previous, candidate) {
+    if (is.null(candidate)) return(previous)
+    if (is.null(previous)) return(candidate)
+    if (!is.list(candidate) || !is.list(previous)) return(candidate)
+
+    out <- candidate
+    cand_names <- names(candidate) %||% character(0)
+    prev_names <- names(previous) %||% character(0)
+    if (!length(cand_names)) return(candidate)
+
+    # Only preserve an explicitly present NULL field.  Do not resurrect names
+    # that are absent from the candidate: named collections such as statistics
+    # recipes/styles must still be able to delete entries intentionally.
+    for (nm in cand_names) {
+      has_previous <- nm %in% prev_names
+      if (is.null(candidate[[nm]])) {
+        if (has_previous) out[[nm]] <- previous[[nm]]
+        next
+      }
+      if (has_previous && is.list(candidate[[nm]]) && is.list(previous[[nm]])) {
+        out[[nm]] <- registry_merge_nonnull(previous[[nm]], candidate[[nm]])
+      }
+    }
+    out
+  }
+
+  registry_commit <- function(id, state, source = "unknown") {
+    id <- as.character(id %||% "")[1]
+    if (!nzchar(id) || is.null(state) || !is.list(state)) return(invisible(FALSE))
+
+    # Canonical writes are explicit. Background per-Graph source modules are
+    # read-only materializers and therefore never enter this writer path.
+    previous <- if (cache_has(id)) cache_get(id) else NULL
+    canonical <- registry_merge_nonnull(previous, state)
+    if (!is.null(previous) && identical(previous, canonical)) return(invisible(FALSE))
+
+    render_changed <- is.null(previous) || isTRUE(graph_render_state_changed(previous, canonical))
+    render_paths <- if (is.null(previous)) character(0) else graph_render_diff_paths(previous, canonical)
+
+    cache_set(id, canonical, source = source)
+    if (isTRUE(render_changed)) {
+      bump_graph_render_state_revision(id)
+    }
+    plot_type <- tryCatch(as.character(canonical$plot$type %||% "<NULL>")[1], error = function(e) "<ERR>")
+    diag_log(
+      "STATE-COMMIT",
+      paste0(
+        "source=", source,
+        " plot_type=", plot_type,
+        " render_changed=", isTRUE(render_changed),
+        if (length(render_paths)) paste0(" render_paths={", paste(head(render_paths, 16L), collapse=","), if (length(render_paths) > 16L) ",..." else "", "}") else ""
+      ),
+      id = id
+    )
+    invisible(TRUE)
+  }
+
   cache_remove <- function(id) {
+    invalidate_graph_source_module(id, "graph-delete")
     ca <- isolate(graph_state_cache())
     ca[[id]] <- NULL
     graph_state_cache(ca)
     invisible(TRUE)
   }
 
+  # v3.70.0 source split: server_figure_controls_runtime
+  sys.source(file.path(getwd(), "server_figure_lifecycle_runtime.R"), envir = environment())
+  sys.source(file.path(getwd(), "server_figure_controls_runtime.R"), envir = environment())
+
   # ------------------------------------------------------------------
-  # Graph tabs / UI
+  # UI shell lifecycle (independent from graphServer)
   # ------------------------------------------------------------------
-  output$graph_tab_bar <- renderUI({
-    meta <- graph_meta()
-    active <- active_graph()
-    if (!nrow(meta)) return(NULL)
-
-    tagList(lapply(seq_len(nrow(meta)), function(i) {
-      id <- meta$id[i]
-      nm <- meta$name[i]
-      cls <- paste("graph-tab-btn", if (identical(id, active)) "active" else "")
-      tags$button(
-        type = "button",
-        class = cls,
-        `data-graph-id` = id,
-        onclick = sprintf(
-          "Shiny.setInputValue('graph_click', '%s', {priority:'event'});",
-          id
-        ),
-        ondblclick = sprintf(
-          "Shiny.setInputValue('graph_rename_dblclick', '%s', {priority:'event'});",
-          id
-        ),
-        title = "クリック: 切替 / ダブルクリック: 名前変更",
-        nm
-      )
-    }))
-  })
-
-  output$bulk_export_choices <- renderUI({
-    meta <- graph_meta()
-    if (!nrow(meta)) return(NULL)
-
-    current <- isolate(input$bulk_export_selected %||% character(0))
-    selected <- intersect(current, meta$id)
-    if (!length(selected)) {
-      a <- isolate(active_graph())
-      selected <- if (a %in% meta$id) a else meta$id[1]
-    }
-
-    checkboxGroupInput(
-      "bulk_export_selected", NULL,
-      choices = stats::setNames(as.list(as.character(meta$id)), as.character(meta$name)),
-      selected = selected
-    )
-  })
-
-  refresh_export_choices <- function() {
+  ensure_graph_ui <- function(id, visible = FALSE) {
     meta <- isolate(graph_meta())
-    if (!nrow(meta)) return(invisible(NULL))
+    if (!id %in% meta$id) return(invisible(FALSE))
+    if (!ui_mounted(id)) {
+      st <- if (cache_has(id)) cache_get(id) else NULL
+      nm <- meta$name[match(id, meta$id)]
+      if (!length(nm) || is.na(nm)) nm <- id
+      diag_log(
+        "UI-MOUNT",
+        paste0("build source Graph UI state_only=TRUE server_exists=", module_exists(id)),
+        id = id
+      )
+      mount_t0 <- proc.time()[["elapsed"]]
+      ui_shell <- div(
+        id = paste0("panel_", id),
+        class = "graph-module-panel",
+        style = if (isTRUE(visible)) NULL else "display:none;",
+        graphUI(id, initial_state = st)
+      )
+      build_dt <- proc.time()[["elapsed"]] - mount_t0
+      insertUI(
+        selector = "#graph_panels",
+        where = "beforeEnd",
+        ui = ui_shell,
+        immediate = TRUE
+      )
+      mount_dt <- proc.time()[["elapsed"]] - mount_t0
+      diag_log(
+        "UI-MOUNT-DISPATCH",
+        sprintf("insert dispatched build=%.3fs total=%.3fs", build_dt, mount_dt),
+        id = id
+      )
+      mark_ui_mounted(id, TRUE)
+    }
+    if (isTRUE(visible)) {
+      for (z in mounted_ids()) {
+        if (!identical(z, id)) try(shinyjs::hide(paste0("panel_", z), anim = FALSE), silent = TRUE)
+      }
+      try(shinyjs::show(paste0("panel_", id), anim = FALSE), silent = TRUE)
+    }
+    invisible(TRUE)
+  }
 
-    current <- isolate(input$bulk_export_selected %||% character(0))
-    selected <- intersect(current, meta$id)
-    if (!length(selected)) {
-      a <- isolate(active_graph())
-      selected <- if (a %in% meta$id) a else meta$id[1]
+  # ------------------------------------------------------------------
+  # Background source UI lifecycle
+  # ------------------------------------------------------------------
+  # Per-Graph graphServer instances exist only to materialize Figure/Export
+  # sources for compatibility paths. Their browser DOM is disposable; the
+  # canonical GraphState registry remains authoritative while the server module
+  # itself survives DOM eviction for namespace safety.
+  evict_graph_source_ui <- function(id, reason = "materialized", force = FALSE) {
+    id <- as.character(id %||% "")[1]
+    if (!nzchar(id) || !ui_mounted(id)) return(invisible(FALSE))
+    if (!isTRUE(force) && identical(id, as.character(isolate(active_graph()) %||% ""))) {
+      return(invisible(FALSE))
     }
 
-    updateCheckboxGroupInput(
-      session, "bulk_export_selected",
-      choices = stats::setNames(as.list(as.character(meta$id)), as.character(meta$name)),
-      selected = selected
+    mod <- if (module_exists(id)) modules[[id]] else NULL
+    held_state <- if (cache_has(id)) cache_get(id) else NULL
+    if (!is.null(mod) && is.function(mod$cancel_remount)) {
+      try(mod$cancel_remount(held_state, reason = reason), silent = TRUE)
+    }
+    try(removeUI(selector = paste0("#panel_", id), immediate = TRUE), silent = TRUE)
+    mark_ui_mounted(id, FALSE)
+    graph_materialization_forget_ui_state(id)
+    diag_log(
+      "SOURCE-UI-EVICT",
+      paste0("reason=", reason, " module_exists=", module_exists(id)),
+      id = id
     )
-    invisible(NULL)
+    invisible(TRUE)
   }
+
+  evict_other_graph_source_uis <- function(keep_id, reason = "switch") {
+    keep_id <- as.character(keep_id %||% "")[1]
+    in_flight <- graph_materialization_current_id()
+    keep <- unique(c(keep_id, in_flight[nzchar(in_flight)]))
+    ids <- setdiff(mounted_ids(), keep)
+    if (!length(ids)) return(invisible(FALSE))
+    for (z in ids) evict_graph_source_ui(z, reason = reason, force = TRUE)
+    invisible(TRUE)
+  }
+
+  # ------------------------------------------------------------------
+  # Graph-owned SVG preview lifecycle
+  # ------------------------------------------------------------------
+  graph_preview_record_from_plot <- function(id, state, plot, export_meta, render_revision = NA_integer_, reason = "render") {
+    id <- as.character(id %||% "")[1]
+    if (!nzchar(id) || !is.list(state) || is.null(plot) || !is.list(export_meta)) return(NULL)
+
+    rendered <- tryCatch(
+      figure_plot_for_scale(plot, figure_default_override(id), export_meta, 1),
+      error = function(e) {
+        diag_log("GRAPH-PREVIEW", paste0("geometry ERROR reason=", reason, ": ", conditionMessage(e)), id = id)
+        NULL
+      }
+    )
+    if (is.null(rendered) || is.null(rendered$plot)) return(NULL)
+
+    svg <- tryCatch(
+      figure_plot_svg_text(
+        rendered$plot, rendered$width, rendered$height,
+        export_meta$reference_res %||% 120
+      ),
+      error = function(e) {
+        diag_log("GRAPH-PREVIEW", paste0("SVG ERROR reason=", reason, ": ", conditionMessage(e)), id = id)
+        ""
+      }
+    )
+    if (!nzchar(svg %||% "")) return(NULL)
+
+    list(
+      svg = svg,
+      meta = list(
+        width = rendered$width,
+        height = rendered$height,
+        panel_left = rendered$panel_left,
+        panel_top = rendered$panel_top,
+        panel_width = rendered$panel_width,
+        panel_height = rendered$panel_height,
+        panel_bbox = rendered$panel_bbox,
+        facet_bbox = rendered$facet_bbox,
+        axis_outer_bbox = rendered$axis_outer_bbox,
+        content_outer_bbox = rendered$content_outer_bbox,
+        title_bbox = rendered$title_bbox,
+        legend_bbox = rendered$legend_bbox,
+        legend_visual_bbox = rendered$legend_visual_bbox %||% rendered$legend_bbox,
+        legend_outside_bbox = rendered$legend_outside_bbox,
+        legend_outside_visual_bbox = rendered$legend_outside_visual_bbox %||% rendered$legend_outside_bbox,
+        geometry_source = rendered$geometry_source %||% "unknown",
+        reference_res = export_meta$reference_res %||% 120
+      ),
+      state = state,
+      render_revision = suppressWarnings(as.integer(render_revision %||% NA_integer_))
+    )
+  }
+
+  # Graph SVG publication/cache lifecycle retired in v3.73.2.18. Temporary
+  # vector consumers (Figure Inset / Statistics) call
+  # graph_preview_record_from_plot() directly and retain the result in their
+  # own ownership domain only.
 
   # ------------------------------------------------------------------
   # Lazy module creation
   # ------------------------------------------------------------------
-  instantiate_graph <- function(id, context = c("display", "export")) {
-    context <- match.arg(context)
-    meta <- isolate(graph_meta())
-    if (!id %in% meta$id) return(invisible(FALSE))
-    if (module_exists(id)) return(invisible(TRUE))
+  # v3.67.0 source split: server_graph_editor_runtime
+  sys.source(file.path(getwd(), "server_graph_editor_runtime.R"), envir = environment())
 
-    initial_state <- if (cache_has(id)) cache_get(id) else NULL
+  # v3.73.1: selection targets the Graph immediately and then auto-requests the
+  # singleton Editor; hydration itself remains owned by the editor runtime.
+  sys.source(file.path(getwd(), "server_graph_selection_runtime.R"), envir = environment())
 
-    insertUI(
-      selector = "#graph_panels",
-      where = "beforeEnd",
-      ui = div(
-        id = paste0("panel_", id),
-        class = "graph-module-panel",
-        style = "display:none;",
-        graphUI(id)
+  figure_editor_module_id <- function(id = NULL) {
+    paste0("figure_editor_e", isolate(figure_editor_epoch()), "_single")
+  }
+  figure_editor_wrapper_id <- function(id = NULL) {
+    paste0("figure_graph_editor_panel_e", isolate(figure_editor_epoch()), "_single")
+  }
+
+  figure_editor_module <- function(id = NULL) {
+    editing_id <- as.character(isolate(figure_editing_graph()) %||% "")[1]
+    requested <- as.character(id %||% "")[1]
+    if (nzchar(requested) && nzchar(editing_id) && !identical(requested, editing_id)) return(NULL)
+    if (!exists("single", envir = figure_editor_modules, inherits = FALSE)) return(NULL)
+    get("single", envir = figure_editor_modules, inherits = FALSE)
+  }
+
+  store_figure_edit_state <- function(id, state, reason = "editor") {
+    id <- as.character(id %||% "")[1]
+    if (!nzchar(id) || !is.list(state)) return(invisible(FALSE))
+    states <- isolate(figure_edit_states())
+    states[[id]] <- state
+    figure_edit_states(states)
+    diag_log("FIGURE-EDIT-STATE", paste0("stored reason=", reason, " plot_type=", as.character(state$plot$type %||% "<NULL>")[1]), id = id)
+    invisible(TRUE)
+  }
+
+  figure_editor_snapshot_available <- function(id) {
+    id <- as.character(id %||% "")[1]
+    if (!nzchar(id)) return(FALSE)
+    plots <- isolate(figure_loaded_plots())
+    exports <- isolate(figure_loaded_exports())
+    !is.null(plots[[id]]) && is.list(exports[[id]])
+  }
+
+  capture_ready_figure_editor_payload <- function(id) {
+    id <- as.character(id %||% "")[1]
+    mod <- figure_editor_module(id)
+    if (is.null(mod) || !isTRUE(tryCatch(isolate(mod$ready()), error = function(e) FALSE))) return(NULL)
+
+    comp <- tryCatch({
+      if (is.function(mod$figure_components)) isolate(mod$figure_components()) else NULL
+    }, error = function(e) {
+      diag_log("FIGURE-EDIT-SNAPSHOT", paste0("components ERROR: ", conditionMessage(e)), id = id)
+      NULL
+    })
+    p <- tryCatch({
+      if (is.list(comp) && !is.null(comp$plot)) comp$plot
+      else if (is.function(mod$figure_plot)) isolate(mod$figure_plot())
+      else isolate(mod$plot())
+    }, error = function(e) NULL)
+    ex <- tryCatch({
+      if (is.list(comp) && is.list(comp$meta)) comp$meta
+      else if (is.function(mod$figure_meta)) isolate(mod$figure_meta())
+      else isolate(mod$export())
+    }, error = function(e) NULL)
+    if (is.null(p) || !is.list(ex)) return(NULL)
+
+    epw <- suppressWarnings(as.numeric(ex$panel_width_px %||% NA_real_)[1])
+    eph <- suppressWarnings(as.numeric(ex$panel_height_px %||% NA_real_)[1])
+    if (!is.finite(epw) || epw <= 0 || !is.finite(eph) || eph <= 0) return(NULL)
+    rr <- if (is.function(mod$render_revision)) {
+      tryCatch(isolate(mod$render_revision()), error = function(e) NA_integer_)
+    } else NA_integer_
+    list(components = comp, plot = p, meta = ex, render_revision = rr)
+  }
+
+  preserve_figure_inset_snapshot_before_main_replace <- function(id, persisted_rec) {
+    id <- as.character(id %||% "")[1]
+    if (!nzchar(id) || !is.list(persisted_rec) || !nzchar(persisted_rec$svg %||% "")) return(FALSE)
+    inset_cache <- isolate(figure_inset_preview_cache())
+    existing <- inset_cache[[id]]
+    if (is.list(existing) && nzchar(existing$svg %||% "")) return(FALSE)
+    # Main and Inset are independent Figure-owned snapshots. If an Inset is
+    # currently falling back to the packaged Figure preview, preserve that exact
+    # point-in-time asset before a Main edit invalidates the packaged fallback.
+    inset_cache[[id]] <- persisted_rec
+    figure_inset_preview_cache(inset_cache)
+    bump_figure_snapshot_revision(id)
+    diag_log("FIGURE-INSET", "preserved persisted fallback before Main snapshot replacement", id = id)
+    TRUE
+  }
+
+  snapshot_ready_figure_editor <- function(id, state_now = NULL, payload = NULL) {
+    id <- as.character(id %||% "")[1]
+    if (!is.list(payload)) payload <- capture_ready_figure_editor_payload(id)
+    if (!is.list(payload)) return(FALSE)
+    mod <- figure_editor_module(id)
+    comp <- payload$components
+    p <- payload$plot
+    ex <- payload$meta
+
+    plots <- isolate(figure_loaded_plots())
+    exports <- isolate(figure_loaded_exports())
+    assets <- isolate(figure_loaded_assets())
+    plots[[id]] <- p
+    exports[[id]] <- ex
+    assets[[id]] <- figure_make_internal_asset(id, comp = comp, plot = p, meta = ex)
+    figure_loaded_plots(plots)
+    figure_loaded_exports(exports)
+    figure_loaded_assets(assets)
+
+    # Once the editable Figure copy changes, an older packaged Figure SVG must
+    # never win as a fallback. It will be regenerated from this live Figure copy
+    # on the next Project save.
+    persisted <- isolate(figure_persisted_previews())
+    old_persisted <- persisted[[id]]
+    preserve_figure_inset_snapshot_before_main_replace(id, old_persisted)
+    persisted[[id]] <- NULL
+    figure_persisted_previews(persisted)
+
+    if (!is.list(state_now)) {
+      state_now <- tryCatch(if (is.function(mod$state)) isolate(mod$state()) else NULL, error = function(e) NULL)
+    }
+    if (is.list(state_now)) refresh_figure_geometry_source_revision(id, state_now)
+
+    # v3.41: Graph appearance now belongs to the editable Figure GraphState.
+    # Neutralize the deprecated Appearance override after a valid editable
+    # snapshot exists, without touching Figure-owned legend placement/crop/inset.
+    drafts_now <- isolate(figure_override_drafts())
+    raw_ov_now <- drafts_now[[id]] %||% figure_default_override(id)
+    old_app_now <- modifyList(figure_default_appearance_override(), raw_ov_now$appearance %||% list())
+    def_app_now <- figure_default_appearance_override()
+    if (!identical(old_app_now, def_app_now)) {
+      raw_ov_now$appearance <- def_app_now
+      drafts_now[[id]] <- raw_ov_now
+      figure_override_drafts(drafts_now)
+      figure_requested_overrides(drafts_now)
+      diag_log("FIGURE-APPEARANCE-MIGRATE", "legacy Figure appearance override cleared; editable GraphState now owns appearance", id=id)
+    }
+
+    bump_figure_snapshot_revision(id)
+    ov_now <- figure_override_for(id, isolate(figure_requested_overrides()))
+    diag_log(
+      "FIGURE-EDIT-SNAPSHOT",
+      paste0(
+        "updated Figure-only plot/export snapshot; source Graph unchanged",
+        " legend_scope=", figure_legend_layer_scope(ov_now),
+        " legend_mode=", as.character(ov_now$legend %||% "inherit")[1],
+        if (figure_legend_is_detached(ov_now)) paste0(
+          " free_xy=", round(as.numeric(ov_now$legend_free_x %||% 0.75), 4), ",",
+          round(as.numeric(ov_now$legend_free_y %||% 0.08), 4),
+          " source_origin=", figure_legend_source_origin(ov_now)
+        ) else ""
       ),
-      immediate = TRUE
+      id = id
     )
+    TRUE
+  }
 
-    modules[[id]] <- graphServer(id, initial_state = initial_state, style_clipboard = style_clipboard)
+  seed_figure_editor_from_source <- function(id, state, reason = "explicit-source-refresh", reload_editor = TRUE) {
+    id <- as.character(id %||% "")[1]
+    if (!nzchar(id) || !is.list(state)) return(invisible(FALSE))
+    store_figure_edit_state(id, state, reason = reason)
 
-    if (!is.null(initial_state)) {
-      mod <- modules[[id]]
-      if (!is.null(mod) && is.function(mod$activate)) mod$activate()
+    # v3.60.0: explicit source refresh updates canonical Figure-owned state.
+    # Reload the heavy single editor only when this Graph already owns it; a
+    # selected-but-not-editing panel stays lightweight.
+    if (isTRUE(reload_editor) && identical(as.character(isolate(figure_editing_graph()) %||% "")[1], id)) {
+      session$onFlushed(function() ensure_figure_editor(id), once = TRUE)
     }
-
     invisible(TRUE)
   }
 
-  show_graph <- function(id, kind = "graph") {
-    meta <- isolate(graph_meta())
-    if (!id %in% meta$id) return(invisible(FALSE))
-
-    old_active <- isolate(active_graph())
-    needs_restore <- !module_exists(id) && cache_has(id)
-
-    if (needs_restore) {
-      restore_kind(kind)
-      restore_target(id)
-      restore_status("restoring")
-      pending_display_graph(id)
-
-      if (!identical(kind, "project")) project_file_read(FALSE)
-
-      # panelはdisplay:noneで生成して復元を開始する。
-      # この時点では現在の完成済みGraphを隠さない。
-      instantiate_graph(id, context = "display")
-      mod <- modules[[id]]
-      if (!is.null(mod) && is.function(mod$activate)) mod$activate()
-
-      return(invisible(TRUE))
-    }
-
-    # 新規Graph / 既に一度復元済みGraphは即時切替。
-    for (z in meta$id) {
-      if (module_exists(z)) shinyjs::hide(paste0("panel_", z), anim = FALSE)
-    }
-    shinyjs::show(paste0("panel_", id), anim = FALSE)
-    active_graph(id)
-    pending_display_graph(NULL)
-
-    mod <- modules[[id]]
-    if (!is.null(mod) && is.function(mod$activate)) mod$activate()
-
-    if (!identical(kind, "project")) {
-      restore_status("idle")
-      restore_target(NULL)
-    }
-
+  reload_selected_figure_editor_after_bulk <- function(ids, reason = "bulk-import-complete") {
+    ids <- unique(as.character(ids %||% character(0)))
+    editing_id <- as.character(isolate(figure_editing_graph()) %||% "")[1]
+    if (!nzchar(editing_id) || !editing_id %in% ids) return(invisible(FALSE))
+    state <- isolate(figure_edit_states())[[editing_id]]
+    if (!is.list(state)) return(invisible(FALSE))
+    diag_log("FIGURE-BULK-IMPORT", paste0("single editor reload once reason=", reason), id = editing_id)
+    session$onFlushed(function() ensure_figure_editor(editing_id), once = TRUE)
     invisible(TRUE)
   }
 
-  create_graph <- function(name, initial_state = NULL, select = TRUE) {
-    id <- next_id()
-
-    meta <- isolate(graph_meta())
-    meta <- rbind(
-      meta,
-      data.frame(id = id, name = name, stringsAsFactors = FALSE)
-    )
-    graph_meta(meta)
-
-    if (!is.null(initial_state)) cache_set(id, initial_state)
-
-    # 新規/複製は明示操作なので、その場でmoduleを生成する。
-    instantiate_graph(id, context = "display")
-    refresh_export_choices()
-
-    if (select) show_graph(id, kind = "graph")
-    id
+  show_figure_editor_wrapper <- function(id = "") {
+    id <- as.character(id %||% "")[1]
+    wrapper <- if (nzchar(id)) figure_editor_wrapper_id() else ""
+    session$sendCustomMessage("figure-editor-select", list(wrapperId = wrapper))
+    invisible(NULL)
   }
 
-  # ------------------------------------------------------------------
-  # Restore progress
-  # ------------------------------------------------------------------
-  observe({
-    if (!identical(restore_status(), "restoring")) return()
+  reset_figure_editors <- function(clear_states = TRUE) {
+    show_figure_editor_wrapper("")
+    try(removeUI(selector = "#figure_graph_editor_host .figure-graph-editor-instance", multiple = TRUE, immediate = TRUE), silent = TRUE)
+    if (length(ls(envir = figure_editor_modules, all.names = TRUE))) {
+      rm(list = ls(envir = figure_editor_modules, all.names = TRUE), envir = figure_editor_modules)
+    }
+    if (length(ls(envir = figure_editor_mounted, all.names = TRUE))) {
+      rm(list = ls(envir = figure_editor_mounted, all.names = TRUE), envir = figure_editor_mounted)
+    }
+    if (length(ls(envir = figure_editor_activated, all.names = TRUE))) {
+      rm(list = ls(envir = figure_editor_activated, all.names = TRUE), envir = figure_editor_activated)
+    }
+    figure_editor_epoch(as.integer(isolate(figure_editor_epoch()) %||% 0L) + 1L)
+    figure_editor_mount_pending(list(id="", editor_id="", wrapper_id="", generation=isolate(figure_editor_mount_generation())))
+    figure_editing_graph("")
+    figure_single_editor_loading(FALSE)
+    figure_single_editor_show_when_ready(TRUE)
+    figure_single_editor_target_state(NULL)
+    figure_single_editor_mode("IDLE")
+    figure_single_editor_settle(list(generation=0L, id="", last_state=NULL, stable=0L, attempts=0L))
+    figure_single_editor_generation(as.integer(isolate(figure_single_editor_generation()) %||% 0L) + 1L)
+    if (isTRUE(clear_states)) figure_edit_states(list())
+    invisible(NULL)
+  }
 
-    id <- restore_target()
-    if (is.null(id) || !nzchar(id)) return()
-
-    mod <- modules[[id]]
-    if (is.null(mod)) return()
-
-    ready <- isTRUE(mod$ready())
-
-    # Project復元の完了条件は「設定/stateの復元完了」にする。
-    # hidden panel内のPlot描画(draw)を待つと、Bootstrapのdisplay:none中に
-    # plotOutputサイズが確定せず85%で待ち続けるため、drawnは条件にしない。
-    if (ready) {
-      target <- isolate(pending_display_graph())
-
-      if (!is.null(target) && identical(target, id)) {
-        meta <- isolate(graph_meta())
-
-        # stateが完成した時点で新Graphを先に表示する。
-        # Plotは表示後の正常なbrowserサイズで描画させる。
-        for (z in meta$id) {
-          if (module_exists(z)) shinyjs::hide(paste0("panel_", z), anim = FALSE)
-        }
-        shinyjs::show(paste0("panel_", id), anim = FALSE)
-        active_graph(id)
-        pending_display_graph(NULL)
-
-        # 新しいGraphを表示してから前Projectのpanelを削除。
-        old_ids <- isolate(obsolete_panels())
-        if (length(old_ids)) {
-          for (old_id in old_ids) {
-            removeUI(selector = paste0("#panel_", old_id), immediate = TRUE)
-          }
-          obsolete_panels(character(0))
-        }
+  request_figure_editor_mount_ack <- function(id, editor_id, wrapper_id) {
+    gen <- as.integer(isolate(figure_editor_mount_generation()) %||% 0L) + 1L
+    figure_editor_mount_generation(gen)
+    figure_editor_mount_pending(list(id=id, editor_id=editor_id, wrapper_id=wrapper_id, generation=gen))
+    session$onFlushed(function() {
+      pending <- isolate(figure_editor_mount_pending())
+      if (!identical(as.integer(pending$generation %||% 0L), gen) || !identical(as.character(pending$id %||% ""), id)) return()
+      st <- isolate(figure_edit_states())[[id]]
+      rs <- if (is.list(st)) st$reshape %||% list() else list()
+      fields <- list(
+        list(field = "plot_type", id = shiny::NS(editor_id, "plot_type")),
+        list(field = "reshape_wide", id = shiny::NS(editor_id, "reshape_wide")),
+        list(field = "graph_main_tab", id = shiny::NS(editor_id, "graph_main_tab"))
+      )
+      if (isTRUE(rs$enabled)) {
+        fields <- c(fields, list(
+          list(field = "reshape_row_id", id = shiny::NS(editor_id, "reshape_row_id")),
+          list(field = "reshape_x_name", id = shiny::NS(editor_id, "reshape_x_name")),
+          list(field = "reshape_y_name", id = shiny::NS(editor_id, "reshape_y_name"))
+        ))
       }
-
-      restore_status("complete")
-
-      # Project/Graph復元直後は保存済み状態なのでdirtyを解除。
-    }
-  })
-
-  output$project_load_progress <- renderUI({
-    st <- restore_status()
-    if (identical(st, "idle")) return(NULL)
-
-    kind <- restore_kind()
-    id <- restore_target()
-    mod <- if (!is.null(id)) modules[[id]] else NULL
-
-    ready <- !is.null(mod) && isTRUE(mod$ready())
-
-    # hidden Plot描画は復元完了条件にしない。
-    # readyになったらGraphを表示して100%へ進む。
-    graph_pct <- if (ready) {
-      100
-    } else if (!is.null(mod)) {
-      45
-    } else {
-      10
-    }
-
-    if (identical(st, "complete")) {
-      return(
-        div(
-          class = "restore-done",
-          HTML("&#10003;&nbsp;"),
-          if (identical(kind, "project")) "Project・Graph復元完了" else "Graph復元完了"
+      session$sendCustomMessage(
+        "graph-ui-mount-check",
+        list(
+          generation = gen,
+          graphId = editor_id,
+          panelId = wrapper_id,
+          fields = fields,
+          ackId = "figure_graph_editor_mount_ack"
         )
       )
+      diag_log("FIGURE-EDIT-MOUNT", paste0("request generation=", gen), id = id)
+    }, once = TRUE)
+    invisible(TRUE)
+  }
+
+  ensure_figure_editor <- function(id, force_reload = FALSE, preserve_current = TRUE,
+                                   show_when_ready = TRUE, state_override = NULL) {
+    id <- as.character(id %||% "")[1]
+    if (!nzchar(id)) { show_figure_editor_wrapper(""); return(FALSE) }
+
+    loading_owner <- as.character(isolate(figure_editing_graph()) %||% "")[1]
+    if (isTRUE(isolate(figure_single_editor_loading())) && nzchar(loading_owner) && !identical(loading_owner, id)) {
+      diag_log("FIGURE-SINGLE-EDITOR", paste0("load-rejected busy=", loading_owner), id = id)
+      return(FALSE)
     }
 
-    parts <- list()
-
-    if (identical(kind, "project")) {
-      parts <- c(parts, list(
-        div(
-          class = "project-progress-line",
-          div(class = "project-progress-label", "Projectファイル"),
-          div(
-            class = "progress compact-progress",
-            div(
-              class = "progress-bar progress-bar-success",
-              role = "progressbar",
-              style = "width:100%;",
-              "100%"
-            )
-          )
-        )
-      ))
+    states <- isolate(figure_edit_states())
+    state <- if (is.list(state_override)) state_override else states[[id]]
+    if (!is.list(state)) {
+      if (isTRUE(show_when_ready)) {
+        showNotification("Figure側に編集可能なGraph snapshotがありません。先に『Graphから再読込』してください。", type="warning", duration=4)
+      }
+      return(FALSE)
     }
 
-    parts <- c(parts, list(
-      div(
-        class = "project-progress-line",
-        div(
-          class = "project-progress-label",
-          if (identical(kind, "project")) "表示Graphを復元しています…" else "Graphを復元しています…"
+    editor_id <- figure_editor_module_id()
+    wrapper_id <- figure_editor_wrapper_id()
+    mounted <- exists("single", envir = figure_editor_mounted, inherits = FALSE) &&
+      isTRUE(get("single", envir = figure_editor_mounted, inherits = FALSE))
+
+    old_id <- as.character(isolate(figure_editing_graph()) %||% "")[1]
+    old_mod <- if (nzchar(old_id)) figure_editor_module(old_id) else NULL
+    if (!isTRUE(force_reload) && identical(old_id, id) && !is.null(old_mod) &&
+        isTRUE(tryCatch(isolate(old_mod$ready()), error = function(e) FALSE)) &&
+        !isTRUE(isolate(figure_single_editor_loading()))) {
+      figure_single_editor_show_when_ready(isTRUE(show_when_ready))
+      if (isTRUE(show_when_ready)) show_figure_editor_wrapper(id) else show_figure_editor_wrapper("")
+      diag_log("FIGURE-SINGLE-EDITOR", "reuse-hit", id = id)
+      return(TRUE)
+    }
+
+    if (isTRUE(preserve_current) && nzchar(old_id) && !identical(old_id, id) && !is.null(old_mod) &&
+        isTRUE(tryCatch(isolate(old_mod$ready()), error = function(e) FALSE)) &&
+        isTRUE(isolate(figure_single_editor_show_when_ready()))) {
+      old_state <- tryCatch(if (is.function(old_mod$state)) isolate(old_mod$state()) else NULL, error = function(e) NULL)
+      if (is.list(old_state)) {
+        store_figure_edit_state(old_id, old_state, reason = "single-editor-switch")
+        snapshot_ready_figure_editor(old_id, old_state)
+      }
+    }
+
+    figure_editing_graph(id)
+    figure_single_editor_loading(TRUE)
+    figure_single_editor_show_when_ready(isTRUE(show_when_ready))
+    figure_single_editor_target_state(state)
+    figure_single_editor_mode("REPLAY")
+    next_generation <- as.integer(isolate(figure_single_editor_generation()) %||% 0L) + 1L
+    figure_single_editor_generation(next_generation)
+    figure_single_editor_settle(list(generation=next_generation, id=id, last_state=NULL, stable=0L, attempts=0L))
+    show_figure_editor_wrapper("")
+    diag_log(
+      "FIGURE-SINGLE-EDITOR",
+      paste0("load-request previous=", if (nzchar(old_id)) old_id else "<none>", " mode=REPLAY visible=", isTRUE(show_when_ready)),
+      id = id
+    )
+
+    if (!mounted) {
+      insertUI(
+        selector = "#figure_graph_editor_host", where = "beforeEnd",
+        ui = div(
+          id = wrapper_id,
+          class = "figure-graph-editor-instance",
+          style = "display:none;",
+          graphUI(editor_id, initial_state = state, mode = "controls")
         ),
-        div(
-          class = "progress compact-progress",
-          div(
-            class = "progress-bar progress-bar-striped active",
-            role = "progressbar",
-            style = paste0("width:", graph_pct, "%;"),
-            paste0(graph_pct, "%")
-          )
-        )
+        immediate = TRUE
       )
-    ))
+      assign("single", TRUE, envir = figure_editor_mounted)
+      diag_log("FIGURE-SINGLE-EDITOR", paste0("UI inserted editor_id=", editor_id), id = id)
+    }
 
-    tagList(parts)
+    mod <- if (exists("single", envir = figure_editor_modules, inherits = FALSE))
+      get("single", envir = figure_editor_modules, inherits = FALSE) else NULL
+    if (is.null(mod)) {
+      epoch0 <- isolate(figure_editor_epoch())
+      diag_log("FIGURE-EDIT-INIT-TIMING", "mark=CALLSITE-BEFORE-GRAPHSERVER source=figure-single-editor", id = id)
+      mod <- graph_server_runtime(
+        editor_id,
+        initial_state = NULL,
+        style_clipboard = style_clipboard,
+        diag_log = function(tag, ..., id = NULL) {
+          owner <- as.character(isolate(figure_editing_graph()) %||% "")[1]
+          diag_log(paste0("FIGURE-EDIT-", tag), ..., id = if (nzchar(owner)) owner else NULL)
+        },
+        ui_preseeded = TRUE,
+        controls_only = TRUE,
+        on_state_change = function(state_now) {
+          if (!identical(as.integer(isolate(figure_editor_epoch())), as.integer(epoch0))) return(invisible(NULL))
+          if (isTRUE(isolate(figure_single_editor_loading()))) return(invisible(NULL))
+          if (!isTRUE(isolate(figure_single_editor_show_when_ready()))) return(invisible(NULL))
+          owner <- as.character(isolate(figure_editing_graph()) %||% "")[1]
+          if (!nzchar(owner)) return(invisible(NULL))
+          prev_state <- isolate(figure_edit_states())[[owner]]
+          unchanged <- is.list(prev_state) && identical(prev_state, state_now)
+          if (isTRUE(unchanged) && isTRUE(figure_editor_snapshot_available(owner))) return(invisible(NULL))
+          if (!isTRUE(unchanged)) store_figure_edit_state(owner, state_now, reason = "figure-single-editor")
+          snapshot_ready_figure_editor(owner, state_now)
+        }
+      )
+      diag_log("FIGURE-EDIT-INIT-TIMING", "mark=CALLSITE-AFTER-GRAPHSERVER source=figure-single-editor", id = id)
+      assign("single", mod, envir = figure_editor_modules)
+      request_figure_editor_mount_ack(id, editor_id, wrapper_id)
+    } else if (is.function(mod$replay_state)) {
+      mod$replay_state(state, transaction = list(id = id, generation = next_generation, figure = TRUE))
+    }
+
+    TRUE
+  }
+
+  observeEvent(input$figure_graph_editor_mount_ack, {
+    ack <- input$figure_graph_editor_mount_ack
+    pending <- isolate(figure_editor_mount_pending())
+    if (!is.list(ack) || !is.list(pending)) return()
+    gen <- suppressWarnings(as.integer(ack$generation %||% NA_integer_))
+    if (!is.finite(gen) || !identical(gen, as.integer(pending$generation %||% 0L))) return()
+    id <- as.character(pending$id %||% "")[1]
+    status <- as.character(ack$status %||% "")[1]
+    diag_log(
+      "FIGURE-EDIT-MOUNT",
+      paste0("ack generation=", gen, " status=", status, " missing=", paste(as.character(unlist(ack$missing %||% character(0), use.names=FALSE)), collapse=",")),
+      id = id
+    )
+    figure_editor_mount_pending(list(id="", editor_id="", wrapper_id="", generation=gen))
+    if (!identical(status, "ready")) {
+      figure_single_editor_loading(FALSE)
+      figure_single_editor_mode("IDLE")
+      showNotification("Figure Graph EditorのUI bindingを確認できませんでした。", type="warning", duration=4)
+      return()
+    }
+
+    mod <- figure_editor_module(id)
+    latest_state <- isolate(figure_single_editor_target_state())
+    if (!is.list(latest_state)) latest_state <- isolate(figure_edit_states())[[id]]
+    if (!is.null(mod) && is.list(latest_state) && is.function(mod$replay_state)) {
+      replay_generation <- as.integer(isolate(figure_single_editor_generation()) %||% 0L)
+      mod$replay_state(latest_state, transaction = list(id = id, generation = replay_generation, figure = TRUE))
+      assign("single", TRUE, envir = figure_editor_activated)
+    }
+  }, ignoreInit = TRUE)
+
+  # Figure owns one persistent controls-only editor. A load is complete when its
+  # value replay has crossed the same single browser completion barrier used by
+  # the main Graph Editor. No semantic readback/settle loop is required.
+  observe({
+    gen <- figure_single_editor_generation()
+    loading <- figure_single_editor_loading()
+    id <- as.character(figure_editing_graph() %||% "")[1]
+    if (!isTRUE(loading) || !nzchar(id)) return()
+    if (!exists("single", envir = figure_editor_modules, inherits = FALSE)) return()
+    mod <- get("single", envir = figure_editor_modules, inherits = FALSE)
+    pending_mount <- figure_editor_mount_pending()
+    if (identical(as.character(pending_mount$id %||% "")[1], id)) return()
+    if (is.function(mod$replay_active) && isTRUE(tryCatch(mod$replay_active(), error = function(e) FALSE))) return()
+    if (!isTRUE(tryCatch(mod$ready(), error = function(e) FALSE))) return()
+
+    figure_single_editor_loading(FALSE)
+    figure_single_editor_mode("READY")
+    if (isTRUE(figure_single_editor_show_when_ready())) {
+      show_figure_editor_wrapper(id)
+    } else {
+      show_figure_editor_wrapper("")
+    }
+    diag_log(
+      "FIGURE-SINGLE-EDITOR",
+      paste0("load-ready generation=", as.integer(gen), " mode=value-replay visible=", isTRUE(figure_single_editor_show_when_ready())),
+      id = id
+    )
   })
 
-  # ------------------------------------------------------------------
-  # Graph actions
-  # ------------------------------------------------------------------
-  observeEvent(input$graph_click, {
-    id <- as.character(input$graph_click %||% "")
-    if (!nzchar(id)) return()
-    if (!identical(id, isolate(active_graph()))) show_graph(id, kind = "graph")
-  }, ignoreInit = TRUE)
+  # v3.67.0 source split: server_graph_materialization_runtime
+  sys.source(file.path(getwd(), "server_graph_materialization_runtime.R"), envir = environment())
+
+  # v3.67.0 source split: server_graph_workspace_runtime
+  sys.source(file.path(getwd(), "server_graph_workspace_runtime.R"), envir = environment())
+
+  # v3.73.0: central semantic style Library. Kept outside graphServer so Graphs
+  # never synchronize directly with each other.
+  sys.source(file.path(getwd(), "server_shared_style_runtime.R"), envir = environment())
+  # v3.73.2.29: cross-Graph/Figure settings browser plus focused canonical
+  # Graph batch helpers. Figure writes are sourced later after Figure services.
+  sys.source(file.path(getwd(), "server_graph_settings_manager_runtime.R"), envir = environment())
+  sys.source(file.path(getwd(), "server_graph_settings_batch_runtime.R"), envir = environment())
 
   pending_new_graph_default <- reactiveVal(NULL)
 
@@ -445,6 +1764,7 @@ shinyServer(function(input, output, session) {
   }
 
   observeEvent(input$graph_add, {
+    if (project_load_action_blocked("graph-add")) return()
     show_new_graph_modal()
   })
 
@@ -479,22 +1799,44 @@ shinyServer(function(input, output, session) {
   }, ignoreInit = TRUE)
 
   observeEvent(input$graph_duplicate, {
-    id <- isolate(active_graph())
-    mod <- modules[[id]]
-    if (is.null(mod) || !isTRUE(isolate(mod$ready()))) {
-      showNotification("現在Graphの準備が終わってから複製してください。", type = "warning")
+    req <- input$graph_duplicate
+    id <- if (is.list(req) && nzchar(as.character(req$id %||% ""))) as.character(req$id) else selected_graph_id()
+    if (project_load_action_blocked("graph-duplicate", id)) return()
+
+    # v3.64.1-lazyui2: GraphState Registry is canonical. The ordinary editor is
+    # the persistent graph_editor_single module, not modules[[id]].  Before a
+    # duplicate of the current editor owner is created, synchronously commit its
+    # live state so an immediate Copy cannot lag behind the last UI edit.
+    owner <- graph_single_owner()
+    if (identical(id, owner) && isTRUE(isolate(graph_single_editor_loading()))) {
+      showNotification("Graphの切替が終わってからコピーしてください。", type = "warning")
       return()
     }
+    if (identical(id, owner) && graph_single_ready(id)) {
+      graph_single_commit("duplicate-source")
+    }
 
-    state <- tryCatch(isolate(mod$state()), error = function(e) NULL)
+    state <- if (cache_has(id)) cache_get(id) else NULL
     if (is.null(state)) {
-      showNotification("現在Graphの状態を取得できませんでした。", type = "error")
+      showNotification("Graphの状態を取得できませんでした。", type = "error")
       return()
     }
 
     meta <- isolate(graph_meta())
     nm <- meta$name[match(id, meta$id)]
-    create_graph(paste0(nm, " copy"), initial_state = state, select = TRUE)
+
+    # Duplicate only the canonical GraphState. The destination will replay
+    # that state into the persistent Editor and render once when selected.
+    new_id <- create_graph(
+      paste0(nm, " copy"),
+      initial_state = state,
+      select = TRUE
+    )
+    diag_log(
+      "DUPLICATE",
+      paste0("source=", id, " new=", new_id, " state_only=TRUE"),
+      id = new_id
+    )
   })
 
   rename_target_graph <- reactiveVal(NULL)
@@ -502,11 +1844,6 @@ shinyServer(function(input, output, session) {
   show_rename_graph_modal <- function(id) {
     meta <- isolate(graph_meta())
     if (is.null(id) || !id %in% meta$id) return(invisible(FALSE))
-
-    # ダブルクリック対象をactiveにしてから名前変更する。
-    if (!identical(id, isolate(active_graph()))) {
-      show_graph(id, kind = "graph")
-    }
 
     nm <- meta$name[match(id, meta$id)]
     rename_target_graph(id)
@@ -532,7 +1869,10 @@ shinyServer(function(input, output, session) {
   }
 
   observeEvent(input$graph_rename, {
-    show_rename_graph_modal(isolate(active_graph()))
+    req <- input$graph_rename
+    id <- if (is.list(req) && nzchar(as.character(req$id %||% ""))) as.character(req$id) else selected_graph_id()
+    if (project_load_action_blocked("graph-rename", id)) return()
+    show_rename_graph_modal(id)
   })
 
   observeEvent(input$graph_rename_dblclick, {
@@ -554,6 +1894,7 @@ shinyServer(function(input, output, session) {
     meta$name[match(id, meta$id)] <- nm
     graph_meta(meta)
     refresh_export_choices()
+    publish_client_preview_catalog(reason = "graph-renamed", selected = id)
     rename_target_graph(NULL)
     removeModal()
     invisible(TRUE)
@@ -569,19 +1910,97 @@ shinyServer(function(input, output, session) {
     }
   }, ignoreInit = TRUE)
 
+  # v3.65.2-activation-layout1: deletion remains structurally identical,
+  # but warn when the Graph is currently referenced by Figure content.  This
+  # is advisory only; the existing sanitizer is still the final safety net.
+  figure_graph_reference_summary <- function(id) {
+    id <- as.character(id %||% "")[1]
+    if (!nzchar(id)) return(list(total = 0L, panels = 0L, insets = 0L))
+
+    panel_refs <- 0L
+    st <- isolate(figure_layout_state())
+    if (is.list(st) && length(st)) {
+      for (row in st) {
+        cells <- row$cells %||% list()
+        if (!is.list(cells)) next
+        for (cell in cells) {
+          if (!is.list(cell)) next
+          typ <- as.character(cell$source_type %||% "internal_graph")[1]
+          sid <- as.character(cell$source_id %||% cell$id %||% "")[1]
+          if (identical(typ, "internal_graph") && identical(sid, id)) panel_refs <- panel_refs + 1L
+        }
+      }
+    }
+
+    inset_refs <- 0L
+    drafts <- isolate(figure_override_drafts())
+    if (is.list(drafts) && length(drafts)) {
+      for (ov in drafts) {
+        if (!is.list(ov)) next
+        inset <- ov$inset %||% list()
+        if (!is.list(inset) || !isTRUE(inset$enabled)) next
+        typ <- as.character(inset$source_type %||% "internal_graph")[1]
+        sid <- as.character(inset$source_id %||% "")[1]
+        if (identical(typ, "internal_graph") && identical(sid, id)) inset_refs <- inset_refs + 1L
+      }
+    }
+
+    list(total = as.integer(panel_refs + inset_refs), panels = as.integer(panel_refs), insets = as.integer(inset_refs))
+  }
+
+  delete_target_graph <- reactiveVal(NULL)
+
   observeEvent(input$graph_delete, {
     meta <- isolate(graph_meta())
-    id <- isolate(active_graph())
+    req <- input$graph_delete
+    id <- if (is.list(req) && nzchar(as.character(req$id %||% ""))) as.character(req$id) else selected_graph_id()
+    if (project_load_action_blocked("graph-delete", id)) return()
 
     if (nrow(meta) <= 1) {
       showNotification("Projectには最低1つのGraphが必要です。", type = "warning")
       return()
     }
 
+    # Do not tear down a Graph while its restore/materialization lifecycle is in-flight.
+    # Deleting an in-flight module can leave queue/restore observers holding a
+    # half-removed id and is harder to recover from than waiting a few seconds.
+    single_editor_in_flight <- identical(id, graph_single_owner()) &&
+      isTRUE(isolate(graph_single_editor_loading()))
+    if (isTRUE(single_editor_in_flight) ||
+        graph_materialization_current_is(id) ||
+        identical(isolate(restore_target()), id) ||
+        (!is.null(modules[[id]]) && !isTRUE(tryCatch(isolate(modules[[id]]$ready()), error = function(e) FALSE)))) {
+      showNotification("Graphの準備が終わってから削除してください。", type = "warning")
+      return()
+    }
+
     nm <- meta$name[match(id, meta$id)]
+    refs <- figure_graph_reference_summary(id)
+    delete_target_graph(id)
+    body <- tagList(
+      tags$p(paste0("「", nm, "」を削除しますか？"))
+    )
+    if (isTRUE(refs$total > 0L)) {
+      detail <- if (refs$insets > 0L) {
+        paste0("Figure内で ", refs$total, " か所（配置 ", refs$panels, "、Inset ", refs$insets, "）から参照されています。")
+      } else {
+        paste0("Figure内で ", refs$total, " か所から参照されています。")
+      }
+      body <- tagList(
+        body,
+        tags$div(
+          class = "alert alert-warning",
+          tags$strong("Figureで使用中です。"),
+          tags$br(),
+          detail,
+          tags$br(),
+          "削除するとFigureからもこのGraphの参照が削除されます。"
+        )
+      )
+    }
     showModal(modalDialog(
       title = "Graphを削除",
-      paste0("「", nm, "」を削除しますか？"),
+      body,
       footer = tagList(
         modalButton("キャンセル"),
         actionButton("delete_graph_confirm", "削除", class = "btn-danger")
@@ -592,815 +2011,102 @@ shinyServer(function(input, output, session) {
 
   observeEvent(input$delete_graph_confirm, {
     meta <- isolate(graph_meta())
-    id <- isolate(active_graph())
+    id <- as.character(isolate(delete_target_graph()) %||% selected_graph_id())[1]
     if (nrow(meta) <= 1) return()
 
     pos <- match(id, meta$id)
+    was_editing <- identical(id, as.character(isolate(editing_graph_id()) %||% "")[1])
+    invalidate_graph_source_module(id, "graph-delete")
 
-    if (module_exists(id)) {
+    if (ui_mounted(id)) {
       removeUI(selector = paste0("#panel_", id), immediate = TRUE)
-      modules[[id]] <- NULL
+      mark_ui_mounted(id, FALSE)
     }
+    if (module_exists(id)) modules[[id]] <- NULL
     cache_remove(id)
+    if (exists(id, envir = graph_single_editor_visit_cache, inherits = FALSE)) {
+      rm(list = id, envir = graph_single_editor_visit_cache)
+    }
+
+    # Remove Figure-owned snapshot references for the deleted Graph. There is
+    # no Graph SVG cache to invalidate in the state-replay architecture.
+    previews <- isolate(figure_persisted_previews())
+    previews[[id]] <- NULL
+    figure_persisted_previews(previews)
+
+    plots <- isolate(figure_loaded_plots()); plots[[id]] <- NULL; figure_loaded_plots(plots)
+    exports <- isolate(figure_loaded_exports()); exports[[id]] <- NULL; figure_loaded_exports(exports)
+    assets <- isolate(figure_loaded_assets()); assets[[id]] <- NULL; figure_loaded_assets(assets)
+    drafts <- isolate(figure_override_drafts()); drafts[[id]] <- NULL; figure_override_drafts(drafts)
+    try(figure_plot_revisions[[id]] <- NULL, silent = TRUE)
+    try(figure_snapshot_revisions[[id]] <- NULL, silent = TRUE)
+    commit_revs <- isolate(figure_commit_edit_revisions())
+    if (length(commit_revs) && id %in% names(commit_revs)) {
+      commit_revs[[id]] <- NULL
+      figure_commit_edit_revisions(commit_revs)
+    }
+    clear_figure_geometry_cache(id)
+    clear_figure_geometry_source_state(id)
+
+    remove_graph_materialization_item(id, reason = "graph-delete")
+    if (identical(isolate(pending_display_graph()), id)) pending_display_graph(NULL)
+    if (identical(isolate(restore_target()), id)) {
+      restore_target(NULL)
+      restore_status("idle")
+    }
+    figure_requested_ids(setdiff(isolate(figure_requested_ids()), id))
+    clear_figure_svg_cache()
 
     meta <- meta[meta$id != id, , drop = FALSE]
     graph_meta(meta)
+    diag_log("DELETE", "removed graph state/cache/preview/figure references", id = id)
 
     new_pos <- min(pos, nrow(meta))
     new_id <- meta$id[new_pos]
 
     refresh_export_choices()
-    show_graph(new_id, kind = "graph")
+    if (isTRUE(was_editing)) {
+      editing_graph_id("")
+      graph_single_editor_loading(FALSE)
+      graph_single_editor_mode("IDLE")
+      graph_single_editor_generation(as.integer(isolate(graph_single_editor_generation()) %||% 0L) + 1L)
+      if (identical(as.character(isolate(active_graph()) %||% "")[1], id)) active_graph(new_id)
+      session$sendCustomMessage("graph-editor-shell-clear", list(reason = "deleted-editing-graph", selected = new_id))
+      diag_log("EDITOR-SHELL", "cleared reason=deleted-editing-graph")
+    } else if (identical(as.character(isolate(active_graph()) %||% "")[1], id)) {
+      # No live editor owned this Graph; keep the legacy active fallback valid.
+      active_graph(new_id)
+    }
+    delete_target_graph(NULL)
+    if (nzchar(new_id)) {
+      select_graph_preview(new_id, source = "graph-deleted", publish = TRUE)
+    } else {
+      publish_client_preview_catalog(reason = "graph-deleted-empty", selected = NULL, enter_browse = FALSE)
+    }
     removeModal()
   })
 
-  # ------------------------------------------------------------------
-  # Project save / load
-  # ------------------------------------------------------------------
-  graph_state_for_save <- function(id) {
-    mod <- modules[[id]]
+  # v3.70.0 source split: server_project_io_runtime
+  sys.source(file.path(getwd(), "server_project_io_runtime.R"), envir = environment())
 
-    if (!is.null(mod) && isTRUE(isolate(mod$ready()))) {
-      live <- tryCatch(isolate(mod$state()), error = function(e) NULL)
-      if (!is.null(live)) return(live)
-    }
+  # v3.70.0 source split: server_export_prepare_runtime
+  sys.source(file.path(getwd(), "server_export_prepare_runtime.R"), envir = environment())
 
-    if (cache_has(id)) return(cache_get(id))
-    NULL
-  }
+  # v3.73.2.22: direct GraphState-to-snapshot service; no Figure editor replay.
+  sys.source(file.path(getwd(), "server_figure_source_snapshot_runtime.R"), envir = environment())
 
-  build_project <- function() {
-    meta <- isolate(graph_meta())
-    graphs <- vector("list", nrow(meta))
-    names(graphs) <- meta$id
+  # v3.70.0 source split: server_figure_workspace_runtime
+  sys.source(file.path(getwd(), "server_figure_workspace_runtime.R"), envir = environment())
 
-    for (i in seq_len(nrow(meta))) {
-      id <- meta$id[i]
-      graphs[[id]] <- list(
-        name = meta$name[i],
-        state = graph_state_for_save(id)
-      )
-    }
+  # v3.73.2.29: typed external Settings Manager edits and explicit direct-state
+  # Figure refresh. Sourced after Figure snapshot/workspace services exist.
+  sys.source(file.path(getwd(), "server_graph_settings_value_runtime.R"), envir = environment())
 
-    list(
-      version = "3.3.38-zero-slider-minima",
-      app = "ggplot GUI",
-      project_uuid = {
-        uo <- shiny::isolate(project_uuid_save_override())
-        if (!is.null(uo) && valid_project_uuid(uo)) as.character(uo) else shiny::isolate(project_uuid())
-      },
-      project_name = {
-        nm_override <- shiny::isolate(project_name_save_override())
-        if (!is.null(nm_override) && nzchar(as.character(nm_override))) {
-          as.character(nm_override)
-        } else {
-          shiny::isolate(input$project_name)
-        }
-      },
-      active_graph = isolate(active_graph()),
-      project_options = list(
-        remember_save_destination = isTRUE(shiny::isolate(project_remember_pref()))
-      ),
-      graphs = graphs
-    )
-  }
+  # v3.73.2.21: legacy/persisted Figure legend regeneration is an adapter
+  # over the same single Figure value-replay renderer used by Main/Inset.
+  sys.source(file.path(getwd(), "server_figure_legend_reactivity_runtime.R"), envir = environment())
 
-  project_filename <- function() {
-    nm_override <- shiny::isolate(project_name_save_override())
-    project_name_now <- if (!is.null(nm_override) &&
-                            nzchar(as.character(nm_override))) {
-      as.character(nm_override)
-    } else {
-      shiny::isolate(input$project_name)
-    }
-
-    paste0(
-      safe_name(
-        project_name_now,
-        paste0("ggplot_project_", Sys.Date())
-      ),
-      ".ggplotproj"
-    )
-  }
-
-  write_project_file <- function(file) {
-    saveRDS(
-      build_project(),
-      file = file,
-      compress = "gzip",
-      version = 3
-    )
-  }
-
-  output$download_project_all <- downloadHandler(
-    filename = function() project_filename(),
-    contentType = "application/octet-stream",
-    content = function(file) write_project_file(file)
-  )
-
-  # Browser側のFile System Access APIが取得するための非表示endpoint。
-  # display:none の中にあっても必ず有効なRDSを生成できるよう、
-  # suspendWhenHidden=FALSE を明示する。
-  output$download_project_overwrite_payload <- downloadHandler(
-    filename = function() project_filename(),
-    contentType = "application/octet-stream",
-    content = function(file) write_project_file(file)
-  )
-
-  outputOptions(
-    output,
-    "download_project_overwrite_payload",
-    suspendWhenHidden = FALSE
-  )
-  outputOptions(
-    output,
-    "download_project_all",
-    suspendWhenHidden = FALSE
-  )
-
-  observeEvent(input$save_project_as_all, {
-    filename_now <- project_filename()
-    project_name_now <- as.character(input$project_name %||% "MyProject")
-    old_uuid <- isolate(project_uuid())
-    candidate_uuid <- new_project_uuid()
-    project_uuid_save_override(candidate_uuid)
-    remember_now <- isTRUE(project_remember_pref())
-
-    session$onFlushed(function() {
-      session$sendCustomMessage(
-        "prepare-project-save-as",
-        list(
-          fallbackLinkId = "download_project_all",
-          filename = filename_now,
-          projectName = project_name_now,
-          projectKey = candidate_uuid,
-          oldProjectKey = old_uuid,
-          remember = remember_now
-        )
-      )
-    }, once = TRUE)
-  }, ignoreInit = TRUE)
-
-  observeEvent(input$project_save_as_target, {
-    tg <- input$project_save_as_target
-    if (is.null(tg)) return()
-
-    selected_name <- as.character(tg$projectName %||% "")
-    selected_uuid <- as.character(tg$projectKey %||% "")
-    if (!nzchar(selected_name)) return()
-    if (!valid_project_uuid(selected_uuid)) selected_uuid <- isolate(project_uuid_save_override())
-    if (!valid_project_uuid(selected_uuid)) selected_uuid <- new_project_uuid()
-
-    project_uuid_save_override(selected_uuid)
-    project_name_save_override(selected_name)
-    updateTextInput(session, "project_name", value = selected_name)
-    old_uuid <- isolate(project_uuid())
-    remember_now <- isTRUE(tg$remember)
-
-    session$onFlushed(function() {
-      session$sendCustomMessage(
-        "commit-project-save-as",
-        list(
-          linkId = "download_project_overwrite_payload",
-          filename = paste0(safe_name(selected_name, selected_name), ".ggplotproj"),
-          projectName = selected_name,
-          projectKey = selected_uuid,
-          oldProjectKey = old_uuid,
-          remember = remember_now
-        )
-      )
-    }, once = TRUE)
-  }, ignoreInit = TRUE)
-
-  observeEvent(input$overwrite_project_all, {
-    filename_now <- project_filename()
-    project_key_now <- isolate(project_uuid())
-    remember_now <- isTRUE(project_remember_pref())
-
-    session$onFlushed(function() {
-      session$sendCustomMessage(
-        "overwrite-project-file",
-        list(
-          linkId = "download_project_overwrite_payload",
-          filename = filename_now,
-          projectKey = project_key_now,
-          remember = remember_now
-        )
-      )
-    }, once = TRUE)
-  }, ignoreInit = TRUE)
-
-  observeEvent(input$project_save_destination_available, {
-    z <- input$project_save_destination_available
-    if (is.null(z)) return()
-    current_key <- isolate(project_uuid())
-    response_key <- as.character(z$projectKey %||% "")
-    if (nzchar(response_key) && !identical(response_key, current_key)) return()
-    project_save_destination_available(isTRUE(z$available) && isTRUE(project_remember_pref()))
-  }, ignoreInit = TRUE)
-
-  observeEvent(input$project_remember_manual_state, {
-    z <- input$project_remember_manual_state
-    if (is.null(z)) return()
-    remember_now <- isTRUE(z$value)
-    project_remember_pref(remember_now)
-    project_key <- isolate(project_uuid())
-    if (remember_now) {
-      session$sendCustomMessage("check-project-save-destination", list(projectKey = project_key, remember = TRUE))
-    } else {
-      project_save_destination_available(FALSE)
-      session$sendCustomMessage("forget-project-save-destination", list(projectKey = project_key))
-    }
-  }, ignoreInit = TRUE)
-
-  observeEvent(input$remember_project_save_destination, {
-    remember_now <- isTRUE(input$remember_project_save_destination)
-    project_remember_pref(remember_now)
-    project_key <- isolate(project_uuid())
-    if (remember_now) {
-      session$sendCustomMessage("check-project-save-destination", list(projectKey = project_key, remember = TRUE))
-    } else {
-      project_save_destination_available(FALSE)
-      session$sendCustomMessage("forget-project-save-destination", list(projectKey = project_key))
-    }
-  }, ignoreInit = FALSE)
-
-  observeEvent(input$project_save_as_status, {
-    st <- input$project_save_as_status
-    if (is.null(st)) return()
-
-    pending_uuid <- isolate(project_uuid_save_override())
-    project_name_save_override(NULL)
-    project_uuid_save_override(NULL)
-
-    if (isTRUE(st$ok)) {
-      saved_uuid <- as.character(st$projectKey %||% pending_uuid %||% "")
-      if (valid_project_uuid(saved_uuid)) project_uuid(saved_uuid)
-      saved_project_name <- as.character(st$projectName %||% "")
-      if (nzchar(saved_project_name)) {
-        updateTextInput(session, "project_name", value = saved_project_name)
-        session$sendCustomMessage(
-          "set-project-name-input",
-          list(name = saved_project_name)
-        )
-      }
-
-      if (isTRUE(st$remembered)) {
-        project_remember_pref(TRUE)
-        project_save_destination_available(TRUE)
-      } else {
-        # Session overwrite works, but persistent destination storage remains unavailable
-        # because "保存先を記憶する" is OFF.
-        project_save_destination_available(FALSE)
-      }
-
-      msg <- paste0(
-        "Projectを保存しました: ",
-        st$name %||% project_filename()
-      )
-      if (isTRUE(st$remembered)) {
-        msg <- paste0(msg, "（保存先を記憶）")
-      }
-
-      showNotification(
-        msg,
-        type = "message",
-        duration = 3
-      )
-
-    } else if (isTRUE(st$fallback)) {
-      fallback_uuid <- as.character(st$projectKey %||% pending_uuid %||% "")
-      if (valid_project_uuid(fallback_uuid)) project_uuid(fallback_uuid)
-      showNotification(
-        st$message %||% "通常の保存へ切り替えました。",
-        type = "warning",
-        duration = 4
-      )
-    } else if (isTRUE(st$cancelled)) {
-      invisible(NULL)
-    } else {
-      showNotification(
-        paste0(
-          "Projectの保存に失敗しました: ",
-          st$message %||% "不明なエラー"
-        ),
-        type = "error",
-        duration = 5
-      )
-    }
-  }, ignoreInit = TRUE)
-
-  observeEvent(input$project_overwrite_status, {
-    st <- input$project_overwrite_status
-    if (is.null(st)) return()
-
-    if (isTRUE(st$ok)) {
-      if (isTRUE(st$remembered)) {
-        project_remember_pref(TRUE)
-        project_save_destination_available(TRUE)
-      }
-
-      msg <- paste0(
-        "Projectを上書き保存しました: ",
-        st$name %||% project_filename()
-      )
-      if (isTRUE(st$remembered)) {
-        msg <- paste0(msg, "（保存先を記憶）")
-      }
-      showNotification(
-        msg,
-        type = "message",
-        duration = 2
-      )
-    } else if (isTRUE(st$fallback)) {
-      showNotification(
-        st$message %||% "通常の保存へ切り替えました。",
-        type = "warning",
-        duration = 4
-      )
-    } else {
-      showNotification(
-        paste0("Projectの上書き保存に失敗しました: ", st$message %||% "不明なエラー"),
-        type = "error",
-        duration = 5
-      )
-    }
-  }, ignoreInit = TRUE)
-
-
-  project_read_error <- reactiveVal(NULL)
-
-  read_project_file <- function(path) {
-    project_read_error(NULL)
-
-    rds_error <- NULL
-    cfg <- tryCatch(
-      readRDS(path),
-      error = function(e) {
-        rds_error <<- conditionMessage(e)
-        NULL
-      }
-    )
-    if (!is.null(cfg)) return(cfg)
-
-    json_error <- NULL
-    cfg <- tryCatch(
-      jsonlite::read_json(path, simplifyVector = FALSE),
-      error = function(e) {
-        json_error <<- conditionMessage(e)
-        NULL
-      }
-    )
-    if (!is.null(cfg)) return(cfg)
-
-    project_read_error(
-      paste0(
-        "RDS: ", rds_error %||% "unknown",
-        " / JSON: ", json_error %||% "unknown"
-      )
-    )
-    NULL
-  }
-
-  observeEvent(input$upload_project_all, {
-    req(input$upload_project_all$datapath)
-
-    restore_status("idle")
-    restore_target(NULL)
-    pending_display_graph(NULL)
-    project_file_read(FALSE)
-    export_queue(character(0))
-    export_prepare_active(FALSE)
-
-    cfg <- read_project_file(input$upload_project_all$datapath)
-
-    if (is.null(cfg)) {
-      detail <- isolate(project_read_error())
-      if (!is.null(detail) && nzchar(detail)) {
-        showNotification(
-          paste0("Project読込エラー: ", detail),
-          type = "error",
-          duration = 10
-        )
-      }
-    }
-
-    shiny::validate(
-      shiny::need(!is.null(cfg), "Projectを読み込めませんでした。")
-    )
-    project_file_read(TRUE)
-
-    loaded_uuid <- as.character(cfg$project_uuid %||% "")
-    uuid_was_missing <- !valid_project_uuid(loaded_uuid)
-    if (uuid_was_missing) {
-      loaded_uuid <- new_project_uuid()
-      showNotification(
-        "旧ProjectをUUID方式へ移行しました。次回保存時にProject IDが記録されます。",
-        type = "message", duration = 5
-      )
-    }
-    project_uuid(loaded_uuid)
-    project_uuid_save_override(NULL)
-
-    loaded_project_name <- NULL
-    if (!is.null(cfg$project_name)) {
-      loaded_project_name <- as.character(cfg$project_name)
-      updateTextInput(
-        session, "project_name",
-        value = loaded_project_name
-      )
-      session$sendCustomMessage(
-        "set-project-name-input",
-        list(name = loaded_project_name)
-      )
-    }
-
-    # Project単位の保存先記憶設定を復元する。
-    popt <- cfg$project_options
-    remember_restore <- if (is.null(popt)) FALSE else isTRUE(popt$remember_save_destination)
-    project_remember_pref(remember_restore)
-    updateCheckboxInput(session, "remember_project_save_destination", value = remember_restore)
-    if (remember_restore) {
-      if (isTRUE(uuid_was_missing) && !is.null(loaded_project_name) && nzchar(loaded_project_name)) {
-        session$sendCustomMessage(
-          "migrate-project-save-destination",
-          list(
-            oldKey = safe_name(loaded_project_name, loaded_project_name),
-            newKey = loaded_uuid
-          )
-        )
-      } else {
-        session$sendCustomMessage(
-          "check-project-save-destination",
-          list(projectKey = loaded_uuid, remember = TRUE)
-        )
-      }
-    }
-
-    # 現在見えている完成済みGraphは、新しいProjectの最初のGraphが
-    # 描画完了するまで残す。これにより標準/空のGraphへの瞬間的な切替を防ぐ。
-    old <- isolate(graph_meta())
-    old_panels <- old$id[vapply(old$id, module_exists, logical(1))]
-    obsolete_panels(old_panels)
-
-    # 旧moduleの参照はregistryから外すが、DOM panelは完成表示まで残す。
-    for (id in old_panels) {
-      modules[[id]] <- NULL
-    }
-
-    graph_state_cache(list())
-    graph_meta(data.frame(
-      id = character(0),
-      name = character(0),
-      stringsAsFactors = FALSE
-    ))
-
-    entries <- list()
-    old_active <- NULL
-
-    if (!is.null(cfg$graphs) && length(cfg$graphs)) {
-      entries <- cfg$graphs
-      old_active <- as.character(cfg$active_graph %||% "")
-    } else {
-      # v1.14以前の単一Graph Project
-      entries <- list(
-        old_graph_1 = list(name = "Graph 1", state = cfg)
-      )
-      old_active <- "old_graph_1"
-    }
-
-    source_ids <- names(entries)
-    created <- character(0)
-    new_meta <- data.frame(
-      id = character(0),
-      name = character(0),
-      stringsAsFactors = FALSE
-    )
-
-    # 重要:
-    # ここではGraph module/UIを生成しない。
-    # RDSからstateだけregistryへ読み込む。
-    for (i in seq_along(entries)) {
-      e <- entries[[i]]
-      st <- if (!is.null(e$state)) e$state else e
-      nm <- as.character(e$name %||% paste0("Graph ", i))
-
-      id <- next_id()
-      created <- c(created, id)
-      new_meta <- rbind(
-        new_meta,
-        data.frame(id = id, name = nm, stringsAsFactors = FALSE)
-      )
-      cache_set(id, st)
-    }
-
-    if (!length(created)) {
-      id <- next_id()
-      created <- id
-      new_meta <- data.frame(
-        id = id,
-        name = "Graph 1",
-        stringsAsFactors = FALSE
-      )
-    }
-
-    graph_meta(new_meta)
-
-    target_index <- match(old_active, source_ids)
-    if (is.na(target_index)) target_index <- 1L
-    target <- created[target_index]
-
-    refresh_export_choices()
-
-    restore_kind("project")
-    restore_target(target)
-    restore_status("restoring")
-
-    # 表示Graph 1枚だけを初期化・復元。
-    show_graph(target, kind = "project")
-
-    showNotification(
-      "Projectファイルを読み込みました。表示Graphだけ復元しています。",
-      type = "message",
-      duration = 3
-    )
-  })
-
-  # ------------------------------------------------------------------
-  # Export target / lazy preparation
-  # ------------------------------------------------------------------
-  export_ids_now <- function() {
-    meta <- isolate(graph_meta())
-    mode <- isolate(input$top_export_target %||% "current")
-
-    if (identical(mode, "all")) return(meta$id)
-
-    if (identical(mode, "selected")) {
-      return(intersect(
-        isolate(input$bulk_export_selected %||% character(0)),
-        meta$id
-      ))
-    }
-
-    id <- isolate(active_graph())
-    if (!is.null(id) && id %in% meta$id) id else character(0)
-  }
-
-  schedule_export_prep <- function() {
-    mode <- isolate(input$top_export_target %||% "current")
-
-    # 現在Graphだけなら既に表示時に初期化されるため、余計な準備はしない。
-    if (identical(mode, "current")) {
-      export_queue(character(0))
-      export_prepare_active(FALSE)
-      return(invisible(NULL))
-    }
-
-    ids <- export_ids_now()
-    if (!length(ids)) {
-      export_queue(character(0))
-      export_prepare_active(FALSE)
-      return(invisible(NULL))
-    }
-
-    pending <- ids[!vapply(ids, function(id) {
-      mod <- modules[[id]]
-      !is.null(mod) && isTRUE(isolate(mod$ready()))
-    }, logical(1))]
-
-    export_queue(unique(pending))
-    export_prepare_active(length(pending) > 0)
-    invisible(NULL)
-  }
-
-  observeEvent(input$top_export_target, {
-    schedule_export_prep()
-  }, ignoreInit = FALSE)
-
-  observeEvent(input$bulk_export_selected, {
-    if (identical(input$top_export_target %||% "current", "selected")) {
-      schedule_export_prep()
-    }
-  }, ignoreInit = TRUE)
-
-  observe({
-    q <- export_queue()
-
-    if (!length(q)) {
-      export_prepare_active(FALSE)
-      return()
-    }
-
-    id <- q[1]
-
-    if (!module_exists(id)) {
-      instantiate_graph(id, context = "export")
-    }
-
-    mod <- modules[[id]]
-    if (is.null(mod)) {
-      export_queue(q[-1])
-      return()
-    }
-
-    if (is.function(mod$activate)) mod$activate()
-
-    # ready()がTRUEになったGraphから順に次へ。
-    if (isTRUE(mod$ready())) {
-      export_queue(q[-1])
-    }
-  })
-
-  requested_export_ready <- reactive({
-    export_queue()  # queue変化も依存に含める
-    ids <- export_ids_now()
-    if (!length(ids)) return(FALSE)
-
-    all(vapply(ids, function(id) {
-      mod <- modules[[id]]
-      !is.null(mod) && isTRUE(mod$ready())
-    }, logical(1)))
-  })
-
-  observe({
-    if (isTRUE(requested_export_ready())) {
-      shinyjs::enable("download_graphs")
-    } else {
-      shinyjs::disable("download_graphs")
-    }
-  })
-
-  output$bulk_export_status <- renderText({
-    mode <- input$top_export_target %||% "current"
-    if (identical(mode, "current")) return("")
-
-    ids <- export_ids_now()
-    if (!length(ids)) return("書き出すGraphを選択してください。")
-
-    ready_n <- sum(vapply(ids, function(id) {
-      mod <- modules[[id]]
-      !is.null(mod) && isTRUE(mod$ready())
-    }, logical(1)))
-
-    if (ready_n == length(ids)) {
-      paste0("書き出し準備完了（", ready_n, " / ", length(ids), "）")
-    } else {
-      paste0("書き出し用にGraphを準備中… ", ready_n, " / ", length(ids))
-    }
-  })
-
-  # ------------------------------------------------------------------
-  # Export writers
-  # ------------------------------------------------------------------
-  write_one_graph <- function(path, id, format) {
-    mod <- modules[[id]]
-    if (is.null(mod)) stop("Graph moduleが見つかりません。")
-    if (!isTRUE(isolate(mod$ready()))) {
-      stop("Graphの復元がまだ完了していません。")
-    }
-
-    p <- isolate(mod$plot())
-    ex <- tryCatch(
-      isolate(mod$export()),
-      error = function(e) list(
-        plot_width_px = 600,
-        plot_height_px = 600,
-        reference_res = 120
-      )
-    )
-
-    pw <- as.numeric(ex$plot_width_px %||% 600)
-    ph <- as.numeric(ex$plot_height_px %||% 600)
-    ref_res <- as.numeric(ex$reference_res %||% 120)
-
-    if (!length(pw) || !is.finite(pw[1])) pw <- 600
-    if (!length(ph) || !is.finite(ph[1])) ph <- 600
-    if (!length(ref_res) || !is.finite(ref_res[1]) || ref_res[1] <= 0) ref_res <- 120
-
-    pw <- pw[1]
-    ph <- ph[1]
-    ref_res <- ref_res[1]
-    w <- pw / ref_res
-    h <- ph / ref_res
-
-    if (identical(format, "svg")) {
-      svglite::svglite(path, width = w, height = h)
-      svg_device <- grDevices::dev.cur()
-      svg_closed <- FALSE
-      on.exit({
-        if (!isTRUE(svg_closed) && identical(grDevices::dev.cur(), svg_device)) {
-          try(grDevices::dev.off(), silent = TRUE)
-        }
-      }, add = TRUE)
-      suppressWarnings(print(p))
-      grDevices::dev.off()
-      svg_closed <- TRUE
-      return(invisible(TRUE))
-    }
-
-    if (identical(format, "pdf")) {
-      ggplot2::ggsave(
-        filename = path,
-        plot = p,
-        width = w,
-        height = h,
-        units = "in",
-        device = grDevices::cairo_pdf
-      )
-      return(invisible(TRUE))
-    }
-
-    ggplot2::ggsave(
-      filename = path,
-      plot = p,
-      width = w,
-      height = h,
-      units = "in",
-      dpi = ref_res,
-      device = "png"
-    )
-    invisible(TRUE)
-  }
-
-  write_graph_export <- function(file, ids, format) {
-    meta <- isolate(graph_meta())
-    ids <- ids[ids %in% meta$id]
-
-    if (!length(ids)) stop("出力するGraphがありません。")
-
-    not_ready <- ids[!vapply(ids, function(id) {
-      mod <- modules[[id]]
-      !is.null(mod) && isTRUE(isolate(mod$ready()))
-    }, logical(1))]
-
-    if (length(not_ready)) {
-      stop("まだ書き出し準備中のGraphがあります。")
-    }
-
-    ext <- switch(
-      format,
-      png = "png",
-      pdf = "pdf",
-      svg = "svg",
-      "svg"
-    )
-
-    if (length(ids) == 1L) {
-      write_one_graph(file, ids[[1]], format)
-      return(invisible(TRUE))
-    }
-
-    td <- tempfile("ggplot_export_")
-    dir.create(td, recursive = TRUE)
-
-    files <- character(0)
-    for (i in seq_along(ids)) {
-      id <- ids[[i]]
-      nm <- meta$name[match(id, meta$id)]
-      fp <- file.path(
-        td,
-        sprintf("%02d_%s.%s", i, safe_name(nm, id), ext)
-      )
-      write_one_graph(fp, id, format)
-      files <- c(files, fp)
-    }
-
-    zip::zipr(
-      zipfile = file,
-      files = basename(files),
-      root = td,
-      include_directories = FALSE
-    )
-
-    invisible(TRUE)
-  }
-
-  export_filename_now <- function() {
-    ids <- export_ids_now()
-    fmt <- isolate(input$top_export_format %||% "svg")
-    meta <- isolate(graph_meta())
-    ext <- switch(fmt, png = "png", pdf = "pdf", svg = "svg", "svg")
-
-    if (length(ids) == 1L) {
-      nm <- meta$name[match(ids, meta$id)]
-      return(paste0(safe_name(nm, "Graph"), ".", ext))
-    }
-
-    paste0(
-      safe_name(input$project_name, "Project"),
-      "_", toupper(ext), ".zip"
-    )
-  }
-
-  output$download_graphs <- downloadHandler(
-    filename = function() export_filename_now(),
-    content = function(file) {
-      ids <- export_ids_now()
-      fmt <- isolate(input$top_export_format %||% "svg")
-      write_graph_export(file, ids, fmt)
-    }
-  )
-
-
+  # v3.70.0 source split: server_graph_export_runtime
+  sys.source(file.path(getwd(), "server_graph_export_runtime.R"), envir = environment())
 
 })

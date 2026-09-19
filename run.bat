@@ -44,6 +44,17 @@ if not exist "req.txt" (
     exit /b 1
 )
 
+rem Optional GitHub Release check. Any failure is non-fatal and startup continues.
+if exist "check_update.ps1" (
+    where powershell.exe >nul 2>nul
+    if not errorlevel 1 (
+        echo.
+        powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%CD%\check_update.ps1"
+    ) else (
+        echo Update check skipped: powershell.exe was not found.
+    )
+)
+
 echo.
 echo Using Rscript:
 echo "%RSCRIPT%"

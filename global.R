@@ -1,16 +1,6 @@
-library(shiny)
-library(shinyAce)
-library(ggplot2)
-library(dplyr)
-library(tidyr)
-library(shinyjs)
-library(scales)
-library(svglite)
-library(colourpicker)
-library(jsonlite)
-library(ggbeeswarm)
-library(ggbreak)
-
-`%||%` <- function(a, b) if (is.null(a)) b else a
-
-source("graph_module.R", local = TRUE)
+# Global application bootstrap.
+# Keep ordering explicit: config -> packages -> shared helpers -> Graph/Figure modules.
+source("app_config.R", local = TRUE)
+source("app_dependencies.R", local = TRUE)
+source("app_shared_helpers.R", local = TRUE)
+source("app_module_registry.R", local = TRUE)

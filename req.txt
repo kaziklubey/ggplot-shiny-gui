@@ -6,8 +6,11 @@ tidyr
 shinyjs
 scales
 svglite
+base64enc
 colourpicker
 jsonlite
 ggbeeswarm
 ggbreak
 zip
+ggh4x
+rsvg

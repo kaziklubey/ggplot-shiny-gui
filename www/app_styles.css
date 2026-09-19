@@ -1,0 +1,2499 @@
+.plot-error-wrap,
+.plot-error-wrap pre,
+.plot-error-wrap code,
+.plot-note-wrap,
+.plot-note-wrap * {
+  white-space: pre-wrap !important;
+  overflow-wrap: anywhere !important;
+  word-break: break-word !important;
+  max-width: 100% !important;
+}
+
+.project-load-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(250, 250, 250, 0.90);
+  backdrop-filter: blur(2px);
+}
+.project-load-overlay.visible {
+  display: flex;
+}
+.project-load-card {
+  width: min(520px, calc(100vw - 48px));
+  border: 1px solid #d0d0d0;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 14px 42px rgba(0,0,0,0.16);
+  padding: 22px 24px;
+  text-align: center;
+}
+.project-load-spinner {
+  width: 34px;
+  height: 34px;
+  margin: 0 auto 14px auto;
+  border: 4px solid #dddddd;
+  border-top-color: #555555;
+  border-radius: 50%;
+  animation: projectLoadSpin .8s linear infinite;
+}
+@keyframes projectLoadSpin {
+  to { transform: rotate(360deg); }
+}
+.project-load-title {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+.project-load-message {
+  white-space: pre-line;
+  color: #555555;
+  line-height: 1.55;
+}
+.project-load-progress-wrap {
+  margin-top: 16px;
+}
+.project-load-progress-track {
+  width: 100%;
+  height: 12px;
+  border-radius: 999px;
+  background: #e9ecef;
+  overflow: hidden;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.08);
+}
+.project-load-progress-bar {
+  width: 0%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #5b8def, #7aa7ff);
+  transition: width .22s ease;
+}
+.project-load-progress-wrap.indeterminate .project-load-progress-bar {
+  width: 34%;
+  animation: projectLoadProgress 1.15s ease-in-out infinite;
+}
+.project-load-progress-text {
+  margin-top: 7px;
+  font-size: 12px;
+  color: #777777;
+  min-height: 17px;
+}
+@keyframes projectLoadProgress {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(330%); }
+}
+.project-load-reload {
+  display: none;
+  margin-top: 16px;
+}
+.project-load-overlay.failed .project-load-spinner { display: none; }
+.project-load-overlay.failed .project-load-progress-wrap { display: none; }
+.project-load-overlay.failed .project-load-title { color: #a94442; }
+.project-load-overlay.failed .project-load-reload { display: inline-block; }
+
+.project-manager {
+  border: 1px solid #d8d8d8;
+  border-radius: 9px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  background: #fafafa;
+}
+
+.top-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  min-height: 38px;
+}
+.top-row > .form-group,
+.top-row .form-group {
+  margin-bottom: 0;
+}
+.top-row + .top-row {
+  border-top: 1px solid #e5e5e5;
+  padding-top: 8px;
+  margin-top: 8px;
+}
+.top-label {
+  font-weight: 700;
+  min-width: 68px;
+  margin-right: 2px;
+}
+
+.project-name-compact {
+  width: 180px;
+}
+.project-name-compact .form-group {
+  margin: 0;
+}
+
+.project-action-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.project-open-compact {
+  width: 58px;
+  min-width: 58px;
+  max-width: 58px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
+.project-open-compact .form-group {
+  margin: 0;
+  height: 34px;
+}
+.project-open-compact .input-group {
+  width: 58px !important;
+  min-width: 58px !important;
+  max-width: 58px !important;
+  height: 34px;
+}
+.project-open-compact .form-control {
+  display: none;
+}
+.project-open-compact .input-group-btn,
+.project-open-compact .btn-file {
+  width: 58px;
+  height: 34px;
+}
+.project-open-compact .input-group-btn .btn,
+.project-open-compact .btn-file {
+  width: 58px;
+  min-width: 58px;
+  max-width: 58px;
+  border-radius: 4px;
+  height: 34px;
+  line-height: 20px;
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
+/* fileInput標準の Upload complete バーは使わない。
+   Project行には専用の読込/Graph復元表示があるため、ここで二重表示しない。 */
+.project-open-compact .progress,
+.project-open-compact .progress-bar,
+.project-open-compact .help-block {
+  display: none !important;
+}
+
+.project-manager .btn,
+.project-manager .form-control {
+  min-height: 34px;
+}
+
+.remember-save-destination {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 2px;
+  white-space: nowrap;
+}
+
+.remember-save-destination .checkbox {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+.project-autosave-interval .selectize-control,
+.project-save-note {
+  flex: 1 1 100%;
+  margin-left: 72px;
+  margin-top: -2px;
+  line-height: 1.25;
+  color: #666;
+  max-width: 900px;
+}
+
+.project-save-note small {
+  font-size: 11px;
+}
+.project-progress-inline {
+  flex: 1 1 260px;
+  min-width: 240px;
+  max-width: 520px;
+  margin-left: 4px;
+}
+.project-progress-line {
+  margin-bottom: 4px;
+}
+.project-progress-line:last-child {
+  margin-bottom: 0;
+}
+.project-progress-label {
+  font-size: 11px;
+  margin-bottom: 2px;
+}
+.compact-progress {
+  height: 12px;
+  margin-bottom: 0;
+}
+.compact-progress .progress-bar {
+  line-height: 12px;
+  font-size: 9px;
+}
+.restore-done {
+  font-size: 12px;
+  color: #3c763d;
+  font-weight: 600;
+}
+
+.graph-tabs-wrap {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  flex: 1 1 auto;
+}
+.graph-tab-btn {
+  margin: 0;
+  padding: 6px 12px;
+  border: 1px solid #ccc;
+  border-radius: 17px;
+  background: #fff;
+  cursor: pointer;
+  font-weight: 400;
+}
+.graph-tab-btn.active {
+  background: #ececec;
+  border-color: #777;
+  font-weight: 700;
+}
+
+.graph-menu .dropdown-menu {
+  min-width: 135px;
+}
+.graph-menu .dropdown-menu > li > a {
+  cursor: pointer;
+}
+
+.inline-select {
+  display: inline-block;
+  vertical-align: middle;
+}
+.inline-select .form-group {
+  margin: 0;
+}
+.export-target {
+  width: 155px;
+}
+.export-format {
+  width: 90px;
+}
+.export-status {
+  font-size: 12px;
+  color: #666;
+  margin-left: 4px;
+}
+.bulk-choice-box {
+  margin-left: 76px;
+  margin-top: 5px;
+  padding: 6px 10px;
+  border-left: 3px solid #ccc;
+  background: #fff;
+}
+.bulk-choice-box .form-group {
+  margin-bottom: 0;
+}
+
+.figure-workspace {
+  padding: 18px 4px 72px 4px;
+}
+.figure-workspace-header {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.figure-workspace-header .form-group {
+  margin-bottom: 0;
+}
+.figure-workspace-status {
+  display: inline-block;
+  padding-bottom: 7px;
+  font-size: 12px;
+  color: #666;
+}
+.figure-workspace-hint {
+  display: inline-block;
+  padding-bottom: 7px;
+  font-size: 11px;
+  color: #888;
+}
+.figure-config-columns {
+  display: grid;
+  grid-template-columns: minmax(500px, 1.55fr) minmax(330px, 0.9fr) minmax(170px, 0.42fr);
+  gap: 12px;
+  align-items: start;
+  margin-bottom: 12px;
+}
+.figure-config-section {
+  border: 1px solid #d9d9d9;
+  border-radius: 8px;
+  background: #fafafa;
+  /* v3.73.1.7: Figure workflow sections host floating controls (notably
+     selectize/dropdown menus).  Section chrome must never clip those menus;
+     scrolling/clipping belongs only to dedicated panes such as the Figure
+     drawer body and plot viewport. */
+  overflow: visible;
+  position: relative;
+  z-index: 1;
+}
+.figure-config-section:focus-within {
+  z-index: 80;
+}
+.figure-config-section .selectize-dropdown,
+.figure-config-section .dropdown-menu {
+  z-index: 3000;
+}
+.figure-config-section > summary {
+  cursor: pointer;
+  padding: 9px 11px;
+  font-weight: 600;
+  background: #f2f2f2;
+  user-select: none;
+}
+.figure-config-body {
+  padding: 10px 11px;
+}
+.figure-layout-basics {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px 12px;
+}
+.figure-layout-basics .form-group,
+.figure-export-controls .form-group {
+  margin-bottom: 0;
+}
+
+.figure-layout-control-grid {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.9fr) minmax(460px, 1.25fr);
+  gap: 10px;
+  align-items: stretch;
+}
+.figure-layout-control-card {
+  border: 1px solid #dfe5e9;
+  border-radius: 7px;
+  background: #fff;
+  padding: 9px 10px 8px;
+  min-width: 0;
+}
+.figure-layout-control-card-title {
+  margin-bottom: 6px;
+  color: #44545f;
+}
+.figure-layout-card-help {
+  margin: 6px 0 0;
+  color: #7a7a7a;
+  font-size: 11px;
+  line-height: 1.35;
+}
+.figure-canvas-primary-controls > .shiny-panel-conditional,
+.figure-canvas-primary-controls > div.shiny-bound-output {
+  display: flex;
+  align-items: flex-end;
+}
+.figure-fixed-canvas-size,
+.figure-auto-canvas-controls {
+  align-items: flex-end;
+}
+.figure-layout-subsection {
+  margin-top: 9px;
+  border: 1px solid #e1e6ea;
+  border-radius: 7px;
+  background: #fff;
+  overflow: visible;
+}
+.figure-layout-subsection > summary {
+  cursor: pointer;
+  padding: 7px 9px;
+  font-weight: 600;
+  color: #53636d;
+  background: #f8fafb;
+  border-radius: 7px;
+}
+.figure-layout-subsection[open] > summary {
+  border-bottom: 1px solid #e7ebee;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.figure-layout-subsection .figure-layout-editor,
+.figure-layout-subsection .figure-layout-reorder-home {
+  margin: 0;
+  padding: 8px 9px 9px;
+}
+.figure-drawer-placement-reset {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  padding: 0 0 8px;
+}
+.figure-drawer-placement-reset .text-muted {
+  font-size: 11px;
+  line-height: 1.25;
+}
+@media (max-width: 1050px) {
+  .figure-layout-control-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.figure-config-subtitle {
+  font-weight: 600;
+  color: #555;
+  margin-bottom: 6px;
+}
+.figure-layout-editor {
+  margin-top: 10px;
+}
+.figure-layout-reorder-home {
+  margin-top: 10px;
+  position: relative;
+  z-index: 5;
+  overflow: visible;
+}
+.figure-layout-reorder-card {
+  border: 1px solid #dce3e8;
+  border-radius: 7px;
+  background: #ffffff;
+  padding: 9px 10px 8px;
+  overflow: visible;
+}
+.figure-layout-reorder-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 3px;
+}
+.figure-layout-reorder-main,
+.figure-layout-batch-align {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 7px 10px;
+}
+.figure-layout-reorder-main .form-group,
+.figure-layout-batch-align .form-group {
+  margin-bottom: 0;
+}
+.figure-layout-reorder-arrows,
+.figure-layout-reorder-actions {
+  margin-bottom: 0;
+}
+.figure-layout-batch-align {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #edf0f2;
+}
+.figure-layout-batch-align > strong {
+  align-self: center;
+}
+.figure-layout-batch-align > .text-muted {
+  align-self: center;
+  font-size: 11px;
+}
+.figure-layout-row-card {
+  border: 1px solid #d9d9d9;
+  border-radius: 7px;
+  background: #fff;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+.figure-layout-row-header {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 7px 9px;
+  background: #f4f6f8;
+  border-bottom: 1px solid #e2e2e2;
+}
+.figure-layout-row-header .form-group {
+  margin-bottom: 0;
+}
+.figure-layout-row-name {
+  min-width: 56px;
+  align-self: center;
+  font-weight: 700;
+  font-size: 13px;
+}
+.figure-layout-panels {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+  padding: 8px;
+}
+.figure-layout-panel-card {
+  display: grid;
+  grid-template-columns: minmax(100px, 1fr) 95px;
+  grid-template-areas: "title title" "graph width";
+  align-items: end;
+  gap: 4px 8px;
+  padding: 7px 8px;
+  border: 1px solid #e4e4e4;
+  border-radius: 6px;
+  background: #fcfcfc;
+}
+.figure-layout-panel-title {
+  grid-area: title;
+  font-weight: 600;
+  font-size: 12px;
+  color: #666;
+}
+.figure-layout-panel-card .form-group {
+  margin-bottom: 0;
+}
+.figure-layout-panel-graph { grid-area: graph; }
+.figure-layout-panel-width { grid-area: width; }
+.figure-graph-load-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid #ddd;
+  font-size: 11px;
+  color: #777;
+}
+.figure-export-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+}
+/* F1-5h: export-format choices must remain visible even though generic
+   Figure config cards clip their contents for rounded corners. */
+.figure-config-section.figure-export-section {
+  overflow: visible;
+}
+.figure-export-section select.form-control {
+  min-width: 120px;
+  color: #222;
+  background: #fff;
+}
+@media (max-width: 1200px) {
+  .figure-config-columns {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+@media (max-width: 800px) {
+  .figure-config-columns {
+    grid-template-columns: 1fr;
+  }
+}
+.figure-cell-settings {
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: #fafafa;
+  padding: 10px 12px 2px 12px;
+  margin-bottom: 14px;
+}
+.figure-row-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin-top: 8px;
+}
+.figure-row-setting {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid #e3e3e3;
+  border-radius: 6px;
+  background: #fff;
+}
+.figure-row-setting .form-group {
+  margin-bottom: 0;
+}
+.figure-cell-setting-row {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid #e5e5e5;
+}
+.figure-cell-setting-row:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.figure-cell-setting-row-title {
+  font-weight: 600;
+  margin-bottom: 5px;
+}
+.figure-cell-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 8px 12px;
+}
+.figure-cell-setting-card {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  padding: 6px 8px;
+  border: 1px solid #e5e5e5;
+  border-radius: 6px;
+  background: #fff;
+}
+.figure-cell-setting-card .form-group,
+.figure-cell-settings-grid .form-group {
+  margin-bottom: 0;
+}
+.figure-override-settings {
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: #fafafa;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+}
+.figure-override-detail {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+.figure-override-detail .form-group {
+  margin-bottom: 0;
+}
+.figure-preview-viewport {
+  width: 100%;
+  overflow: auto;
+  position: relative;
+  border: 1px solid #e2e2e2;
+  border-radius: 8px;
+  background: #f5f5f5;
+  box-sizing: border-box;
+}
+.figure-preview-stage {
+  position: relative;
+  width: 1px;
+  height: 1px;
+}
+.figure-preview-canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  visibility: hidden;
+  transform-origin: top left;
+  background: #fff;
+  box-sizing: border-box;
+}
+.figure-preview-grid {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+}
+/* F1-4 Figure Layer Model.  Each layer spans the logical canvas.
+   Detached legends/labels live above every Graph cell so they cannot
+   disappear under a neighbouring Panel stacking context. */
+.figure-canvas-graph-layer,
+.figure-canvas-inset-layer,
+.figure-canvas-legend-layer,
+.figure-canvas-label-layer,
+.figure-canvas-interaction-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.figure-canvas-graph-layer { z-index: 10; pointer-events: auto; }
+.figure-canvas-inset-layer { z-index: 20; }
+.figure-canvas-legend-layer { z-index: 30; }
+.figure-canvas-label-layer { z-index: 40; }
+.figure-canvas-interaction-layer { z-index: 100; }
+.figure-canvas-inset-layer .figure-draggable,
+.figure-canvas-legend-layer .figure-draggable,
+.figure-canvas-label-layer .figure-draggable { pointer-events: auto; }
+.figure-layer-legend-item { cursor: move; touch-action: none; user-select: none; }
+.figure-legend-visual { pointer-events: none !important; }
+.figure-legend-drag-hitbox { pointer-events: auto !important; touch-action: none; cursor: move; }
+.figure-grid-cell {
+  min-width: 0;
+  min-height: 0;
+  position: absolute;
+  box-sizing: border-box;
+  background: #fff;
+  box-shadow: inset 0 0 0 1px #d8d8d8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* v3.3.66: the panel itself no longer owns clipping. */
+  overflow: visible;
+}
+.figure-grid-cell.empty {
+  color: #999;
+  background: #fafafa;
+  box-shadow: inset 0 0 0 1px #d8d8d8;
+  outline: 1px dashed #c8c8c8;
+  outline-offset: -1px;
+  font-size: 12px;
+}
+.figure-panel-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  overflow: visible;
+}
+.figure-cell-plot-shell,
+.figure-plot-frame {
+  position: absolute;
+  flex: 0 0 auto;
+  max-width: 100%;
+  max-height: 100%;
+  overflow: hidden;
+  contain: layout paint;
+  box-sizing: border-box;
+}
+.figure-panel-overlay-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  overflow: visible;
+  pointer-events: none;
+}
+.figure-panel-overlay-layer .figure-draggable {
+  pointer-events: auto;
+}
+.figure-detached-legend {
+  cursor: move;
+}
+.figure-panel-label {
+  position: absolute;
+  left: 8px;
+  top: 6px;
+  z-index: 6;
+  font-weight: 700;
+  line-height: 1;
+  color: #111;
+  pointer-events: none;
+}
+.figure-cell-caption {
+  position: absolute;
+  left: 6px;
+  bottom: 5px;
+  z-index: 5;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: rgba(255,255,255,0.84);
+  color: #777;
+  font-size: 11px;
+  line-height: 1.15;
+  pointer-events: none;
+}
+.figure-preview-note {
+  margin: 7px 0 10px 0;
+  color: #666;
+  font-size: 12px;
+}
+
+/* v3.3.47 Figure Editor UI + drag stability */
+.figure-editor-v346 .figure-config-section {
+  margin-bottom: 12px;
+}
+.figure-layout-topline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px 18px;
+}
+.figure-layout-help {
+  flex: 1 1 320px;
+  color: #777;
+  font-size: 11px;
+  padding-bottom: 6px;
+}
+.figure-row-summary-list {
+  display: grid;
+  gap: 5px;
+  margin-top: 8px;
+}
+.figure-row-summary {
+  border: 1px solid #e1e1e1;
+  border-radius: 6px;
+  background: #fff;
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color 0.08s ease, background 0.08s ease;
+}
+.figure-row-summary:hover {
+  border-color: #b9cfe0;
+}
+.figure-row-summary.selected {
+  border-color: #4a90c2;
+  box-shadow: inset 0 0 0 1px #4a90c2;
+  background: #f7fbfe;
+}
+.figure-row-summary-line {
+  display: grid;
+  grid-template-columns: 64px 90px 24px;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  width: max-content;
+  min-width: 275px;
+}
+.figure-row-summary-name {
+  font-weight: 700;
+}
+.figure-row-summary-meta {
+  color: #666;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.figure-row-summary-chevron {
+  color: #6f8798;
+  text-align: center;
+  font-size: 12px;
+}
+.figure-row-list-actions {
+  display: flex;
+  gap: 6px;
+  margin: 7px 0 10px 0;
+}
+.figure-selected-row-editor {
+  border-top: 1px solid #d9e5ee;
+  padding: 7px 8px 8px 8px;
+  cursor: default;
+  background: #fbfdff;
+}
+.figure-selected-row-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.figure-selected-row-header .form-group,
+.figure-row-panel-line .form-group {
+  margin-bottom: 0;
+}
+.figure-selected-row-panels {
+  display: grid;
+  gap: 4px;
+}
+.figure-row-panel-line {
+  display: grid;
+  grid-template-columns: 30px minmax(130px, 250px) 78px;
+  align-items: end;
+  gap: 6px;
+  padding: 4px 5px;
+  border: 1px solid #e7edf2;
+  border-radius: 4px;
+  background: #fff;
+  width: max-content;
+  max-width: 100%;
+}
+.figure-row-panel-index {
+  align-self: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #687b88;
+}
+.figure-row-panel-graph {
+  min-width: 0;
+  max-width: 250px;
+}
+.figure-row-panel-graph select {
+  max-width: 250px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.figure-preview-section {
+  margin: 12px 0;
+}
+.figure-preview-toolbar {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 7px 12px;
+  margin-bottom: 2px;
+}
+.figure-preview-toolbar span {
+  color: #777;
+  font-size: 11px;
+}
+.figure-grid-cell {
+  cursor: pointer;
+  transition: box-shadow 0.08s ease, background 0.08s ease;
+}
+.figure-grid-cell:hover {
+  box-shadow: inset 0 0 0 2px #a8c7df;
+}
+.figure-grid-cell.selected {
+  box-shadow: inset 0 0 0 3px #4a90c2;
+}
+.figure-panel-label.figure-draggable.free {
+  pointer-events: auto;
+  cursor: move;
+  padding: 0;
+  border-radius: 3px;
+  background: rgba(255,255,255,0.68);
+  outline: 1px dashed rgba(60,110,150,0.55);
+}
+.figure-panel-label.aligned {
+  pointer-events: none;
+}
+/* F1-4a: no visible legend drag handle. The legend visual itself is the drag target. */
+.figure-inspector-section .figure-config-body {
+  padding-top: 8px;
+}
+.figure-inspector-selection {
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+.figure-inspector-empty {
+  color: #888;
+  padding: 5px 0;
+}
+.figure-inspector-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(210px, 1fr));
+  gap: 10px;
+  width: 100%;
+  align-items: start;
+}
+.figure-inspector-group {
+  border: 1px solid #e1e1e1;
+  border-radius: 6px;
+  background: #fcfcfc;
+  padding: 8px 9px;
+}
+.figure-inspector-group h5 {
+  margin: 0 0 7px 0;
+  font-weight: 700;
+}
+.figure-inspector-group .form-group {
+  margin-bottom: 7px;
+}
+.figure-inline-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 6px;
+}
+.figure-export-section {
+  margin-top: 12px;
+}
+
+/* v3.43: Figure editing uses a left-to-right drawer.  The Figure canvas
+   remains visible on the right while the editor scrolls independently.
+   Each major heading and the Graph module's own control sections can be
+   folded vertically inside the drawer. */
+.figure-editor-shell {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+.figure-layout-above-preview {
+  margin: 0 0 12px 0;
+}
+.figure-layout-above-preview > summary {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+.figure-control-drawer {
+  width: min(430px, 42vw);
+  min-width: 0;
+  border: 1px solid #d5d9de;
+  border-radius: 8px;
+  background: #f7f8fa;
+  overflow: hidden;
+  transition: width 160ms ease;
+}
+.figure-control-drawer:not([open]) {
+  width: 46px;
+}
+.figure-control-drawer > summary {
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  min-height: 42px;
+  padding: 10px 12px;
+  font-weight: 700;
+  background: #eef1f4;
+  border-bottom: 1px solid #d9dde2;
+}
+.figure-control-drawer > summary::-webkit-details-marker { display: none; }
+.figure-control-drawer:not([open]) > summary {
+  height: min(220px, 42vh);
+  padding: 12px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-bottom: 0;
+}
+.figure-control-drawer:not([open]) .figure-control-drawer-title {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  letter-spacing: .08em;
+}
+.figure-control-drawer-body {
+  max-height: calc(100vh - 170px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 9px;
+  scrollbar-gutter: stable;
+}
+.figure-drawer-selection {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  margin: -9px -9px 9px -9px;
+  padding: 9px 11px 8px 11px;
+  background: rgba(247,248,250,.97);
+  border-bottom: 1px solid #e1e4e8;
+  backdrop-filter: blur(4px);
+}
+.figure-drawer-section {
+  margin: 0 0 8px 0;
+  min-width: 0;
+  overflow: visible;
+}
+.figure-drawer-section > summary {
+  position: relative;
+  z-index: 1;
+}
+.figure-canvas-column {
+  min-width: 0;
+  align-self: start;
+}
+.figure-canvas-column .figure-preview-section {
+  margin-top: 0;
+}
+.figure-inspector-grid {
+  grid-template-columns: 1fr;
+}
+.figure-inspector-group {
+  position: relative;
+}
+.figure-inspector-group > h5 {
+  cursor: pointer;
+  user-select: none;
+  padding-right: 20px;
+}
+.figure-inspector-group > h5::before {
+  content: '▾';
+  display: inline-block;
+  width: 16px;
+  color: #666;
+}
+.figure-inspector-group.is-collapsed > h5::before {
+  content: '▸';
+}
+.figure-inspector-group.is-collapsed > :not(h5) {
+  display: none !important;
+}
+.figure-graph-editor-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px 9px;
+  padding: 0 0 9px 0;
+  margin-bottom: 8px;
+  border-bottom: 1px solid #e2e2e2;
+}
+.figure-graph-editor-actions .text-muted {
+  flex-basis: 100%;
+  font-size: 11px;
+}
+.figure-graph-editor-host .graph-module-controls-only .well {
+  margin-bottom: 0;
+  padding-left: 9px;
+  padding-right: 9px;
+}
+.figure-control-drawer .figure-layout-basics,
+.figure-control-drawer .figure-asset-load-bar,
+.figure-control-drawer .figure-graph-load-bar,
+.figure-control-drawer .figure-export-controls {
+  gap: 7px;
+}
+.figure-control-drawer .form-group {
+  max-width: 100%;
+}
+@media (max-width: 980px) {
+  .figure-editor-shell {
+    grid-template-columns: 1fr;
+  }
+  .figure-control-drawer,
+  .figure-control-drawer:not([open]) {
+    width: 100%;
+  }
+  .figure-control-drawer:not([open]) > summary {
+    height: auto;
+    min-height: 40px;
+    justify-content: flex-start;
+  }
+  .figure-control-drawer:not([open]) .figure-control-drawer-title {
+    writing-mode: horizontal-tb;
+  }
+  .figure-control-drawer-body {
+    max-height: none;
+  }
+}
+@media (max-width: 760px) {
+  .figure-inspector-grid {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 950px) {
+  .figure-row-summary {
+    grid-template-columns: 62px 1fr 1fr auto;
+  }
+}
+
+/* v3.3.48 Figure Editor stabilization */
+/* v3.3.49 major experiment: cached vector preview layer */
+.figure-svg-snapshot {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+}
+.figure-svg-snapshot > svg {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  overflow: hidden !important;
+}
+.figure-preview-zoom-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+.figure-preview-zoom-control .form-group { margin: 0; }
+.figure-preview-zoom-control select { height: 30px; padding-top: 3px; padding-bottom: 3px; }
+.figure-preview-renderer-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 12px;
+  font-weight: normal;
+}
+.figure-preview-renderer-toggle .checkbox { margin: 0; }
+
+.figure-layout-basics {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 7px 10px;
+}
+.figure-layout-basics .form-group {
+  margin-bottom: 0;
+}
+.figure-selected-row-panels {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: 7px;
+  overflow-x: auto;
+  padding-bottom: 3px;
+}
+.figure-row-panel-card-compact {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: 28px 170px 68px 82px 82px;
+  align-items: end;
+  gap: 6px;
+  padding: 5px 6px;
+  border: 1px solid #e2e8ed;
+  border-radius: 5px;
+  background: #fff;
+  min-width: 470px;
+}
+.figure-row-panel-card-compact .form-group {
+  margin-bottom: 0;
+}
+.figure-row-panel-card-compact .figure-row-panel-graph {
+  width: 170px;
+  max-width: 170px;
+}
+.figure-row-panel-card-compact .figure-row-panel-graph select,
+.figure-row-panel-card-compact .figure-row-panel-graph .form-control {
+  width: 170px !important;
+  max-width: 170px !important;
+  color: #2b2b2b !important;
+  background: #ffffff !important;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.figure-row-panel-card-compact .figure-row-panel-graph option {
+  color: #222222;
+  background: #ffffff;
+}
+.figure-mini-label {
+  display: block;
+  margin: 0 0 2px 0;
+  color: #687b88;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.1;
+}
+.figure-row-height-compact {
+  width: 78px;
+}
+.figure-row-basis-compact {
+  width: 150px;
+}
+.figure-row-basis-compact select {
+  width: 100%;
+}
+.figure-row-height-compact input,
+.figure-row-panel-width input,
+.figure-row-graph-size input {
+  width: 100%;
+}
+.figure-cell-ui-host {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.figure-cell-unloaded {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #8a8a8a;
+  font-size: 12px;
+  pointer-events: none;
+}
+.figure-row-panel-card-compact .figure-row-panel-width {
+  width: 68px;
+}
+.figure-row-panel-card-compact .figure-row-graph-size {
+  width: 82px;
+}
+.figure-plot-panel-zone {
+  position: absolute;
+  z-index: 4;
+  pointer-events: none;
+  box-sizing: border-box;
+}
+.figure-preview-canvas[data-layout-mode='free'] .figure-grid-cell {
+  cursor: move;
+}
+.figure-preview-canvas[data-layout-mode='free'] .figure-grid-cell::after {
+  content: '';
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 12px;
+  height: 12px;
+  border-right: 2px solid rgba(80,80,80,.45);
+  border-bottom: 2px solid rgba(80,80,80,.45);
+  pointer-events: none;
+}
+.figure-inset-overlay {
+  box-sizing: border-box;
+  cursor: move;
+  touch-action: none;
+  user-select: none;
+}
+.figure-inset-overlay > .figure-svg-snapshot,
+.figure-inset-overlay > .figure-external-asset,
+.figure-inset-overlay > .figure-inset-source-asset {
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.figure-inset-resize-handle::after {
+  content: '';
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid rgba(60,60,60,.65);
+  border-bottom: 2px solid rgba(60,60,60,.65);
+}
+.figure-raster-asset {
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.figure-draggable.dragging {
+  transition: none !important;
+  will-change: left, top;
+}
+.figure-graph-load-bar .progress {
+  margin: 0;
+}
+@media (max-width: 760px) {
+  .figure-row-panel-card-compact {
+    grid-template-columns: 26px 150px 64px 78px 78px;
+    min-width: 440px;
+  }
+  .figure-row-panel-card-compact .figure-row-panel-graph,
+  .figure-row-panel-card-compact .figure-row-panel-graph select,
+  .figure-row-panel-card-compact .figure-row-panel-graph .form-control {
+    width: 150px !important;
+    max-width: 150px !important;
+  }
+}
+
+/* v3.51 Graph Preview: cached SVG and live plot share one stable stage.
+   The cached layer overlays the live layer instead of participating in
+   normal flow, so both representations can never stack vertically. */
+/* v3.54: the singleton stage is fixed under graph_panels and never moves
+   between Graph DOM trees. Each Graph contributes only a visual anchor.
+   The stage is positioned over the active anchor while cached/live inner
+   content is swapped. This keeps the outer Preview UI genuinely reused. */
+#graph_panels {
+  position: relative;
+}
+.graph-global-preview-home {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
+}
+/* The compact Editor shell is always visible. Graph selection targets the
+   one persistent Editor and value replay does not mask the control surface. */
+#graph_editor_shell_bar {
+  display: flex; align-items: center; gap: 12px;
+  margin: 0 0 10px 0; padding: 8px 10px;
+  border: 1px solid #d8d8d8; border-radius: 6px; background: #fafafa;
+}
+#graph_editor_shell_label { font-weight: 700; white-space: nowrap; }
+#graph_editor_shell_name { font-weight: 600; white-space: nowrap; }
+#graph_editor_shell_state { color: #777; font-size: 12px; flex: 1 1 auto; min-width: 0; }
+#graph_editor_shell_edit { flex: 0 0 auto; }
+#graph_client_browser {
+  display: none;
+  margin: 0 0 12px 0;
+  padding: 10px 12px 14px 12px;
+  border: 1px solid #d8d8d8;
+  border-radius: 6px;
+  background: #fff;
+}
+#graph_client_browser.client-browse-active { display: block; }
+
+/* v3.65.2: browse preview and dormant Editor affordances share one row.
+   The browser lives in column 2; the persistent Editor shell stays in
+   column 1 with only collapsed section summaries exposed.  Editing
+   removes this class and returns graph_panels to its normal full-width
+   two-column module layout. */
+#graph_workspace_body.client-browse-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 32%) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+#graph_workspace_body.client-browse-layout > #graph_panels {
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+}
+#graph_workspace_body.client-browse-layout > #graph_client_browser {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  margin-bottom: 0;
+}
+@media (max-width: 900px) {
+  #graph_workspace_body.client-browse-layout {
+    grid-template-columns: 1fr;
+  }
+  #graph_workspace_body.client-browse-layout > #graph_panels,
+  #graph_workspace_body.client-browse-layout > #graph_client_browser {
+    grid-column: 1;
+  }
+  #graph_workspace_body.client-browse-layout > #graph_panels { grid-row: 1; }
+  #graph_workspace_body.client-browse-layout > #graph_client_browser { grid-row: 2; }
+}
+#graph_client_browser_header {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 8px;
+}
+#graph_client_browser_title { font-weight: 600; flex: 1 1 auto; }
+#graph_client_browser_status { color: #777; font-size: 12px; }
+#graph_client_preview_viewport {
+  width: 100%; min-height: 320px; max-height: 72vh; overflow: auto;
+  display: flex; justify-content: center; align-items: flex-start;
+}
+@media (max-width: 760px) {
+  #graph_editor_shell_bar { align-items: flex-start; flex-wrap: wrap; }
+  #graph_editor_shell_state { flex-basis: 100%; order: 3; }
+}
+#graph_client_preview_canvas { transform-origin: top center; margin: 0 auto; }
+#graph_client_preview_canvas svg { display: block; max-width: none; max-height: none; }
+/* v3.64.0-lazyui1 / v3.65.2: browse keeps the persistent Editor DOM
+   mounted.  Only collapsed control summaries are exposed; the stale live
+   plot column is hidden.  graph_workspace_body places these summaries
+   beside (not below) the cached preview. */
+#graph_panels.client-browse-hidden > .graph-global-preview-home {
+  display: none !important;
+}
+#graph_panels.client-browse-hidden > .graph-single-editor-panel {
+  display: block !important;
+}
+#graph_panels.client-browse-hidden .graph-single-editor-panel .graph-module > .row > .col-sm-8 {
+  display: none !important;
+}
+#graph_panels.client-browse-hidden .graph-single-editor-panel .graph-module > .row > .col-sm-4 {
+  width: 100% !important; float: none !important;
+}
+#graph_panels.client-browse-hidden .graph-single-editor-panel .section-toolbar {
+  opacity: 0.55; pointer-events: none;
+}
+/* v3.65.0: while a selected Graph has not yet been attached to the
+   singleton Editor, only top-level section summaries may act as
+   activation affordances.  Stale controls from the previous owner must
+   never be interactive during browse/replay transitions. */
+#graph_panels.client-browse-hidden .graph-single-editor-panel details.control-section > :not(summary) {
+  display: none !important;
+}
+#graph_panels.client-browse-hidden .graph-single-editor-panel details.control-section > summary {
+  cursor: pointer;
+  pointer-events: auto;
+}
+/* Fresh startup Graphs have no persisted preview and no Editor owner yet.
+   Hide the dormant parameter shell entirely instead of exposing controls
+   that have no canonical GraphState owner.  The compact Editor bar stays
+   available as the explicit activation fallback. */
+#graph_panels.client-browse-hidden.client-pristine-no-preview > .graph-single-editor-panel {
+  display: none !important;
+}
+.graph-tab-btn.client-selected {
+  box-shadow: inset 0 -3px 0 rgba(0,0,0,0.45);
+  font-weight: 600;
+}
+.graph-global-preview-anchor {
+  position: relative;
+  width: 100%;
+  min-height: 700px;
+}
+
+/* v3.73.2.18: state replay keeps the one live plot DOM mounted in the
+   persistent Editor. Hide only its visual output while the next Graph is being
+   applied/rendered; layout remains measurable and no cached SVG is substituted. */
+#graph_editor_single-preview_anchor.graph-live-replay-pending #graph_editor_single-plot_container {
+  visibility: hidden !important;
+}
+.graph-preview-stage {
+  position: absolute;
+  left: 0;
+  top: 0;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 320px;
+  background: #fff;
+  pointer-events: auto;
+  visibility: hidden;
+}
+.graph-preview-stage.graph-preview-positioned {
+  visibility: visible;
+}
+/* v3.58.3.6: tab-hidden must suppress the entire Plot-side singleton,
+   including descendants that explicitly set visibility:visible (live/cached layers).
+   display:none on the stage is the authoritative visibility boundary; the DOM
+   remains mounted and is reused when returning to Plot. */
+.graph-preview-stage.graph-preview-tab-hidden {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+.graph-preview-live-layer {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  min-height: 320px;
+}
+/* v3.58: Graph Preview always receives the native R device image.
+   Auto/manual zoom is presentation-only and is applied in the browser. */
+#graph_global_preview_live_layer > .shiny-html-output {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: none;
+  margin-left: auto;
+  margin-right: auto;
+}
+.graph-preview-scale-control {
+  position: absolute;
+  right: 12px;
+  top: 6px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 8px;
+  border: 1px solid #d8dde3;
+  border-radius: 5px;
+  background: rgba(255,255,255,.94);
+  font-size: 12px;
+  line-height: 1.2;
+}
+.graph-preview-scale-control label { margin: 0; font-weight: 400; }
+.graph-preview-scale-control input[type=range] { width: 120px; margin: 0; }
+.graph-preview-scale-value { min-width: 42px; text-align: right; font-variant-numeric: tabular-nums; }
+/* v3.58.1: the stage itself never scrolls. Only the graph viewport
+   owns overflow, so Graph書式 stays directly below the Preview. */
+.graph-preview-stage.graph-preview-manual-scale {
+  overflow: visible;
+}
+#graph_global_preview_stage .graph-preview-viewport {
+  box-sizing: border-box;
+  position: relative;
+  width: 100%;
+  margin: 0 auto;
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+#graph_global_preview_stage.graph-preview-manual-scale .graph-preview-viewport {
+  overflow: auto;
+}
+#graph_global_preview_stage .graph-preview-scale-spacer,
+#graph_global_preview_stage .graph-cached-preview-scale-spacer {
+  position: relative;
+  margin-left: auto;
+  margin-right: auto;
+}
+#graph_global_preview_stage .graph-preview-scale-canvas,
+#graph_global_preview_stage .graph-cached-preview-scale-canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: top left;
+}
+#graph_global_preview_stage .graph-preview-viewport .plot-panel {
+  background: transparent;
+  border-color: transparent;
+  border-radius: 0;
+}
+.graph-preview-cached-layer {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  width: 100%;
+  min-height: 320px;
+  overflow: hidden;
+  pointer-events: none;
+}
+.graph-preview-mode-cached .graph-preview-live-layer {
+  visibility: hidden;
+}
+.graph-preview-mode-cached .graph-preview-cached-layer {
+  visibility: visible;
+}
+.graph-preview-mode-live .graph-preview-live-layer {
+  visibility: visible;
+}
+/* v3.58: READY remounts briefly recreate the plot at its native
+   600x600 browser size before set-plot-dimensions reapplies the fitted
+   viewport. Keep only that transient live generation hidden until the
+   remount dimension message has been applied. */
+.graph-preview-stage.graph-preview-live-pending .graph-preview-live-layer {
+  visibility: hidden !important;
+}
+.graph-preview-mode-live .graph-preview-cached-layer {
+  visibility: hidden;
+}
+.graph-cached-preview-layer {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 320px;
+  padding: 0 0 14px 0;
+  background: #fff;
+}
+
+.graph-cached-preview-shell {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 320px;
+  padding: 10px 12px 16px 12px;
+  background: #fff;
+}
+.graph-cached-preview-note {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  padding: 4px 2px 9px 2px;
+  color: #5f6873;
+  font-size: 12px;
+}
+.graph-cached-preview-note strong { color: #303841; font-size: 13px; }
+.graph-cached-preview-svg {
+  min-width: 0;
+  min-height: 1px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  margin: 0 auto;
+  flex: 0 0 auto;
+}
+.graph-cached-preview-svg > svg {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  overflow: hidden !important;
+}
+.svg-preview-viewport {
+  box-sizing: border-box;
+  overflow: hidden;
+}
+.graph-cached-workspace {
+  display: grid;
+  grid-template-columns: minmax(210px, 28%) minmax(0, 1fr);
+  gap: 0;
+  width: 100%;
+  min-height: 420px;
+  background: #fff;
+}
+.graph-cached-sidebar {
+  box-sizing: border-box;
+  padding: 16px 14px;
+  background: #f5f5f5;
+  border-right: 1px solid #ddd;
+}
+.graph-cached-sidebar-title {
+  margin-bottom: 7px;
+  font-size: 14px;
+}
+.graph-cached-sidebar-help,
+.graph-cached-hydrating {
+  margin-bottom: 12px;
+  color: #606870;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.graph-cached-section-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.graph-cached-section-button {
+  width: 100%;
+  text-align: left;
+  white-space: normal;
+}
+.graph-cached-section-button.disabled {
+  pointer-events: none;
+  opacity: .58;
+}
+.graph-cached-spin {
+  display: inline-block;
+  animation: graphCachedSpin .9s linear infinite;
+}
+@keyframes graphCachedSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@media (max-width: 900px) {
+  .graph-cached-workspace {
+    grid-template-columns: 1fr;
+  }
+  .graph-cached-sidebar {
+    border-right: 0;
+    border-bottom: 1px solid #ddd;
+  }
+  .graph-cached-section-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.graph-module-panel {
+  width: 100%;
+}
+.control-label {
+  font-weight: 600;
+}
+.plot-panel {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 12px;
+  box-sizing: border-box;
+  overflow: visible;
+  margin-left: auto;
+  margin-right: auto;
+}
+/* The plot device keeps its true pixel geometry.
+   If the available browser width is narrower, JS scales the whole plot
+   uniformly with transform:scale(), so text/points/axes never stretch. */
+.plot-panel .shiny-plot-output {
+  transform-origin: top left;
+  flex: 0 0 auto;
+}
+
+.plot-follow,
+.plot-anchor {
+  box-sizing: border-box;
+}
+
+.code-box {
+  max-height: 340px;
+  overflow-y: auto;
+  background: #f7f7f7;
+  border-radius: 6px;
+  padding: 10px;
+}
+.group-style-box {
+  border: 1px solid #e5e5e5;
+  border-radius: 7px;
+  padding: 10px;
+  margin-bottom: 10px;
+  background: #fafafa;
+}
+.order-box {
+  border-left: 4px solid #bdbdbd;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  background: #fafafa;
+}
+.help-block {
+  color: #666;
+  font-size: 12px;
+  margin: 3px 0 7px 0;
+}
+.control-section {
+  border: 1px solid #dedede;
+  border-radius: 7px;
+  margin-bottom: 9px;
+  background: #fff;
+  overflow: visible;
+}
+.control-section > summary {
+  cursor: pointer;
+  list-style: none;
+  font-weight: 700;
+  font-size: 15px;
+  padding: 11px 12px;
+  background: #f7f7f7;
+  user-select: none;
+}
+.control-section > summary::-webkit-details-marker {
+  display: none;
+}
+.control-section > summary::before {
+  content: '▶';
+  display: inline-block;
+  width: 1.25em;
+  font-size: 11px;
+  transition: transform 0.12s ease;
+}
+.control-section[open] > summary::before {
+  transform: rotate(90deg);
+}
+.control-section > .section-body {
+  padding: 12px 12px 4px 12px;
+}
+
+.control-subsection {
+  border: 1px solid #e5e5e5;
+  border-radius: 6px;
+  margin-bottom: 9px;
+  background: #fcfcfc;
+  overflow: visible;
+}
+.control-subsection > summary {
+  cursor: pointer;
+  list-style: none;
+  font-weight: 600;
+  padding: 8px 9px;
+  background: #f5f5f5;
+  user-select: none;
+}
+.control-subsection > summary::-webkit-details-marker {
+  display: none;
+}
+.control-subsection > summary::before {
+  content: '▸';
+  display: inline-block;
+  width: 1.15em;
+  transition: transform 0.12s ease;
+}
+.control-subsection[open] > summary::before {
+  transform: rotate(90deg);
+}
+.control-subsection > .subsection-body {
+  padding: 10px 10px 2px 10px;
+}
+
+.graph-statistics-header {
+  margin-bottom: 14px;
+}
+.statistics-card {
+  border: 1px solid #dddddd;
+  border-radius: 7px;
+  padding: 14px 14px 8px 14px;
+  background: #ffffff;
+  min-height: 180px;
+}
+.statistics-result-card {
+  background: #fafafa;
+}
+.statistics-sidebar-fixed-wrap {
+  position: sticky;
+  top: 12px;
+  z-index: 10;
+  background: #ffffff;
+  margin-bottom: 10px;
+}
+.statistics-sidebar-reference-wrap {
+  position: static;
+  margin-bottom: 8px;
+  background: #ffffff;
+}
+.statistics-sidebar-data-note {
+  padding: 9px 10px;
+  border: 1px solid #e2e2e2;
+  border-radius: 6px;
+  background: #fafafa;
+  line-height: 1.45;
+}
+.statistics-data-preparation .checkbox {
+  margin-top: 4px;
+  margin-bottom: 4px;
+}
+.plot-style-toolbar {
+  margin-top: 8px;
+  margin-bottom: 10px;
+  padding: 8px 10px 4px 10px;
+  border: 1px solid #dddddd;
+  border-radius: 7px;
+  background: #ffffff;
+}
+.plot-style-toolbar-title {
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.plot-style-toolbar .form-group {
+  margin-bottom: 4px;
+}
+.plot-style-toolbar .btn-block {
+  width: 100%;
+}
+.plot-style-toolbar .help-block {
+  margin: 2px 0 0 0;
+}
+
+.statistics-analysis-nav {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: #ffffff;
+  border: 1px solid #dddddd;
+  border-radius: 7px;
+  padding: 7px 10px 1px 10px;
+  margin-bottom: 10px;
+}
+.statistics-analysis-nav .form-group {
+  margin-bottom: 6px;
+}
+.statistics-sidebar-analysis-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 5px;
+  margin: 4px 0 6px 0;
+  flex-wrap: wrap;
+}
+.statistics-sidebar-analysis-actions .btn {
+  margin: 0;
+}
+.statistics-result-focus {
+  margin-bottom: 12px;
+}
+.statistics-result-scroll {
+  height: clamp(360px, 58vh, 720px);
+  overflow-y: auto;
+  overflow-x: auto;
+  border: 1px solid #dddddd;
+  border-radius: 4px;
+  background: #ffffff;
+}
+.statistics-result-scroll pre {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  min-height: 100%;
+}
+.statistics-sidebar-analysis-details {
+  border: 1px solid #dddddd;
+  border-radius: 7px;
+  background: #ffffff;
+  margin: 10px 0 10px 0;
+  overflow: hidden;
+  clear: both;
+}
+.statistics-sidebar-analysis-details > summary {
+  cursor: pointer;
+  list-style: none;
+  font-weight: 600;
+  padding: 9px 10px;
+  background: #f5f5f5;
+  user-select: none;
+}
+.statistics-sidebar-analysis-details > summary::-webkit-details-marker {
+  display: none;
+}
+.statistics-sidebar-analysis-details > summary::before {
+  content: '▸';
+  display: inline-block;
+  width: 1.15em;
+  transition: transform 0.12s ease;
+}
+.statistics-sidebar-analysis-details[open] > summary::before {
+  transform: rotate(90deg);
+}
+.statistics-sidebar-analysis-body {
+  padding: 10px 10px 8px 10px;
+  max-height: clamp(360px, 56vh, 760px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+}
+.statistics-sidebar-analysis-body .row {
+  margin-left: 0;
+  margin-right: 0;
+}
+.statistics-actions {
+  padding-top: 1px;
+  white-space: nowrap;
+}
+.statistics-actions .btn {
+  margin-right: 3px;
+}
+.statistics-link-summary {
+  border-left: 3px solid #999999;
+  padding: 8px 10px;
+  margin-bottom: 12px;
+  background: #ffffff;
+}
+.anova-factor-row {
+  border-top: 1px solid #eeeeee;
+  padding-top: 7px;
+  margin-top: 5px;
+}
+.anova-factor-row h5 {
+  margin-top: 0;
+  margin-bottom: 5px;
+}
+
+.statistics-empty {
+  padding: 14px;
+  border: 1px dashed #cccccc;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #666666;
+  margin-bottom: 12px;
+}
+.section-toolbar {
+  margin-bottom: 10px;
+}
+.section-toolbar .btn {
+  margin-right: 5px;
+  margin-bottom: 4px;
+}
+.sticky-plot-toolbar-control {
+  display: inline-block;
+  vertical-align: middle;
+  margin-left: 8px;
+}
+.sticky-plot-toolbar-control .form-group,
+.sticky-plot-toolbar-control .checkbox {
+  display: inline-block;
+  margin: 0;
+}
+.sticky-plot-toolbar-control .checkbox label {
+  font-weight: 400;
+  white-space: nowrap;
+}
+.sticky-plot-toolbar-help {
+  display: inline-block;
+  vertical-align: middle;
+  margin-left: 8px;
+  max-width: 470px;
+  color: #777777;
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.plot-follow.plot-fixed {
+  position: fixed;
+  top: 10px;
+  z-index: 1000;
+  background: white;
+}
+
+@media (max-width: 991px) {
+  .plot-follow.plot-fixed {
+    position: static;
+    max-height: none;
+    overflow: visible;
+    width: auto !important;
+    left: auto !important;
+  }
+  .project-progress-inline {
+    flex-basis: 100%;
+    max-width: none;
+  }
+}
+    
+
+/* ============================================================
+   v3.73.0 Figure workflow + Shared Label / Style Library
+   ============================================================ */
+.figure-workflow-v373 {
+  --figure-step-accent: #4a789b;
+}
+.figure-workflow-header {
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #e3e6e8;
+  padding-bottom: 8px;
+}
+.figure-workflow-header > div:first-child {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.figure-workflow-step {
+  margin: 0 0 12px 0;
+}
+.figure-workflow-step-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 700;
+}
+.figure-step-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 21px;
+  height: 21px;
+  border-radius: 50%;
+  background: var(--figure-step-accent);
+  color: #fff;
+  font-size: 11px;
+  line-height: 1;
+}
+.figure-workflow-import,
+.figure-export-workflow {
+  border: 1px solid #d9dfe4;
+  border-radius: 8px;
+  background: #fafbfc;
+  padding: 10px 11px;
+}
+.figure-workflow-import .figure-source-import-bar {
+  margin-top: 8px;
+  padding-top: 0;
+  border-top: 0;
+}
+.figure-primary-layout-controls {
+  padding: 2px 0;
+}
+.figure-shared-style-section > summary {
+  background: #f0f5f8;
+}
+.figure-shared-style-actions,
+.shared-style-manager-toolbar,
+.shared-style-new-row,
+.shared-style-portable-row,
+.shared-style-editor-style-row {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+}
+.figure-shared-style-actions .form-group,
+.shared-style-manager-toolbar .form-group,
+.shared-style-new-row .form-group,
+.shared-style-portable-row .form-group,
+.shared-style-editor-style-row .form-group {
+  margin-bottom: 0;
+}
+.shared-style-summary-empty {
+  margin: 8px 0 2px;
+  color: #777;
+  font-size: 12px;
+}
+.shared-style-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 7px;
+  margin: 9px 0 2px;
+}
+.shared-style-summary-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #dfe4e8;
+  border-radius: 6px;
+  background: #fff;
+  padding: 7px 8px;
+}
+.shared-style-summary-swatch {
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  border: 1px solid rgba(0,0,0,.12);
+}
+.shared-style-summary-copy {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+.shared-style-summary-copy .text-muted {
+  font-size: 10px;
+}
+.shared-style-manager {
+  margin-top: 9px;
+  border-top: 1px solid #dde3e7;
+  padding-top: 8px;
+}
+.shared-style-manager > summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: #3f647f;
+}
+.shared-style-manager-body {
+  padding: 9px 0 0;
+}
+.shared-style-new-row {
+  margin-top: 9px;
+  padding: 8px;
+  background: #f7f9fa;
+  border: 1px solid #e2e7ea;
+  border-radius: 6px;
+}
+.shared-style-editor-card {
+  margin-top: 9px;
+  padding: 9px;
+  border: 1px solid #dfe4e8;
+  border-radius: 6px;
+  background: #fff;
+}
+.shared-style-portable-row {
+  align-items: center;
+}
+.figure-export-workflow {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 14px;
+}
+.figure-export-primary {
+  margin-left: auto;
+}
+.shared-style-graph-binding {
+  margin: 6px 0 10px;
+  padding: 8px 9px;
+  border: 1px solid #dbe5ec;
+  border-radius: 6px;
+  background: #f8fbfd;
+}
+.shared-style-graph-binding .form-group {
+  margin-bottom: 7px;
+}
+.shared-style-binding-grid {
+  display: grid;
+  gap: 5px;
+  margin-top: 6px;
+}
+.shared-style-binding-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(180px, 230px);
+  align-items: center;
+  gap: 8px;
+}
+.shared-style-binding-row .form-group {
+  margin-bottom: 0;
+}
+.shared-style-binding-source {
+  min-width: 0;
+  font-size: 11px;
+  color: #586b78;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.shared-style-empty {
+  margin: 6px 0 0;
+  padding: 7px 8px;
+  font-size: 11px;
+}
+@media (max-width: 760px) {
+  .figure-export-workflow {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .figure-export-primary {
+    margin-left: 0;
+  }
+  .shared-style-binding-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* v3.73.1: Graph main-section navigation is workspace-owned, not part of the
+   hydrating Editor surface.  The internal Bootstrap tab headers remain mounted
+   as the Shiny input binding, but are presentation-hidden and driven by the
+   stable outer section bar. */
+.graph-workspace-section-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 10px 0;
+  padding: 6px 8px;
+  border: 1px solid #dedede;
+  border-radius: 6px;
+  background: #fff;
+}
+.graph-workspace-section-bar .graph-workspace-section.active {
+  font-weight: 600;
+  box-shadow: inset 0 -2px 0 rgba(0,0,0,0.45);
+}
+.graph-internal-main-tabs > .tabbable > .nav.nav-tabs,
+.graph-internal-main-tabs > .nav.nav-tabs {
+  display: none !important;
+}
+
+/* Data View and app comment do not own Plot controls.  Their stable workspace
+   section remains outside the Editor hydration surface, and the content uses
+   the full width instead of leaving an empty parameter column. */
+#panel_graph_editor_single .graph-module.graph-main-information > .row > .col-sm-4 {
+  display: none !important;
+}
+#panel_graph_editor_single .graph-module.graph-main-information > .row > .col-sm-8 {
+  width: 100% !important;
+  float: none !important;
+}
+
+/* v3.73.1.4: Statistics keeps its read-only Plot in the control column,
+   immediately above the Analysis selector/settings.  Result keeps the full
+   main-panel width.  The Plot remains separate from the live Global Preview. */
+.statistics-plot-card {
+  margin-bottom: 10px;
+  min-width: 0;
+}
+.statistics-sidebar-plot-card {
+  padding: 10px 10px 8px 10px;
+  min-height: 0;
+}
+.statistics-sidebar-plot-card h4 {
+  margin-top: 0;
+  margin-bottom: 8px;
+}
+.statistics-sidebar-plot-card .statistics-plot-preview-empty {
+  min-height: 180px;
+}
+.statistics-analysis-nav-sidebar {
+  position: static;
+  top: auto;
+  z-index: auto;
+  margin-bottom: 6px;
+}
+.statistics-plot-preview-stage {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid #e1e1e1;
+  border-radius: 5px;
+  background: #ffffff;
+}
+.statistics-plot-preview-svg {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.statistics-plot-preview-svg > svg {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100%;
+  max-height: 100%;
+}
+.statistics-plot-preview-empty {
+  min-height: 260px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed #cfcfcf;
+  border-radius: 5px;
+  background: #fafafa;
+  color: #777777;
+  text-align: center;
+  padding: 18px;
+}
+
+/* v3.73.2 Figure control-surface cleanup */
+.figure-inline-help {
+  margin: 2px 0 7px;
+  color: #6d7880;
+  font-size: 11px;
+}
+.figure-inline-help > summary {
+  cursor: pointer;
+  display: inline-block;
+  color: #607786;
+  user-select: none;
+}
+.figure-inline-help .help-block {
+  margin: 4px 0 0;
+}
+.figure-preview-renderer-toggle .form-group,
+.figure-preview-renderer-toggle .checkbox {
+  margin: 0;
+}
+.figure-preview-renderer-toggle label {
+  font-weight: normal;
+  font-size: 11px;
+  color: #777;
+}
+
+/* v3.73.2.26 — external Graph Settings Manager launcher */
+.graph-settings-manager-popout-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  margin: 8px 0 10px;
+}
+.graph-settings-manager-popout-button {
+  font-weight: 600;
+}
+.graph-settings-manager-popout-help {
+  font-size: 11px;
+}
+
+/* v3.73.2.25 — Figure Graph Settings Manager */
+.graph-settings-manager-details {
+  margin: 10px 0 14px;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  background: #fff;
+}
+.graph-settings-manager-details > summary {
+  cursor: pointer;
+  padding: 9px 11px;
+  font-weight: 600;
+}
+.graph-settings-manager-wrap {
+  padding: 0 10px 10px;
+}
+.graph-settings-manager-help {
+  margin: 0 0 8px;
+}
+.graph-settings-manager-scroll {
+  overflow: auto;
+  max-height: 560px;
+  border: 1px solid #e5e5e5;
+  border-radius: 5px;
+}
+.graph-settings-manager-table {
+  margin: 0;
+  min-width: 760px;
+  background: #fff;
+  font-size: 12px;
+}
+.graph-settings-manager-table th,
+.graph-settings-manager-table td {
+  vertical-align: middle !important;
+  white-space: nowrap;
+}
+.graph-settings-manager-setting-head,
+.graph-settings-manager-setting {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  min-width: 180px;
+  background: #fafafa;
+}
+.graph-settings-manager-setting-head {
+  z-index: 4;
+}
+.graph-settings-manager-graph-head {
+  min-width: 150px;
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: #f5f5f5;
+}
+.graph-settings-manager-cell {
+  min-width: 150px;
+}
+.graph-settings-manager-value {
+  display: inline-block;
+  max-width: 125px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+.graph-settings-manager-jump {
+  margin-left: 6px;
+  padding: 0 5px;
+  line-height: 18px;
+}
+.graph-settings-manager-group-row th {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: #eef1f4;
+  font-weight: 700;
+  padding-top: 6px !important;
+  padding-bottom: 6px !important;
+}
+.graph-setting-jump-highlight {
+  outline: 2px solid rgba(51, 122, 183, 0.65);
+  outline-offset: 4px;
+  border-radius: 4px;
+  transition: outline-color 0.35s ease;
+}
+
+/* v3.73.2.28 — Graph Settings Manager comparison status */
+.graph-settings-manager-diff-row .graph-settings-manager-setting {
+  box-shadow: inset 3px 0 0 #e6a23c;
+}
+.graph-settings-manager-diff-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 9px;
+  background: #fff1d6;
+  color: #9a6300;
+  font-size: 10px;
+  font-weight: 600;
+}
+.graph-settings-manager-shared-badge,
+.graph-settings-manager-shared-head {
+  margin-left: 5px;
+  font-size: 10px;
+  vertical-align: middle;
+}
