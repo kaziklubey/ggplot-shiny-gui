@@ -634,30 +634,51 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
               tags$details(
                 class = "control-subsection",
                 open = TRUE,
-                tags$summary("Color / Linetype / Shape"),
+                tags$summary("色・線種・点形状"),
                 div(
-                  class = "subsection-body",
+                  class = "subsection-body aesthetic-style-stack",
                   tags$details(
+                    class = "aesthetic-style-panel",
                     open = TRUE,
-                    tags$summary("Color"),
-                    p(class="help-block", "MappingのColorに使われている変数を、水準ごとに独立して設定します。"),
-                    uiOutput("color_style_ui"),
-                    selectInput("palette_preset", "色パレットを一括適用",
-                      choices=c("自動 (hue)"="hue","Okabe-Ito (色覚多様性対応)"="okabe_ito","Set2"="set2","Dark2"="dark2"), selected="okabe_ito"),
-                    actionButton("apply_palette", "Colorへパレットを適用"),
-                    checkboxInput("series_style_override", "Color × 横位置要因ごとに色を上書きする", FALSE),
-                    conditionalPanel(condition="input.series_style_override == true", uiOutput("series_style_ui"))
+                    tags$summary(
+                      tags$span(class = "aesthetic-style-title", "色"),
+                      tags$span(class = "aesthetic-style-term", "Color")
+                    ),
+                    div(
+                      class = "aesthetic-style-body",
+                      p(class="help-block", "Mapping『Colorで分ける』の各水準の色を設定します。"),
+                      uiOutput("color_style_ui"),
+                      selectInput("palette_preset", "色パレットを一括適用",
+                        choices=c("自動 (hue)"="hue","Okabe-Ito (色覚多様性対応)"="okabe_ito","Set2"="set2","Dark2"="dark2"), selected="okabe_ito"),
+                      actionButton("apply_palette", "Colorへパレットを適用"),
+                      checkboxInput("series_style_override", "Color × 横位置要因ごとに色を上書きする", FALSE),
+                      conditionalPanel(condition="input.series_style_override == true", uiOutput("series_style_ui"))
+                    )
                   ),
                   tags$details(
-                    tags$summary("Linetype"),
-                    p(class="help-block", "Mappingの『線の種類で分ける』に対応します。Colorとは別の変数でも独立設定できます。"),
-                    uiOutput("linetype_style_ui")
+                    class = "aesthetic-style-panel",
+                    tags$summary(
+                      tags$span(class = "aesthetic-style-title", "線種"),
+                      tags$span(class = "aesthetic-style-term", "Linetype")
+                    ),
+                    div(
+                      class = "aesthetic-style-body",
+                      p(class="help-block", "Mapping『線の種類で分ける』の各水準について、実線・破線などを設定します。"),
+                      uiOutput("linetype_style_ui")
+                    )
                   ),
                   tags$details(
-                    tags$summary("Shape"),
-                    p(class="help-block", "Mappingの『点の形で分ける』に対応します。Color/Linetypeとは別の変数でも独立設定できます。"),
-                    uiOutput("shape_style_ui")
-                  ),
+                    class = "aesthetic-style-panel",
+                    tags$summary(
+                      tags$span(class = "aesthetic-style-title", "点の形"),
+                      tags$span(class = "aesthetic-style-term", "Shape")
+                    ),
+                    div(
+                      class = "aesthetic-style-body",
+                      p(class="help-block", "Mapping『点の形で分ける』の各水準について、丸・三角などを設定します。"),
+                      uiOutput("shape_style_ui")
+                    )
+                  )
                 )
               ),
 
@@ -1204,31 +1225,42 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                 class = "group-style-box",
                 tags$b("凡例の表示"),
                 checkboxInput(
-                  "legend_group_show",
-                  "グループ凡例（Color / Fill / Line type）を表示",
+                  "legend_colour_show",
+                  "色 / 塗り凡例を表示",
                   TRUE
                 ),
                 checkboxInput(
-                  "legend_individual_show",
-                  "個体点凡例（Shape）を表示",
+                  "legend_linetype_show",
+                  "線種凡例を表示",
                   TRUE
                 ),
                 checkboxInput(
-                  "legend_merge_group_individual",
-                  "同じ条件のグループ凡例と個体点凡例を1つにまとめる",
+                  "legend_shape_show",
+                  "点形状凡例を表示",
                   TRUE
+                ),
+                checkboxInput(
+                  "legend_merge_linetype_shape",
+                  "同じ変数の線種と点形状を1つの凡例にまとめる",
+                  TRUE
+                ),
+                # Hidden compatibility input: preserves the old Color+Shape
+                # merge/split preference when loading pre-v3.73.2.40 projects.
+                tags$div(
+                  style = "display:none;",
+                  checkboxInput("legend_merge_colour_shape", "legacy", TRUE)
                 ),
                 checkboxInput(
                   "legend_title_show",
-                  "グループ凡例タイトルを表示",
+                  "色 / 塗り凡例タイトルを表示",
                   FALSE
                 ),
-                textInput("legend_group_title", "グループ凡例タイトル", ""),
-                checkboxInput("legend_individual_title_show", "個体点凡例タイトルを表示", FALSE),
-                textInput("legend_individual_title", "個体点凡例タイトル", ""),
+                textInput("legend_group_title", "色 / 塗り凡例タイトル", ""),
+                checkboxInput("legend_individual_title_show", "線種 / 点形状凡例タイトルを表示", FALSE),
+                textInput("legend_individual_title", "線種 / 点形状凡例タイトル", ""),
                 p(
                   class = "help-block",
-                  "同じ条件の凡例を統合するとグループ凡例タイトルを使います。個体点タイトルは保持され、分離時に使われます。"
+                  "凡例の表示/非表示はPlot本体のMappingを変更しません。線種と点形状が同じ変数を表す場合だけ、上の統合設定で1つの凡例にまとめます。"
                 )
               ),
               sliderInput(
@@ -1244,12 +1276,18 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
               ),
               tags$hr(),
               if (!controls_only) tagList(
-                tags$h5("共通Label / Style"),
-                p(
-                  class = "help-block",
-                  "ProjectのShared Libraryへ、群・条件・軸ラベル・凡例タイトルを明示的に対応付けます。自動bindingは行いません。"
+                tags$details(
+                  class = "control-subsection shared-label-style-subsection",
+                  tags$summary("共通Label / Style"),
+                  div(
+                    class = "subsection-body",
+                    p(
+                      class = "help-block",
+                      "ProjectのShared Libraryへ、群・条件・軸ラベル・凡例タイトルを明示的に対応付けます。自動bindingは行いません。"
+                    ),
+                    uiOutput("shared_style_binding_ui")
+                  )
                 ),
-                uiOutput("shared_style_binding_ui"),
                 tags$hr()
               ),
               tags$h5("凡例・条件名"),

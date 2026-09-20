@@ -185,6 +185,38 @@
     effective_has_linetype <- nzchar(linetype_map_var)
     effective_has_shape <- nzchar(shape_map_var)
 
+    uses_mapped_linetype <- identical(input$plot_type, "line")
+    if (identical(input$plot_type, "scatter")) {
+      scatter_mode_now <- input$scatter_connect_mode %||% "none"
+      uses_mapped_linetype <- scatter_mode_now %in% c("id", "row")
+    }
+    uses_mapped_shape <- isTRUE(effective_has_shape) && (
+      input$plot_type %in% c("line", "scatter") ||
+        (input$plot_type %in% c("bar", "box") &&
+           isTRUE(input$show_raw) && identical(input$raw_shape_mode, "group"))
+    )
+
+    legend_policy <- graph_build_legend_policy(
+      mapping = list(
+        colour = if (input$plot_type %in% c("line", "scatter")) color_map_var else "",
+        fill = if (input$plot_type %in% c("bar", "box")) color_map_var else "",
+        linetype = if (uses_mapped_linetype) linetype_map_var else "",
+        shape = if (uses_mapped_shape) shape_map_var else ""
+      ),
+      appearance = list(
+        legend_colour_show = input$legend_colour_show,
+        legend_linetype_show = input$legend_linetype_show,
+        legend_shape_show = input$legend_shape_show,
+        legend_merge_linetype_shape = input$legend_merge_linetype_shape,
+        legend_merge_colour_shape = input$legend_merge_colour_shape
+      ),
+      plot_type = input$plot_type,
+      layer_context = list(
+        uses_linetype = uses_mapped_linetype,
+        uses_shape = uses_mapped_shape
+      )
+    )
+
     aes_levels <- function(z, var, preferred = NULL) {
       if (!nzchar(var) || !var %in% names(z)) return(character(0))
       if (!is.null(preferred) && length(preferred)) return(preferred)
@@ -219,17 +251,6 @@
       shape_style_vector(shape_style_var, shape_levels)
     } else NULL
 
-    color_legend_key <- if (combo_override) {
-      paste0("__combo__::", cvar, "::", g)
-    } else {
-      cvar
-    }
-
-    color_title_default <- if (combo_override) paste0(cvar, " × ", g) else cvar
-    color_legend_title <- if (has_color) {
-      legend_title_value(color_legend_key, color_title_default)
-    } else ""
-
     combo_display_labels <- function(keys_now) {
       if (!combo_override) return(level_label_values(cvar, keys_now))
       vapply(
@@ -247,23 +268,6 @@
 
     color_display_labels <- if (has_color) combo_display_labels(display_levels) else character(0)
 
-    linetype_legend_key <- if (
-      effective_has_linetype &&
-      identical(linetype_map_var, color_map_var) &&
-      has_color
-    ) {
-      color_legend_key
-    } else {
-      lvar
-    }
-    linetype_title_default <- if (
-      effective_has_linetype &&
-      identical(linetype_map_var, color_map_var) &&
-      has_color
-    ) color_title_default else lvar
-    linetype_legend_title <- if (effective_has_linetype) {
-      legend_title_value(linetype_legend_key, linetype_title_default)
-    } else ""
     linetype_display_labels <- if (effective_has_linetype) {
       if (identical(linetype_map_var, color_map_var) && has_color) {
         color_display_labels
@@ -272,23 +276,6 @@
       }
     } else character(0)
 
-    shape_legend_key <- if (
-      effective_has_shape &&
-      identical(shape_map_var, color_map_var) &&
-      has_color
-    ) {
-      color_legend_key
-    } else {
-      svar
-    }
-    shape_title_default <- if (
-      effective_has_shape &&
-      identical(shape_map_var, color_map_var) &&
-      has_color
-    ) color_title_default else svar
-    shape_legend_title <- if (effective_has_shape) {
-      legend_title_value(shape_legend_key, shape_title_default)
-    } else ""
     shape_display_labels <- if (effective_has_shape) {
       if (identical(shape_map_var, color_map_var) && has_color) {
         color_display_labels
@@ -387,7 +374,8 @@
           colour = col,
           linewidth = input$id_line_width,
           alpha = input$id_line_alpha,
-          inherit.aes = FALSE
+          inherit.aes = FALSE,
+          show.legend = if (nzchar(lt_col)) graph_legend_layer_flags(legend_policy, "id_line") else FALSE
         )
         if (!nzchar(lt_col)) args$linetype <- input$id_linetype
 
@@ -433,7 +421,8 @@
           colour = col,
           size = input$raw_point_size,
           alpha = input$raw_alpha,
-          inherit.aes = FALSE
+          inherit.aes = FALSE,
+          show.legend = graph_legend_layer_flags(legend_policy, "raw_point")
         )
 
         if (!nzchar(shape_var)) {
@@ -587,7 +576,8 @@
         line_args <- list(
           mapping = line_map,
           data = d,
-          linewidth = input$line_width
+          linewidth = input$line_width,
+          show.legend = graph_legend_layer_flags(legend_policy, "summary_line")
         )
         if (!has_color) line_args$colour <- input$mean_color_mode
         if (!effective_has_linetype) line_args$linetype <- input$mean_linetype
@@ -599,7 +589,10 @@
           colourcol = color_map_var,
           shapecol = shape_map_var
         )
-        point_args <- list(mapping = point_map, data = d, size = input$point_size)
+        point_args <- list(
+          mapping = point_map, data = d, size = input$point_size,
+          show.legend = graph_legend_layer_flags(legend_policy, "line_point")
+        )
         if (!has_color) point_args$colour <- input$mean_color_mode
         if (!effective_has_shape) point_args$shape <- as.numeric(input$mean_shape)
         p <- p + do.call(geom_point, point_args)
@@ -621,7 +614,8 @@
             data = d,
             width = input$error_width,
             linewidth = input$error_line_width,
-            inherit.aes = FALSE
+            inherit.aes = FALSE,
+            show.legend = graph_legend_layer_flags(legend_policy, "errorbar")
           )
           if (!nzchar(err_colour_var)) {
             err_args$colour <- if (identical(input$error_color_mode, "fixed")) {
@@ -668,7 +662,10 @@
             colourcol = color_map_var,
             linetypecol = linetype_map_var
           )
-          line_args <- list(mapping = line_map, data = s, linewidth = input$line_width)
+          line_args <- list(
+            mapping = line_map, data = s, linewidth = input$line_width,
+            show.legend = graph_legend_layer_flags(legend_policy, "summary_line")
+          )
           if (!has_color) line_args$colour <- input$mean_color_mode
           if (!effective_has_linetype) line_args$linetype <- input$mean_linetype
           p0 <- p0 + do.call(geom_line, line_args)
@@ -679,7 +676,10 @@
             colourcol = color_map_var,
             shapecol = shape_map_var
           )
-          point_args <- list(mapping = point_map, data = s, size = input$point_size)
+          point_args <- list(
+            mapping = point_map, data = s, size = input$point_size,
+            show.legend = graph_legend_layer_flags(legend_policy, "line_point")
+          )
           if (!has_color) point_args$colour <- input$mean_color_mode
           if (!effective_has_shape) point_args$shape <- as.numeric(input$mean_shape)
           p0 + do.call(geom_point, point_args)
@@ -705,7 +705,8 @@
             data = s,
             width = input$error_width,
             linewidth = input$error_line_width,
-            inherit.aes = FALSE
+            inherit.aes = FALSE,
+            show.legend = graph_legend_layer_flags(legend_policy, "errorbar")
           )
           if (!nzchar(err_colour_var)) {
             err_args$colour <- if (identical(input$error_color_mode, "fixed")) {
@@ -877,7 +878,8 @@
         data = sbar,
         width = slot_width * input$bar_width,
         position = "identity",
-        linewidth = input$bar_border_width
+        linewidth = input$bar_border_width,
+        show.legend = graph_legend_layer_flags(legend_policy, "bar_main")
       )
       if (!has_color) bar_args$fill <- input$mean_color_mode
       if (!nzchar(border_map_var)) {
@@ -889,7 +891,8 @@
         err_colour_var <- if (identical(input$error_color_mode,"group") && has_color) color_map_var else ""
         err_map <- dynamic_aes(xcol=".x_group__", ymincol=".ymin", ymaxcol=".ymax", colourcol=err_colour_var)
         err_args <- list(mapping=err_map, data=sbar, width=input$error_width,
-                         linewidth=input$error_line_width, inherit.aes=FALSE)
+                         linewidth=input$error_line_width, inherit.aes=FALSE,
+                         show.legend=graph_legend_layer_flags(legend_policy, "errorbar"))
         if (!nzchar(err_colour_var)) err_args$colour <- if (identical(input$error_color_mode,"fixed")) input$error_color else input$mean_color_mode
         p <- p + do.call(geom_errorbar, err_args)
       }
@@ -966,7 +969,8 @@
         mapping = scatter_map,
         data = d,
         size = input$point_size,
-        alpha = 0.90
+        alpha = 0.90,
+        show.legend = graph_legend_layer_flags(legend_policy, "scatter_point")
       )
       if (!has_color) point_args$colour <- input$mean_color_mode
       if (!effective_has_shape) point_args$shape <- as.numeric(input$mean_shape)
@@ -1018,7 +1022,8 @@
             data = seg,
             linewidth = input$id_line_width,
             alpha = input$id_line_alpha,
-            inherit.aes = FALSE
+            inherit.aes = FALSE,
+            show.legend = graph_legend_layer_flags(legend_policy, "scatter_segment")
           )
           if (!has_color) seg_args$colour <- input$mean_color_mode
           if (!effective_has_linetype) seg_args$linetype <- input$id_linetype
@@ -1146,7 +1151,8 @@
         mapping=box_map, data=d,
         linewidth=input$bar_border_width,
         outlier.shape=NA,
-        orientation="x"
+        orientation="x",
+        show.legend=graph_legend_layer_flags(legend_policy, "box_main")
       )
       if (!has_color) box_args$fill <- input$mean_color_mode
       if (!nzchar(border_map_var)) {
@@ -1262,12 +1268,6 @@
       }
     }
 
-    uses_mapped_linetype <- identical(input$plot_type, "line")
-    if (identical(input$plot_type, "scatter")) {
-      scatter_mode_now <- input$scatter_connect_mode %||% "none"
-      uses_mapped_linetype <- scatter_mode_now %in% c("id", "row")
-    }
-
     if (isTRUE(uses_mapped_linetype) &&
         effective_has_linetype && length(linetype_levels)) {
       lt_values_now <- linetype_values
@@ -1337,71 +1337,23 @@
       y = if (nzchar(input$ylab)) normalize_multiline_label(input$ylab) else y,
       title = if (nzchar(input$title)) input$title else NULL
     )
-
-    legend_group_show <- if (is.null(input$legend_group_show)) TRUE else isTRUE(input$legend_group_show)
-    legend_individual_show <- if (is.null(input$legend_individual_show)) TRUE else isTRUE(input$legend_individual_show)
-    legend_merge_group_individual <- if (is.null(input$legend_merge_group_individual)) TRUE else isTRUE(input$legend_merge_group_individual)
-    same_group_shape_guide <- isTRUE(has_color) && isTRUE(effective_has_shape) &&
-      nzchar(color_map_var) && identical(shape_map_var, color_map_var)
-
-    legend_policy <- graph_legend_policy(input, same_group_shape_guide)
-    group_guide_title <- legend_policy$group
-    shape_guide_title <- legend_policy$individual
-
-    # Assign with single-bracket list semantics so NULL is retained as a
-    # named labs() argument.  `labs(fill = NULL)` removes the guide title;
-    # `$fill <- NULL` would instead delete the argument and restore ggplot's
-    # default Mapping/scale title.
-    legend_title_lab_value <- function(x) {
-      z <- as.character(x %||% "")[1]
-      if (!nzchar(trimws(z))) NULL else z
-    }
-    set_legend_lab <- function(args, aesthetic, value) {
-      args[aesthetic] <- list(legend_title_lab_value(value))
-      args
-    }
-
-    if (has_color) {
-      if (input$plot_type %in% c("bar", "box")) {
-        label_args <- set_legend_lab(label_args, "fill", group_guide_title)
-      }
-      if (input$plot_type %in% c("line", "scatter") ||
-          (!use_value && input$plot_type == "bar" &&
-             identical(input$error_color_mode, "group"))) {
-        label_args <- set_legend_lab(label_args, "colour", group_guide_title)
-      }
-    }
-
-    if (input$plot_type == "line" && effective_has_linetype) {
-      label_args <- set_legend_lab(label_args, "linetype", group_guide_title)
-    }
-
-    # Bar/Box raw points can own a Shape guide too.  Applying the Shape title
-    # only for Line/Scatter was the reason entering a group legend title split
-    # an initially merged Bar legend into two guides.
-    if (input$plot_type %in% c("line", "scatter", "bar", "box") && effective_has_shape) {
-      label_args <- set_legend_lab(label_args, "shape", shape_guide_title)
-    }
-
     p <- p + do.call(labs, label_args) + theme_object()
 
-    guide_policy <- list(
-      fill = guide_legend(order = legend_policy$group_order),
-      colour = guide_legend(order = legend_policy$group_order),
-      linetype = guide_legend(order = legend_policy$group_order),
-      shape = guide_legend(order = legend_policy$individual_order)
+    colour_title <- if (isTRUE(input$legend_title_show)) {
+      input$legend_group_title %||% ""
+    } else NULL
+    individual_title <- if (isTRUE(input$legend_individual_title_show)) {
+      input$legend_individual_title %||% ""
+    } else NULL
+
+    p <- graph_apply_legend_guides(
+      p,
+      legend_policy,
+      titles = list(
+        colour = colour_title,
+        individual = individual_title
+      )
     )
-    if (!isTRUE(legend_group_show)) {
-      guide_policy$fill <- "none"
-      guide_policy$colour <- "none"
-      guide_policy$linetype <- "none"
-    }
-    if (!isTRUE(legend_individual_show)) {
-      guide_policy$shape <- "none"
-    }
-    if (length(guide_policy)) {
-      p <- p + do.call(guides, guide_policy)
-    }
 
     # ---------------------------------------
     # Stable Y range

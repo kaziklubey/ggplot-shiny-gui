@@ -43,9 +43,11 @@ graph_snapshot_input_defaults <- function() {
     y_breaks_auto = TRUE, y_breaks_step = 1, y_top_to_tick = TRUE,
     y_break_enabled = FALSE, y_break_from = 2, y_break_to = 10,
     y_break_space = 0.08, y_break_symbol = TRUE,
-    legend_pos = "right", legend_group_show = TRUE, legend_individual_show = TRUE,
-    legend_merge_group_individual = TRUE, legend_title_show = FALSE,
-    legend_group_title = "", legend_individual_title_show = FALSE, legend_individual_title = "",
+    legend_pos = "right",
+    legend_colour_show = TRUE, legend_linetype_show = TRUE, legend_shape_show = TRUE,
+    legend_merge_linetype_shape = TRUE, legend_merge_colour_shape = TRUE,
+    legend_title_show = FALSE, legend_group_title = "",
+    legend_individual_title_show = FALSE, legend_individual_title = "",
     legend_key_width = 1.8, facet_spacing_x = 0.12
   )
 }

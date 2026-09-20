@@ -1,4 +1,4 @@
-# Active Graph style persistence.
+# v3.73.2.37 Phase 2.03 — active Graph style persistence.
 # Legacy staged Project restore/remount/retry machinery was removed.
 # Editor-local transaction primitives are initialized before runtime sourcing in
 # graph_editor_primitives_runtime.R. This file owns only generic style
@@ -93,9 +93,11 @@
         y_break_space = input$y_break_space,
         y_break_symbol = input$y_break_symbol,
         legend_pos = input$legend_pos,
-        legend_group_show = input$legend_group_show,
-        legend_individual_show = input$legend_individual_show,
-        legend_merge_group_individual = input$legend_merge_group_individual,
+        legend_colour_show = input$legend_colour_show,
+        legend_linetype_show = input$legend_linetype_show,
+        legend_shape_show = input$legend_shape_show,
+        legend_merge_linetype_shape = input$legend_merge_linetype_shape,
+        legend_merge_colour_shape = input$legend_merge_colour_shape,
         legend_title_show = input$legend_title_show,
         legend_group_title = input$legend_group_title,
         legend_individual_title_show = input$legend_individual_title_show,
@@ -359,16 +361,32 @@
       if (!is.null(a$y_break_symbol)) updateCheckboxInput(session, "y_break_symbol", value = isTRUE(a$y_break_symbol))
       if (!is.null(a$legend_pos)) updateSelectInput(session, "legend_pos", selected = a$legend_pos)
       updateCheckboxInput(
-        session, "legend_group_show",
-        value = if (is.null(a$legend_group_show)) TRUE else isTRUE(a$legend_group_show)
+        session, "legend_colour_show",
+        value = if (is.null(a$legend_colour_show)) {
+          if (is.null(a$legend_group_show)) TRUE else isTRUE(a$legend_group_show)
+        } else isTRUE(a$legend_colour_show)
       )
       updateCheckboxInput(
-        session, "legend_individual_show",
-        value = if (is.null(a$legend_individual_show)) TRUE else isTRUE(a$legend_individual_show)
+        session, "legend_linetype_show",
+        value = if (is.null(a$legend_linetype_show)) {
+          if (is.null(a$legend_group_show)) TRUE else isTRUE(a$legend_group_show)
+        } else isTRUE(a$legend_linetype_show)
       )
       updateCheckboxInput(
-        session, "legend_merge_group_individual",
-        value = if (is.null(a$legend_merge_group_individual)) TRUE else isTRUE(a$legend_merge_group_individual)
+        session, "legend_shape_show",
+        value = if (is.null(a$legend_shape_show)) {
+          if (is.null(a$legend_individual_show)) TRUE else isTRUE(a$legend_individual_show)
+        } else isTRUE(a$legend_shape_show)
+      )
+      updateCheckboxInput(
+        session, "legend_merge_linetype_shape",
+        value = if (is.null(a$legend_merge_linetype_shape)) TRUE else isTRUE(a$legend_merge_linetype_shape)
+      )
+      updateCheckboxInput(
+        session, "legend_merge_colour_shape",
+        value = if (is.null(a$legend_merge_colour_shape)) {
+          if (is.null(a$legend_merge_group_individual)) TRUE else isTRUE(a$legend_merge_group_individual)
+        } else isTRUE(a$legend_merge_colour_shape)
       )
       updateCheckboxInput(
         session, "legend_title_show",
@@ -391,9 +409,11 @@
       # Very old/partial GraphStates can lack appearance entirely.  Do not let
       # the persistent Editor inherit these newly-added legend controls from
       # the previously visited Graph.
-      updateCheckboxInput(session, "legend_group_show", value = TRUE)
-      updateCheckboxInput(session, "legend_individual_show", value = TRUE)
-      updateCheckboxInput(session, "legend_merge_group_individual", value = TRUE)
+      updateCheckboxInput(session, "legend_colour_show", value = TRUE)
+      updateCheckboxInput(session, "legend_linetype_show", value = TRUE)
+      updateCheckboxInput(session, "legend_shape_show", value = TRUE)
+      updateCheckboxInput(session, "legend_merge_linetype_shape", value = TRUE)
+      updateCheckboxInput(session, "legend_merge_colour_shape", value = TRUE)
       updateCheckboxInput(session, "legend_title_show", value = FALSE)
       updateTextInput(session, "legend_group_title", value = "")
       updateCheckboxInput(session, "legend_individual_title_show", value = FALSE)

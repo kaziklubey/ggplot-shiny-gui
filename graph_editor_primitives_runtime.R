@@ -1,4 +1,4 @@
-# Persistent Graph Editor local primitives.
+# v3.73.2.37 Phase 2.03 — persistent Graph Editor local primitives.
 # Sourced before data/style/output runtimes so those files never depend on a
 # later source for transaction guards or scalar JSON normalization.
 

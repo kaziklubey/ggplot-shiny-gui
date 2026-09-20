@@ -1,4 +1,4 @@
-# Canonical GraphState capture for the persistent Editor.
+# v3.73.2.37 Phase 2.03 — canonical GraphState capture for the persistent Editor.
 # Project loading is owned by server_project_io_runtime.R and canonical GraphState
 # replay is owned by server_graph_state_replay_runtime.R. No staged hydrate,
 # semantic readback/reconcile, retry, remount, or hidden-Graph restore exists here.

@@ -1401,7 +1401,7 @@
     capture_current_figure_override("none", "height")
   }, ignoreInit = TRUE)
 
-  # The first explicit Inset enable/source selection should be
+  # Phase 2.1: the first explicit Inset enable/source selection should be
   # immediately visible without requiring a second refresh click. Freeze one
   # direct-state snapshot only when the user changes these controls and no
   # Figure-owned Inset snapshot exists yet. Later Graph edits remain snapshot-

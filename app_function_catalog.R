@@ -29,7 +29,11 @@ app_function_catalog <- function() {
       graph_render_state_changed = list(kind = "pure render contract", input = "old/new GraphState", output = "logical"),
       app_normalize_font_family_mode = list(kind = "pure canonicalizer", input = "font selector value", output = "canonical mode/family"),
       app_normalize_font_family_custom = list(kind = "pure canonicalizer", input = "custom font text", output = "trimmed family"),
-      app_effective_font_family = list(kind = "pure resolver", input = "mode + custom", output = "ggplot family")
+      app_effective_font_family = list(kind = "pure resolver", input = "mode + custom", output = "ggplot family"),
+      graph_build_legend_policy = list(kind = "pure Legend Policy", input = "effective Mapping + appearance + plot/layer context", output = "aesthetic guide policy"),
+      graph_legend_merge_plan = list(kind = "pure Legend Policy", input = "legend policy", output = "aesthetic merge components"),
+      graph_legend_layer_flags = list(kind = "pure Legend Policy", input = "legend policy + layer role", output = "named show.legend flags"),
+      graph_apply_legend_guides = list(kind = "plot guide adapter", input = "ggplot + legend policy + titles", output = "ggplot with guide policy")
     ),
     graph_data = list(
       graph_normalize_data_transform_recipe = list(kind = "pure transform contract", input = "transform recipe", output = "canonical recipe"),

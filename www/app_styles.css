@@ -1838,6 +1838,59 @@
   padding: 10px 10px 2px 10px;
 }
 
+/* Color / Linetype / Shape appearance editor cards.
+   These are presentation-only; the underlying inputs/state are unchanged. */
+.aesthetic-style-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.aesthetic-style-panel {
+  border: 1px solid #dddddd;
+  border-radius: 7px;
+  background: #ffffff;
+  overflow: hidden;
+}
+.aesthetic-style-panel > summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px;
+  background: #f7f7f7;
+  user-select: none;
+}
+.aesthetic-style-panel > summary::-webkit-details-marker {
+  display: none;
+}
+.aesthetic-style-panel > summary::before {
+  content: '▸';
+  display: inline-block;
+  width: 1.05em;
+  font-size: 11px;
+  transition: transform 0.12s ease;
+}
+.aesthetic-style-panel[open] > summary::before {
+  transform: rotate(90deg);
+}
+.aesthetic-style-title {
+  font-weight: 700;
+  font-size: 13px;
+}
+.aesthetic-style-term {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  color: #666666;
+  background: #eeeeee;
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+.aesthetic-style-body {
+  padding: 9px 10px 3px 10px;
+}
+
 .graph-statistics-header {
   margin-bottom: 14px;
 }

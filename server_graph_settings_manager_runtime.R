@@ -75,13 +75,14 @@
       list(group="サイズ", label="Plot縦幅", path="style.appearance.plot_height_px", section="axes-legend", input="plot_height_px_direct", suffix=" px", apply=TRUE, editor=editor_number(180, 1400, 10)),
       list(group="凡例", label="凡例位置", path="style.appearance.legend_pos", section="axes-legend", input="legend_pos", apply=TRUE,
            editor=editor_select(c("right","left","top","bottom","none"), c("右","左","上","下","非表示"))),
-      list(group="凡例", label="グループ凡例を表示", path="style.appearance.legend_group_show", section="axes-legend", input="legend_group_show", apply=TRUE, editor=editor_boolean()),
-      list(group="凡例", label="個体点凡例を表示", path="style.appearance.legend_individual_show", section="axes-legend", input="legend_individual_show", apply=TRUE, editor=editor_boolean()),
-      list(group="凡例", label="同じ条件の凡例を統合", path="style.appearance.legend_merge_group_individual", section="axes-legend", input="legend_merge_group_individual", apply=TRUE, editor=editor_boolean()),
-      list(group="凡例", label="グループ凡例タイトルを表示", path="style.appearance.legend_title_show", section="axes-legend", input="legend_title_show", apply=TRUE, editor=editor_boolean()),
-      list(group="凡例", label="グループ凡例タイトル", path="style.appearance.legend_group_title", section="axes-legend", input="legend_group_title", apply=TRUE, editor=editor_text()),
-      list(group="凡例", label="個体点凡例タイトルを表示", path="style.appearance.legend_individual_title_show", section="axes-legend", input="legend_individual_title_show", apply=TRUE, editor=editor_boolean()),
-      list(group="凡例", label="個体点凡例タイトル", path="style.appearance.legend_individual_title", section="axes-legend", input="legend_individual_title", apply=TRUE, editor=editor_text()),
+      list(group="凡例", label="色 / 塗り凡例を表示", path="style.appearance.legend_colour_show", section="axes-legend", input="legend_colour_show", apply=TRUE, editor=editor_boolean()),
+      list(group="凡例", label="線種凡例を表示", path="style.appearance.legend_linetype_show", section="axes-legend", input="legend_linetype_show", apply=TRUE, editor=editor_boolean()),
+      list(group="凡例", label="点形状凡例を表示", path="style.appearance.legend_shape_show", section="axes-legend", input="legend_shape_show", apply=TRUE, editor=editor_boolean()),
+      list(group="凡例", label="同じ変数の線種と点形状を統合", path="style.appearance.legend_merge_linetype_shape", section="axes-legend", input="legend_merge_linetype_shape", apply=TRUE, editor=editor_boolean()),
+      list(group="凡例", label="色 / 塗り凡例タイトルを表示", path="style.appearance.legend_title_show", section="axes-legend", input="legend_title_show", apply=TRUE, editor=editor_boolean()),
+      list(group="凡例", label="色 / 塗り凡例タイトル", path="style.appearance.legend_group_title", section="axes-legend", input="legend_group_title", apply=TRUE, editor=editor_text()),
+      list(group="凡例", label="線種 / 点形状凡例タイトルを表示", path="style.appearance.legend_individual_title_show", section="axes-legend", input="legend_individual_title_show", apply=TRUE, editor=editor_boolean()),
+      list(group="凡例", label="線種 / 点形状凡例タイトル", path="style.appearance.legend_individual_title", section="axes-legend", input="legend_individual_title", apply=TRUE, editor=editor_text()),
       list(group="凡例", label="凡例サンプル長", path="style.appearance.legend_key_width", section="axes-legend", input="legend_key_width", apply=TRUE, editor=editor_number(0, 4, 0.1)),
       list(group="書式", label="Theme", path="style.appearance.theme", section="appearance", input="theme", apply=TRUE,
            editor=editor_select(c("classic","bw","minimal","gray"), c("classic","bw","minimal","gray"))),
@@ -182,9 +183,15 @@
 
     ids <- as.character(meta$id)
     names_by_id <- stats::setNames(as.character(meta$name), ids)
-    states <- stats::setNames(lapply(ids, function(id) if (cache_has(id)) cache_get(id) else NULL), ids)
+    states <- stats::setNames(lapply(ids, function(id) {
+      st <- if (cache_has(id)) cache_get(id) else NULL
+      if (is.list(st)) graph_normalize_legend_state(st) else st
+    }), ids)
     main_figure_ids <- tryCatch(figure_main_panel_source_ids(), error = function(e) character(0))
-    figure_states <- stats::setNames(lapply(ids, function(id) figure_states_now[[id]] %||% NULL), ids)
+    figure_states <- stats::setNames(lapply(ids, function(id) {
+      st <- figure_states_now[[id]] %||% NULL
+      if (is.list(st)) graph_normalize_legend_state(st) else st
+    }), ids)
     rows <- graph_settings_manager_rows()
     lib <- shared_style_normalize_library(shared_style_library())
 
