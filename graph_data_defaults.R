@@ -143,16 +143,17 @@ graph_default_mapping_for_data <- function(data) {
 # not depend on whether browser selectInput values have round-tripped yet.
 
 # Normalize loaded GraphState before replay into the persistent Editor.
-# The persistent UI derives choices and conditional visibility itself; only
-# manual view state remains in ui_snapshot. Project load and Graph switches
-# therefore need no temporary UI hydration or browser readback.
+# Mapping choice vectors are never persisted. Replay derives target choices
+# synchronously from canonical data/reshape and sends them with selected values;
+# ui_snapshot remains presentation-only and no browser semantic readback is used.
 graph_state_prepare_replay_snapshot <- function(state) {
   if (!is.list(state)) return(state)
+  state <- graph_normalize_legend_state(state)
 
-  # Replay no longer requires saved choice vectors or a browser-readback gate.
-  # The persistent UI derives choices/visibility from raw_dat()/dat()/plot_type
-  # exactly as it does during ordinary editing. This helper is now only a pure
-  # GraphState schema migration boundary for deterministic Style defaults.
+  # Replay does not require saved choice vectors or a browser-readback gate.
+  # Choices are derived from canonical data/reshape at replay time and ordinary
+  # observers continue to own later user-edit choice updates. This helper remains
+  # a pure GraphState schema migration boundary for deterministic Style defaults.
   state$ui_snapshot <- graph_ui_snapshot_normalize(state$ui_snapshot)
   old_schema <- suppressWarnings(as.integer(graph_state_scalar(state$schema_version, 0L)))
   if (!is.finite(old_schema)) old_schema <- 0L

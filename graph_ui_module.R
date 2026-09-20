@@ -1200,6 +1200,37 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                 ),
                 selected = "right"
               ),
+              tags$div(
+                class = "group-style-box",
+                tags$b("凡例の表示"),
+                checkboxInput(
+                  "legend_group_show",
+                  "グループ凡例（Color / Fill / Line type）を表示",
+                  TRUE
+                ),
+                checkboxInput(
+                  "legend_individual_show",
+                  "個体点凡例（Shape）を表示",
+                  TRUE
+                ),
+                checkboxInput(
+                  "legend_merge_group_individual",
+                  "同じ条件のグループ凡例と個体点凡例を1つにまとめる",
+                  TRUE
+                ),
+                checkboxInput(
+                  "legend_title_show",
+                  "グループ凡例タイトルを表示",
+                  FALSE
+                ),
+                textInput("legend_group_title", "グループ凡例タイトル", ""),
+                checkboxInput("legend_individual_title_show", "個体点凡例タイトルを表示", FALSE),
+                textInput("legend_individual_title", "個体点凡例タイトル", ""),
+                p(
+                  class = "help-block",
+                  "同じ条件の凡例を統合するとグループ凡例タイトルを使います。個体点タイトルは保持され、分離時に使われます。"
+                )
+              ),
               sliderInput(
                 "legend_key_width",
                 "凡例の線サンプル長",
@@ -1224,7 +1255,7 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
               tags$h5("凡例・条件名"),
               p(
                 class = "help-block",
-                "元データは変更せず、グラフ上に表示する凡例タイトルや条件名だけを変更します。X軸の条件名やFacet名にも反映されます。"
+                "元データは変更せず、グラフ上の条件名だけを変更します。X軸の条件名やFacet名にも反映されます。凡例タイトルは上の欄で設定します。"
               ),
               uiOutput("display_labels_ui")
             )

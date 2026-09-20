@@ -228,6 +228,9 @@ shared_style_apply_to_graph_state <- function(state, library) {
       if (is.list(item) && identical(item$kind, "legend_title") && isTRUE(item$manage$display)) {
         if (!is.list(st$legend_titles)) st$legend_titles <- list()
         st$legend_titles[[legend_key]] <- item$display
+        if (identical(legend_key, graph_group_legend_key(state))) {
+          st$appearance$legend_group_title <- item$display
+        }
       }
     }
   }
@@ -298,7 +301,10 @@ shared_style_update_library_from_graph_state <- function(library, state) {
       item_id <- b$legends[[legend_key]]
       item <- lib$items[[item_id]]
       if (!is.list(item) || !identical(item$kind, "legend_title") || !isTRUE(item$manage$display)) next
-      add_candidate(item_id, "display", st$legend_titles[[legend_key]])
+      title <- if (identical(legend_key, graph_group_legend_key(state))) {
+        st$appearance$legend_group_title %||% st$legend_titles[[legend_key]]
+      } else st$legend_titles[[legend_key]]
+      add_candidate(item_id, "display", title)
     }
   }
 

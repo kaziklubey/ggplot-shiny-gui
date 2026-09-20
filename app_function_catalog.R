@@ -98,7 +98,7 @@ app_function_catalog <- function() {
       graph_single_load = list(kind = "internal editor transaction", input = "Graph id", output = "side effects: canonical value replay + one live render"),
       graph_single_default_state_snapshot = list(kind = "editor default-state source", input = "reason", output = "deep-copied canonical default GraphState"),
       graph_accept_attached_canonical = list(kind = "render acceptance boundary", input = "outer-accepted canonical GraphState", output = "module attachment + pending render target"),
-      graph_apply_state_replay = list(kind = "persistent Editor replay", input = "canonical GraphState + UI snapshot", output = "batched UI replay + one browser completion barrier"),
+      graph_apply_state_replay = list(kind = "persistent Editor replay", input = "canonical GraphState + UI snapshot", output = "target-derived choices + batched value replay + one browser completion barrier"),
       graph_release_attached_render_target = list(kind = "render transaction boundary", input = "accepted attached GraphState", output = "single render revision release"),
       seed_new_graph_default_state = list(kind = "new-Graph canonical initializer", input = "Graph id + reason", output = "Registry default-state commit"),
       graph_single_abort_activation = list(kind = "editor transaction fail-safe", input = "Graph id + reason", output = "stale shell clear + explicit reselection"),

@@ -71,6 +71,7 @@ graphServer <- function(id, style_clipboard = NULL, diag_log = NULL, ui_preseede
   # persistent Editor. These transaction values exist before data/style observers
   # are installed so those observers can cheaply suppress auto-default work while
   # a replay batch is crossing the browser.
+  graph_mapping_replay_plan <- reactiveVal(NULL)
   graph_state_replay_active <- reactiveVal(FALSE)
   graph_state_replay_target <- reactiveVal(NULL)
   graph_state_replay_generation <- reactiveVal(0L)
@@ -113,6 +114,7 @@ graphServer <- function(id, style_clipboard = NULL, diag_log = NULL, ui_preseede
   init_timing_emit("HELPERS-BEGIN")
   sys.source(file.path(getwd(), "graph_editor_primitives_runtime.R"), envir = environment())
   sys.source(file.path(getwd(), "graph_helpers_runtime.R"), envir = environment())
+  sys.source(file.path(getwd(), "graph_mapping_transaction_runtime.R"), envir = environment())
   init_timing_emit("DATA-BEGIN")
   sys.source(file.path(getwd(), "graph_data_runtime.R"), envir = environment())
   init_timing_emit("ORDER-UI-BEGIN")

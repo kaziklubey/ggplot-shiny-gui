@@ -24,38 +24,57 @@
   graph_replay_apply_mapping_values <- function(cfg) {
     mp <- cfg$mapping %||% list()
     r <- cfg$reshape %||% list()
+    plan <- isolate(graph_mapping_replay_plan())
 
     color <- json_chr(mp$color, "")
     if (identical(color, "__fixed__")) color <- ""
 
-    # The normal data observers own choice lists.  Keep only the saved values
-    # as short-lived seeds while raw data / Wide→Long choices are changing, so
-    # those ordinary observers do not replace the requested value with a
-    # default before the browser has applied the replay batch.
-    reshape_restore_seed(as.character(r$columns %||% character(0)))
-    restore_position_seed(json_chr(mp$position, json_chr(mp$series, "")))
-    restore_linetype_seed(json_chr(mp$linetype, "__color__"))
-    restore_external_error_seed(json_chr(mp$external_error, ""))
-    restore_external_ymin_seed(json_chr(mp$external_ymin, ""))
-    restore_external_ymax_seed(json_chr(mp$external_ymax, ""))
+    # Keep saved values as short-lived seeds while ordinary observers process
+    # the same replay.  Unlike the old path, the replay itself now sends the
+    # target Graph's choice lists together with the selected values.  A switch
+    # therefore never asks the browser to select a value against the previous
+    # Graph's choices (which could coerce Color/Shape/ID/etc. to empty).
+    reshape_restore_seed(if (is.list(plan)) plan$reshape_columns else as.character(r$columns %||% character(0)))
+    restore_position_seed(if (is.list(plan)) plan$position else json_chr(mp$position, json_chr(mp$series, "")))
+    restore_linetype_seed(if (is.list(plan)) plan$linetype else json_chr(mp$linetype, "__color__"))
+    restore_external_error_seed(if (is.list(plan)) plan$external_error else json_chr(mp$external_error, ""))
+    restore_external_ymin_seed(if (is.list(plan)) plan$external_ymin else json_chr(mp$external_ymin, ""))
+    restore_external_ymax_seed(if (is.list(plan)) plan$external_ymax else json_chr(mp$external_ymax, ""))
 
-    # Choices/visibility belong to the already-running UI reactive chain.
-    # Replay restores only saved values; raw_dat()/dat()/plot_type observers
-    # update the available choices exactly as they do for ordinary user edits.
-    updateCheckboxGroupInput(
-      session, "reshape_columns",
-      selected = as.character(r$columns %||% character(0))
-    )
+    if (is.list(plan)) {
+      updateCheckboxGroupInput(
+        session, "reshape_columns",
+        choices = plan$raw_cols,
+        selected = plan$reshape_columns
+      )
+      updateSelectInput(session, "xvar", choices = plan$cols, selected = plan$x)
+      updateSelectInput(session, "yvar", choices = plan$numeric_cols, selected = plan$y)
+      updateSelectInput(session, "colorvar", choices = c("使わない（固定）" = "", plan$cols), selected = plan$color)
+      updateSelectInput(session, "shapevar", choices = c("Color と同じ" = "__color__", "なし（固定）" = "", plan$cols), selected = plan$shape)
+      updateSelectInput(session, "idvar", choices = c("なし" = "", plan$cols), selected = plan$id)
+      updateSelectInput(session, "facetvar", choices = c("なし" = "", plan$cols), selected = plan$facet)
+      updateSelectInput(session, "groupvar", choices = c("なし" = "", plan$cols), selected = plan$position)
+      updateSelectInput(
+        session, "linetypevar",
+        choices = c("色で分ける要因と同じ" = "__color__", "使わない（固定）" = "", plan$cols),
+        selected = plan$linetype
+      )
+      updateSelectInput(session, "external_error_col", choices = c("なし" = "", plan$numeric_cols), selected = plan$external_error)
+      updateSelectInput(session, "external_ymin_col", choices = c("なし" = "", plan$numeric_cols), selected = plan$external_ymin)
+      updateSelectInput(session, "external_ymax_col", choices = c("なし" = "", plan$numeric_cols), selected = plan$external_ymax)
+      return(invisible(TRUE))
+    }
+
+    # Invalid/partial legacy data falls back to value-only updates; the normal
+    # data observers will rebuild choices from whatever data can be parsed.
+    updateCheckboxGroupInput(session, "reshape_columns", selected = as.character(r$columns %||% character(0)))
     updateSelectInput(session, "xvar", selected = json_chr(mp$x, ""))
     updateSelectInput(session, "yvar", selected = json_chr(mp$y, ""))
     updateSelectInput(session, "colorvar", selected = color)
     updateSelectInput(session, "shapevar", selected = json_chr(mp$shape, "__color__"))
     updateSelectInput(session, "idvar", selected = json_chr(mp$id, ""))
     updateSelectInput(session, "facetvar", selected = json_chr(mp$facet, ""))
-    updateSelectInput(
-      session, "groupvar",
-      selected = json_chr(mp$position, json_chr(mp$series, ""))
-    )
+    updateSelectInput(session, "groupvar", selected = json_chr(mp$position, json_chr(mp$series, "")))
     updateSelectInput(session, "linetypevar", selected = json_chr(mp$linetype, "__color__"))
     updateSelectInput(session, "external_error_col", selected = json_chr(mp$external_error, ""))
     updateSelectInput(session, "external_ymin_col", selected = json_chr(mp$external_ymin, ""))
@@ -130,17 +149,16 @@
     cfg <- isolate(graph_state_replay_target())
     if (!is.list(cfg)) return(invisible(FALSE))
 
-    # This is a value replay, not a restore/verification transaction. The
-    # browser ACK means the persistent controls have accepted the update batch.
-    # From here the ordinary reactive graph owns reshape, Mapping choices,
-    # visibility and plot errors exactly as it does after a user edit.
+    # ACK follows immediate transport of bound input values (including Ace).
+    # Ordinary choices writers were excluded throughout this transaction.
+    # Release only after those inputs have crossed the server flush.
     attached_state_seed(cfg)
     graph_state_replay_completed_generation(as.integer(generation))
     graph_state_replay_active(FALSE)
     graph_state_replay_target(NULL)
     graph_state_replay_error(NULL)
     restoring_style_state(FALSE)
-    diag("STATE-REPLAY", paste0("READY generation=", generation, " token=", token, " mode=value-only"))
+    diag("STATE-REPLAY", paste0("READY generation=", generation, " token=", token, " mode=mapping-transaction"))
     invisible(TRUE)
   }
 
@@ -151,6 +169,11 @@
     token <- as.character(ack$token %||% "")[1]
     pending_generation <- as.integer(isolate(graph_state_replay_generation()) %||% -1L)
     if (!isTRUE(isolate(graph_state_replay_active())) || !identical(generation, pending_generation)) return()
+    if (!is.null(ack$error)) {
+      graph_state_replay_error(as.character(ack$error))
+      diag("STATE-REPLAY", paste0("TRANSPORT-ERROR ", ack$error))
+      return()
+    }
     diag("STATE-REPLAY", paste0("browser-flush complete generation=", generation, " token=", token))
     # The ACK arrives after the browser processed the updateInput batch. Cross
     # one server flush so ordinary reactive observers can settle once before READY.
@@ -167,6 +190,8 @@
     graph_state_replay_generation(generation)
     graph_state_replay_error(NULL)
     graph_state_replay_target(cfg)
+    graph_mapping_replay_plan(graph_replay_mapping_plan(cfg))
+    graph_mapping_choices_seed(isolate(graph_mapping_replay_plan()))
     graph_state_replay_active(TRUE)
     restoring_style_state(TRUE)
     attached_state_seed(cfg)
@@ -208,7 +233,12 @@
           token = token,
           graphId = as.character((transaction %||% list())$id %||% "")[1],
           panels = panels,
-          ackId = session$ns("graph_state_replay_ack")
+          ackId = session$ns("graph_state_replay_ack"),
+          inputPrefix = session$ns(""),
+          requiredInputs = session$ns(c("text", "reshape_wide", "reshape_row_id",
+            "reshape_columns", "reshape_x_name", "reshape_y_name", "xvar", "yvar",
+            "colorvar", "shapevar", "idvar", "facetvar", "groupvar", "linetypevar",
+            "external_error_col", "external_ymin_col", "external_ymax_col"))
         )
       )
       diag("STATE-REPLAY", paste0("apply fields=batch generation=", generation, " completion-barrier requested"))

@@ -1,4 +1,4 @@
-# v3.73.2.37 Phase 2.03 — active Graph style persistence.
+# Active Graph style persistence.
 # Legacy staged Project restore/remount/retry machinery was removed.
 # Editor-local transaction primitives are initialized before runtime sourcing in
 # graph_editor_primitives_runtime.R. This file owns only generic style
@@ -9,7 +9,7 @@
   # ============================================================
   style_settings <- reactive({
     list(
-      version = "3.3.41",
+      version = "3.3.42",
       schema_version = 2L,
       color_styles = color_styles(),
       linetype_styles = linetype_styles(),
@@ -93,6 +93,13 @@
         y_break_space = input$y_break_space,
         y_break_symbol = input$y_break_symbol,
         legend_pos = input$legend_pos,
+        legend_group_show = input$legend_group_show,
+        legend_individual_show = input$legend_individual_show,
+        legend_merge_group_individual = input$legend_merge_group_individual,
+        legend_title_show = input$legend_title_show,
+        legend_group_title = input$legend_group_title,
+        legend_individual_title_show = input$legend_individual_title_show,
+        legend_individual_title = input$legend_individual_title,
         legend_key_width = input$legend_key_width,
         facet_spacing_x = input$facet_spacing_x
       )
@@ -168,6 +175,11 @@
   )
 
   apply_style_config <- function(cfg, success_message = "書式を適用しました。", release_guard = TRUE, notify = TRUE) {
+    if (is.null(cfg$appearance$legend_group_title)) {
+      target <- isolate(graph_state_replay_target())
+      mp <- if (is.list(target)) target$mapping else list(color = isolate(input$colorvar), position = isolate(input$groupvar))
+      cfg <- graph_normalize_legend_state(list(mapping = mp, style = cfg))$style
+    }
     restoring_style_state(TRUE)
     restore_release_scheduled <- FALSE
     on.exit({
@@ -346,6 +358,25 @@
       if (!is.null(a$y_break_space)) updateSliderInput(session, "y_break_space", value = as.numeric(a$y_break_space))
       if (!is.null(a$y_break_symbol)) updateCheckboxInput(session, "y_break_symbol", value = isTRUE(a$y_break_symbol))
       if (!is.null(a$legend_pos)) updateSelectInput(session, "legend_pos", selected = a$legend_pos)
+      updateCheckboxInput(
+        session, "legend_group_show",
+        value = if (is.null(a$legend_group_show)) TRUE else isTRUE(a$legend_group_show)
+      )
+      updateCheckboxInput(
+        session, "legend_individual_show",
+        value = if (is.null(a$legend_individual_show)) TRUE else isTRUE(a$legend_individual_show)
+      )
+      updateCheckboxInput(
+        session, "legend_merge_group_individual",
+        value = if (is.null(a$legend_merge_group_individual)) TRUE else isTRUE(a$legend_merge_group_individual)
+      )
+      updateCheckboxInput(
+        session, "legend_title_show",
+        value = if (is.null(a$legend_title_show)) FALSE else isTRUE(a$legend_title_show)
+      )
+      updateTextInput(session, "legend_group_title", value = a$legend_group_title %||% "")
+      updateCheckboxInput(session, "legend_individual_title_show", value = isTRUE(a$legend_individual_title_show))
+      updateTextInput(session, "legend_individual_title", value = a$legend_individual_title %||% "")
       if (!is.null(a$legend_key_width)) {
         updateSliderInput(
           session, "legend_key_width",
@@ -356,6 +387,17 @@
         updateSliderInput(session, "facet_spacing_x", value = as.numeric(a$facet_spacing_x))
       }
       if (!is.null(a$sticky_plot)) updateCheckboxInput(session, "sticky_plot", value = isTRUE(a$sticky_plot))
+    } else {
+      # Very old/partial GraphStates can lack appearance entirely.  Do not let
+      # the persistent Editor inherit these newly-added legend controls from
+      # the previously visited Graph.
+      updateCheckboxInput(session, "legend_group_show", value = TRUE)
+      updateCheckboxInput(session, "legend_individual_show", value = TRUE)
+      updateCheckboxInput(session, "legend_merge_group_individual", value = TRUE)
+      updateCheckboxInput(session, "legend_title_show", value = FALSE)
+      updateTextInput(session, "legend_group_title", value = "")
+      updateCheckboxInput(session, "legend_individual_title_show", value = FALSE)
+      updateTextInput(session, "legend_individual_title", value = "")
     }
 
     style_restore_epoch(isolate(style_restore_epoch()) + 1L)

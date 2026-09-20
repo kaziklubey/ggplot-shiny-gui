@@ -13,6 +13,7 @@ graph_state_scalar <- function(x, default = NULL) {
 graph_ui_seed_from_state <- function(cfg) {
   out <- list()
   if (!is.list(cfg)) return(out)
+  cfg <- graph_normalize_legend_state(cfg)
 
   put <- function(key, value) {
     value <- graph_state_scalar(value, NULL)

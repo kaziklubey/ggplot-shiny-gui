@@ -1,137 +1,153 @@
 # Current architecture and forward plan
 
-## v3.73.1 Editor-first workspace
+## Current maintenance checkpoint — v3.73.2.39
 
-The application is an **editor**, not a preview viewer.  Cached SVG remains an important latency-hiding layer, but ordinary Graph selection no longer stops in a browse-only mode.
+This document describes the **current runtime only**. Historical designs, removed fallbacks, internal Phase names, and prior validation narratives belong in `CHANGE_HISTORY_ARCHIVE.md`, Git history, or older Releases. They are not active architecture.
 
-Core model:
+Current runtime identity is `v3.73.2.39`. Graph ownership remains canonical GraphState + one persistent Editor. Mapping replay is a target-owned transaction that fixes raw/transformed data, Mapping choices, selected values, and transport completion before canonical acceptance. Legend visibility, merge/split, and independent group/individual titles are ordinary GraphState-owned style fields.
+
+## 1. Canonical ownership
+
+- `GraphState` Registry is the only editable/persisted source of truth for Graphs.
+- The Graph workspace owns exactly **one persistent Graph Editor / graphServer module**. Graph identity is state, not module identity.
+- Figure owns point-in-time Main / Legend / Inset snapshots plus Figure-owned editable GraphState copies. Figure state is independent from the source Graph after capture.
+- DOM inputs, live ggplot objects, browser SVG, and cached geometry are derived views/artifacts, never canonical state.
+- Statistics Analysis recipes are persisted inside GraphState but own their own preparation/test settings independently from Plot Mapping and Plot Wide→Long state.
+
+## 2. Normal Graph activation
+
+Normal Graph selection uses one path:
 
 ```text
-Graph / Figure item = persistent canonical state + cached preview
-Graph workspace      = one persistent Editor, always the primary surface
-Graph selection      = select target -> auto hydrate/sync Editor -> READY
-Cached SVG           = visual seed / transaction fallback, never a separate user mode
-```
-
-### Graph selection / editor ownership
-
-`active_graph()` is the selected Graph and `editing_graph_id()` is the Graph currently owned by the singleton Editor. They may differ **only while an ACK-gated switch is in flight** (or during failure fallback), not as a normal browse state.
-
-```text
-Graph tab click
-  -> selected Graph changes immediately
-  -> current Editor transaction finishes if already in flight
-  -> latest pending target wins
-  -> graph_single_load(target)
-  -> cached target ACK when available
-  -> state settle / canonical reconcile
-  -> live bind ACK
-  -> live authorize ACK
+Graph selection
+  -> commit outgoing visible owner when needed
+  -> read target canonical GraphState
+  -> close render gate
+  -> derive target Mapping choices from target GraphState data/reshape
+  -> replay target choices + GraphState values into persistent Editor
+  -> one browser completion barrier
+  -> accept canonical target
+  -> release final render
   -> READY
 ```
 
-The outgoing Graph is never interrupted mid-hydrate.  Rapid selections are serialized through one latest-target queue so a partially restored Editor state cannot be committed as canonical GraphState.
+The browser completion barrier confirms that the value replay has crossed the client/server binding boundary. It is **not** a semantic browser-state comparison and does not create a second source of truth.
 
-### Plot / Statistics / Data View / comment
+Rapid selection may queue the latest requested target behind an in-flight persistent-Editor transaction. No per-Graph Editor is created.
 
-The Graph workspace owns a stable outer section bar (Plot / Statistics / Data View / 製作者コメント) outside the hydration mask. It drives the existing hidden `graph_main_tab` binding, so the current section survives Graph ownership changes without creating a second source of truth. A user may stay on Statistics, Data View or the comment tab while switching Graphs; no separate Edit action is required. Plot controls are visible only on Plot, Statistics uses its Analysis controls, and Data View / comment use the full content width. Plot rendering remains gated to the Plot section, and Statistics keeps its independent Analysis recipe/data-preparation boundary.
+## 3. Explicitly removed Graph architecture
 
-Statistics is still implemented inside the persistent `graphServer` owner in v3.73.1; the important change in this release is that its **navigation and availability no longer depend on a user-visible browse/edit promotion step**.  A later extraction may move Statistics/Data/Notes to separate workspace services if profiling shows value, without changing their canonical ownership rules.
+The following are not part of the runtime and must not be reintroduced as fallbacks:
 
-### Project open / close
+- per-Graph hidden `graphUI()` / `graphServer()` materialization;
+- `server_graph_materialization_runtime.R` and hidden materialization queues;
+- staged Graph structural restore / `graph_restore_runtime.R`;
+- `prepare_restore`, `load_state`, `sync_state`, `prepare_remount`, `remount` Graph APIs;
+- Mapping restore-binding ACK handshakes;
+- browser semantic canonical compare / reconcile loops;
+- Graph restore retry loops;
+- DOM remount seeds / remount render epochs;
+- source-module revision leases used to authorize dormant hidden Graph modules;
+- browser materialization-drain barriers;
+- fast/equivalent special Graph-switch architecture.
 
-Project open stages Registry + persisted SVG/Figure snapshots first, then automatically hydrates the selected Graph Editor.  Project close is an explicit hard boundary: after confirmation the Shiny session reloads to the normal pristine `g001 / Graph 1` Editor, ensuring Graph/Figure/Shared-Library/editor leases from the closed Project cannot leak into the next workspace.
+Compatibility with old Projects is handled by normalizing persisted state and then using the current value-replay path, not by reviving the removed runtime.
 
-## Canonical state
+## 4. Figure source boundary
 
-- GraphState Registry remains the canonical truth.
-- Figure-owned editable GraphState remains separate from source GraphState.
-- DOM is transient and must never become canonical.
-- Persisted SVG is a display cache, not state truth.
-- Shared Label / Style Library is Project-owned central semantic state; Graph bindings remain Project-specific metadata.
-
-## Required invariants
-
-1. The Graph workspace is Editor-first; no ordinary selection requires an explicit Edit button.
-2. Only one persistent Graph Editor exists. Graph identity is data, never module identity.
-3. A running Graph hydrate/sync transaction is never interrupted by another Graph commit; latest requested target is queued and drained after READY/abort.
-4. Registry is canonical; preview is cache.
-5. Statistics recipes remain independent of Plot Mapping and Plot Wide→Long mutable state.
-6. Background source materialization/READY never updates an existing Figure-owned snapshot automatically; only explicit Figure operations may do so.
-7. Figure-only state never leaks into source GraphState.
-8. Shared Style never directly synchronizes Graph-to-Graph and never auto-binds by name.
-9. Do not add synchronization via `Sys.sleep`, `setTimeout`, `setInterval`, `MutationObserver`, `invalidateLater`, `reactivePoll`, or `reactiveTimer`; reuse existing event/ACK/flush boundaries instead.
-
-## Historical pivot (v3.59-v3.72)
-
-The previous performance pivot separated browse selection from explicit editor activation.  That architecture established the single persistent Editor, canonical Registry, cached preview, materialization service, and ACK-gated restore machinery.  v3.73.1 keeps those internals but removes browse-only as the normal **user workflow** because the application is fundamentally an editor.
-
-
-### Transactional hydrate
-A single editor must not merely replay the old restore flow. Introduce an explicit editor state machine:
+Figure source generation is server-side direct-state rendering:
 
 ```text
-READY -> HYDRATING -> READY
+canonical GraphState or Figure-owned GraphState
+  -> request_figure_source_snapshot()
+  -> server-side render
+  -> Figure-owned SVG snapshot
 ```
 
-During `HYDRATING`, ordinary writeback/render observers must be gated. Target flow:
+Rules:
+
+- New Figure assignment, explicit Graph→Figure refresh, bulk import, and Inset refresh use DIRECT-STATE snapshots.
+- Selecting an internal Inset source creates the initial frozen Inset snapshot when needed.
+- Later Graph edits do **not** automatically update an existing Figure Main or Inset snapshot.
+- Explicit refresh is required to pull a newer Graph state into Figure.
+- A visible Figure Editor may be synchronized for presentation, but it is not a hidden snapshot-generation backend.
+- Restored Figure/Inset SVG is valid Figure-owned state and may be used without activating its source Graph.
+
+The historical `figure_legend_materializer_*` names are legacy naming only. Their current path is Figure/direct-state work; they do not instantiate hidden Graph Editors.
+
+## 5. Export boundary
+
+Graph export uses canonical state directly:
 
 ```text
-load canonical state
--> build dynamic choices/UI
--> synchronize input values
--> confirm internal model
--> READY
--> at most one required render
+visible owner -> publish stable state if needed
+selected canonical GraphState(s)
+  -> graph_state_export_snapshot()
+  -> file writer
 ```
 
-### Revision/cache stage
-After single editors stabilize, introduce at minimum:
+Dormant Graphs are exported without mounting or replaying them. Figure export uses Figure-owned snapshots/state and must preserve the Viewer appearance, including frozen Inset SVG geometry/aspect/border semantics.
+
+## 6. Graph Settings Manager / Shared Style
+
+Graph Settings Manager has three explicit ownership scopes:
+
+- **Graph only:** update canonical GraphState. Dormant Graphs remain state-only and replay on next visit.
+- **Figure only:** update Figure-owned GraphState and regenerate the Figure snapshot DIRECT-STATE. Source GraphState remains unchanged.
+- **Graph + Figure:** perform both independent operations.
+
+Shared Style follows the same ownership rule: central semantic library changes canonical GraphStates directly, and Figure propagation changes Figure-owned state/snapshots directly. Hidden Graph/Figure Editor switching is not allowed for dormant targets.
+
+The Settings Manager popout is presentation-only; it does not own a Shiny session, GraphState, or graphServer.
+
+## 7. Project save/load
+
+### Load
 
 ```text
-state_revision
-preview_revision
-editor_dirty
+read .ggplotpack
+  -> restore canonical GraphState registry
+  -> restore Figure / Inset snapshots and Figure state
+  -> remap persisted IDs when required
+  -> unlock project state
+  -> attach only the selected Graph to the persistent Editor via normal replay
 ```
 
-Then add explicit data/stat/plot/preview invalidation only as needed.
+Dormant Graphs have no restore UI/module work.
 
-## Performance interpretation
+### Save
 
-Runtime logs repeatedly show `make_plot()` around tenths of a second, while editor mount/binding/restore can take seconds. Therefore the main strategy remains: **reduce how often editor establishment is required**, not micro-optimize ggplot construction first.
+- Graphs are serialized from canonical Registry state.
+- Current visible Editor state is published before save when necessary.
+- New Projects do not save Graph SVG previews as Graph authority.
+- Figure Main / body / legend / Inset snapshots are persisted as Figure-owned assets.
+- Statistics recipes are persisted; calculated result text is regenerated rather than treated as canonical saved output.
 
-## v3.60.1 stabilization before Graph single-editor
+Legacy Graph preview assets may be read only for backward-compatible migration where explicitly supported. They must not become current Graph authority or be written back as new Graph previews.
 
-Two migration invariants are now explicit:
+## 8. Statistics boundary
 
-- A live Graph editor may remain mounted while another Graph is browsed, but its controls are hidden whenever `selected_graph_id != editing_graph_id`. Browse remains SVG-only and never retargets the editor.
-- The Figure reusable editor is a state machine: `IDLE -> HYDRATING -> READY`. During `HYDRATING`, controls are hidden and `on_state_change` writeback remains gated. `READY` is published only after the loaded module state is stable across consecutive Shiny flush checkpoints. Loading a Figure-owned GraphState is view hydration and must not itself mutate FigureState or the Figure snapshot.
+Statistics is hosted in the persistent Graph module but has an independent Analysis recipe lifecycle.
 
-The next architectural step remains a true fixed-namespace Single Graph Editor with transaction load/commit.
+Its restore barrier is `stats-restore-browser-barrier`. This barrier exists only to prevent browser input echoes from being mistaken for user edits while an Analysis recipe is replayed. It must not be reused as GraphState reconciliation.
 
-## v3.73.2.36 direct-state source boundary
+Statistics restore uses a bounded event/ACK transaction and active-analysis semantic stability checks. Do not add timer/polling synchronization.
 
-The hidden per-Graph materialization compatibility layer is retired from active runtime. `server_graph_materialization_runtime.R` and its disposable Graph DOM/module lifecycle are removed.
+## 9. Render / performance rules
 
-- Normal Graph editing: one persistent `graph_editor_single` module only.
-- Figure Main/Inset/import: canonical or Figure-owned GraphState -> server-side direct renderer -> Figure-owned snapshot.
-- Export: canonical GraphState -> server-side direct export renderer -> file.
-- Shared Style Graph: update canonical state; only the visible singleton owner may be replayed. Dormant Graphs remain state-only.
-- Shared Style Figure: update Figure-owned state and regenerate snapshots direct-state. The visible Figure Editor, when present, is presentation sync only.
-- Project load: state-first. Dormant Graphs do not have hidden UI/module restore work.
+- Plot rebuilds are driven by semantic RenderState changes, not arbitrary GraphState/UI snapshot changes.
+- `GraphState$ui_snapshot` is persistence/presentation state and does not by itself force Plot rebuilds.
+- Avoid synchronization by `Sys.sleep`, `setTimeout`, `setInterval`, `MutationObserver`, `invalidateLater`, `reactivePoll`, or `reactiveTimer` for Graph/Figure ownership transactions.
+- Prefer canonical state mutation + one explicit replay/snapshot boundary over hidden UI establishment.
+- Keep pure transforms separate from reactive transaction wiring.
 
-Do not reintroduce `schedule_graph_materialization()`, `request_graph_materialization()`, per-Graph hidden `graphUI()` / `graphServer()`, source-module revision leases, browser materialization drain barriers, or Figure-editor sequential generation queues.
+## 10. Maintenance direction
 
+Before adding a new lifecycle path, decide which existing owner should perform it:
 
-## v3.72.24 Editor hydrate fast path
+1. Graph canonical state work -> GraphState Registry / persistent Graph Editor.
+2. Figure-owned rendering -> direct-state Figure snapshot service.
+3. Export -> direct canonical/Figure state renderer.
+4. Statistics Analysis restoration -> Statistics-specific barrier.
 
-The v3.72.23 materialization boundary is unchanged. Editor hydration now removes timer-driven restore progression and formalizes new-Graph defaults.
-
-- `seed_new_graph_default_state()` commits a deep-copied snapshot of the pristine singleton default GraphState before new-Graph Editor activation.
-- RESHAPE/MAPPING browser binding checks are generation-scoped event transactions; the 50 ms browser polling loop is removed.
-- The three restore-side 75 ms `invalidateLater()` loops are removed.
-- Persistent-shell RESHAPE parent controls skip binding ACK when current bound values already match canonical state.
-- Mapping `shape` / `linetype` semantic defaults treat a transient post-ACK NULL as `__color__`, preventing the new-Graph false resync seen in v3.72.23 logs.
-- Persistent dynamic-style reassertion no longer waits one extra whole-server flush.
-- The outer Editor transaction no longer requires repeated equality of the entire GraphState after `ready()`. It crosses one flush and arbitrates against canonical RenderState.
-- If the one canonical reconcile retry still fails, `graph_single_abort_activation()` reopens the render gate, clears the hydration mask and returns to browse rather than exposing an unleased Editor or leaving the UI blocked.
+If a proposed feature requires a dormant Graph to mount a hidden Graph Editor, requires browser semantic readback to decide canonical truth, or adds a retry/reconcile loop, the design conflicts with the current architecture.

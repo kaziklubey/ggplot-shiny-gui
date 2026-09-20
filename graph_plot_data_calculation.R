@@ -290,6 +290,7 @@ compute_theme_object <- function() {
       minimal = theme_minimal(base_size = input$base_size, base_family = fam),
       gray = theme_gray(base_size = input$base_size, base_family = fam)
     )
+    legend_title_element <- element_text(family = fam)
     th + theme(
       legend.position = input$legend_pos,
       legend.key.width = grid::unit(legend_key_width, "cm"),
@@ -300,7 +301,7 @@ compute_theme_object <- function() {
       plot.title = element_text(family = fam),
       axis.title = element_text(family = fam),
       axis.text = element_text(family = fam),
-      legend.title = element_text(family = fam),
+      legend.title = legend_title_element,
       legend.text = element_text(family = fam),
       strip.text = element_text(family = fam)
     )

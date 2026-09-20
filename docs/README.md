@@ -1,27 +1,26 @@
 # Documentation index
 
-## 現在読むべき文書
+## Current documents
 
-- `../README.md` — 利用者向け概要、起動方法、必須ファイル、更新確認
-- `../CHANGELOG.md` — バージョンごとの短い変更履歴
-- `../V34_CHANGE_NOTES.md` — 現在版の詳細変更内容
-- `../REFACTOR_CHECKPOINT.md` — 現在の重要な設計原則・リファクタリング境界
-- `CURRENT_ARCHITECTURE_AND_PLAN.md` — アーキテクチャと今後の方針
-- `FUNCTION_CATALOG.md` — 主要関数と責務の一覧
-- `MAINTENANCE_RULES.md` — 保守ルール
-- `TEST_CHECKLIST.md` — Windows/R環境での実機確認項目
+- `../README.md` — user-facing overview, startup, required files, Project behavior
+- `../CHANGELOG.md` — release-by-release concise history
+- `../RELEASE_NOTES.md` — current release details and validation summary
+- `../REFACTOR_CHECKPOINT.md` — **current** non-negotiable architecture/maintenance checkpoint
+- `CURRENT_ARCHITECTURE_AND_PLAN.md` — **current runtime architecture only**
+- `FUNCTION_CATALOG.md` — function index regenerated from the current R source tree
+- `MAINTENANCE_RULES.md` — maintenance rules
+- `TEST_CHECKLIST.md` — current Windows/R and static validation checklist
 
-## 過去の詳細履歴
+## Historical material
 
-- `CHANGE_HISTORY_ARCHIVE.md` — 旧バージョン固有のChange Notes / Trace / Validation / Static Audit Summary等を1本に統合した全文アーカイブ
+- `CHANGE_HISTORY_ARCHIVE.md` — archived older Change Notes / Trace / Validation / Static Audit material
+- Git history and older Releases — authoritative source for removed runtime designs and old generated audit artifacts
 
-過去の履歴Markdownは、内容を捨てずに元ファイルパス付きで上記Archiveへ統合しています。新しいリリースでは、現在版の詳細Change Notesだけをルートに残し、次のリリース時にArchiveへ移す運用を想定しています。
+Historical references to internal Phase names, materialization, remount, reconcile, browse-only mode, fast/equivalent switching, or structural restore must not be interpreted as current architecture. The current documents above intentionally describe only the active runtime unless a removed path is explicitly named as a negative invariant.
 
-旧版の静的監査JSON/CSV・関数索引などの機械生成物は現行 `docs/` から除外しています。必要な場合は過去のReleaseまたはGit履歴を参照してください。
+## Runtime-required non-document files
 
-## ランタイム必須ファイル
-
-以下はドキュメントではなく実行時依存ファイルです。削除しないでください。
+Do not delete:
 
 - `../req.txt`
 - `../anovakun_489.txt`

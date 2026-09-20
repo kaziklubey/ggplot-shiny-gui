@@ -6,6 +6,11 @@
   # Data
   # ============================================================
   raw_dat <- reactive({
+    if (isTRUE(graph_state_replay_active())) {
+      plan <- graph_mapping_replay_plan()
+      req(is.list(plan))
+      return(plan$raw)
+    }
     req(input$text)
     x <- graph_parse_pasted_data(input$text)
     shiny::validate(shiny::need(
@@ -55,8 +60,10 @@
   # Graph Editor DOM.  Only choices/selection change; the input binding itself
   # is never destroyed when another Graph becomes the editor target.
   observe({
+    if (isTRUE(graph_state_replay_active())) return()
     d0 <- raw_dat()
     req(d0)
+    if (!graph_mapping_choices_changed("reshape", d0)) return()
     cols <- names(d0)
     default_cols <- graph_default_reshape_columns(d0)
 
@@ -78,6 +85,7 @@
   }, priority = 120)
 
   observe({
+    if (isTRUE(graph_state_replay_active())) return()
     seed <- reshape_restore_seed()
     if (is.null(seed)) return()
     current <- input$reshape_columns %||% character(0)
@@ -85,6 +93,11 @@
   }, priority = 119)
 
   plot_data_transform_recipe <- reactive({
+    if (isTRUE(graph_state_replay_active())) {
+      plan <- graph_mapping_replay_plan()
+      req(is.list(plan))
+      return(plan$recipe)
+    }
     graph_plot_data_transform_recipe(
       enabled = isTRUE(input$reshape_wide),
       row_id = isTRUE(input$reshape_row_id),
@@ -121,6 +134,7 @@
   # mean this is not a valid wide measurement selection. Automatically switch
   # the converter off so value replay and Mapping can continue on raw data.
   observe({
+    if (isTRUE(graph_state_replay_active())) return()
     # A replay can transiently expose the new Wide toggle before its saved
     # column selection reaches the browser. Defer only this destructive
     # auto-disable action; because the replay flag is a real dependency (not
@@ -150,6 +164,7 @@
   restore_external_ymax_seed <- reactiveVal(NULL)
 
   observe({
+    if (isTRUE(graph_state_replay_active())) return()
     seed <- restore_position_seed()
     if (is.null(seed) || !length(seed)) return()
     expected <- as.character(seed)[1]
@@ -160,6 +175,7 @@
   })
 
   observe({
+    if (isTRUE(graph_state_replay_active())) return()
     seed <- restore_linetype_seed()
     if (is.null(seed) || !length(seed)) return()
     expected <- as.character(seed)[1]
@@ -174,11 +190,13 @@
   # selected values.  Switching Graphs therefore does not replace the Mapping
   # DOM or its Shiny input bindings.
   observe({
+    if (isTRUE(graph_state_replay_active())) return()
     d <- dat()
     req(d)
     cols <- names(d)
     numeric_cols <- cols[vapply(d, is.numeric, logical(1))]
     if (!length(numeric_cols)) return()
+    if (!graph_mapping_choices_changed("mapping", d)) return()
 
     defaults <- graph_default_mapping_for_data(d)
     default_id <- defaults$id
@@ -233,10 +251,12 @@
   # v3.63.0-editor-shell1: linetype/group controls also live permanently in
   # graph_ui_module.R. Keep only their choices/selected values in sync.
   observe({
+    if (isTRUE(graph_state_replay_active())) return()
     d <- dat()
     req(d)
     cols <- names(d)
     color_now <- resolve_color_var(d)
+    if (!graph_mapping_choices_changed("group", list(d, color_now))) return()
 
     current_linetype <- isolate(input$linetypevar)
     if (is.null(current_linetype) || !length(current_linetype)) current_linetype <- if (nzchar(color_now)) "__color__" else ""
@@ -278,11 +298,13 @@
   # 計算済み値をそのまま描画する value モード用Error bar列。
   # 列名はデータ依存のMappingとして扱い、数値列だけを候補にする。
   observe({
+    if (isTRUE(graph_state_replay_active())) return()
     d <- dat()
     numeric_cols <- names(d)[vapply(d, is.numeric, logical(1))]
     if (!length(numeric_cols)) return()
 
     y_now <- input$yvar %||% ""
+    if (!graph_mapping_choices_changed("external", list(d, y_now))) return()
     other_numeric <- setdiff(numeric_cols, y_now)
     if (!length(other_numeric)) other_numeric <- numeric_cols
 
@@ -346,6 +368,7 @@
 
   # canonical replay値が実inputへ反映されたらseedを解放する。
   observe({
+    if (isTRUE(graph_state_replay_active())) return()
     d <- tryCatch(dat(), error = function(e) NULL)
     if (is.null(d)) return()
     numeric_cols <- names(d)[vapply(d, is.numeric, logical(1))]
@@ -483,32 +506,9 @@
     d <- tryCatch(dat(), error = function(e) NULL)
     if (is.null(d)) return(NULL)
 
-    specs <- active_legend_specs()
     vars <- active_display_label_vars()
 
-    title_state <- isolate(legend_titles())
     label_state <- isolate(level_labels())
-
-    title_ui <- if (length(specs)) {
-      tagList(
-        tags$b("凡例タイトル"),
-        lapply(specs, function(sp) {
-          val <- title_state[[sp$key]]
-          # Preserve an intentionally blank title.  Only an absent saved value
-          # inherits the Mapping/default title.
-          if (is.null(val) || !length(val)) {
-            val <- sp$default
-          }
-          textInput(
-            style_input_id("legend_title", sp$key),
-            paste0(sp$used_by, "："),
-            value = as.character(val)[1]
-          )
-        })
-      )
-    } else {
-      tags$em("現在のMappingでは編集対象の凡例はありません。")
-    }
 
     var_ui <- lapply(vars, function(v) {
       z <- d[[v]]
@@ -546,8 +546,6 @@
     })
 
     tagList(
-      title_ui,
-      tags$hr(),
       tags$b("条件名（表示名）"),
       p(class = "help-block", "左が元データの値、右がグラフに表示する名前です。"),
       var_ui
@@ -555,37 +553,16 @@
   })
 
   observe({
+    if (isTRUE(graph_state_replay_active())) return()
     if (isTRUE(restoring_style_state())) return()
 
     d <- tryCatch(dat(), error = function(e) NULL)
     if (is.null(d)) return()
 
-    specs <- active_legend_specs()
     vars <- active_display_label_vars()
 
-    ts <- isolate(legend_titles())
     ls <- isolate(level_labels())
-    changed_title <- FALSE
     changed_label <- FALSE
-
-    for (sp in specs) {
-      id0 <- style_input_id("legend_title", sp$key)
-      z <- input[[id0]]
-      if (!is.null(z)) {
-        z <- as.character(z)[1]
-        old_raw <- ts[[sp$key]]
-        # Dynamic textInput() is initially populated with the Mapping/default
-        # title.  Do not materialize that visual default into GraphState: doing
-        # so after READY invalidated the plot even though nothing visible had
-        # changed.  An explicit saved/custom value still round-trips normally.
-        if (is.null(old_raw) && identical(z, as.character(sp$default %||% "")[1])) next
-        old <- if (is.null(old_raw)) "" else as.character(old_raw)[1]
-        if (!identical(old, z)) {
-          ts[[sp$key]] <- z
-          changed_title <- TRUE
-        }
-      }
-    }
 
     for (v in vars) {
       observed <- unique(as.character(d[[v]]))
@@ -615,7 +592,6 @@
       ls[[v]] <- branch
     }
 
-    if (changed_title) legend_titles(ts)
     if (changed_label) level_labels(ls)
   })
 
@@ -659,6 +635,7 @@
   })
 
   observe({
+    if (isTRUE(graph_state_replay_active())) return()
     d <- dat()
     cv <- resolve_color_var(d); lv <- resolve_linetype_var(d); sv <- resolve_shape_var(d)
     cl <- style_levels(); ll <- linetype_style_levels(); shl <- shape_style_levels()

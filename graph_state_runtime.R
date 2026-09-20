@@ -1,16 +1,17 @@
-# v3.73.2.37 Phase 2.03 — canonical GraphState capture for the persistent Editor.
+# Canonical GraphState capture for the persistent Editor.
 # Project loading is owned by server_project_io_runtime.R and canonical GraphState
 # replay is owned by server_graph_state_replay_runtime.R. No staged hydrate,
 # semantic readback/reconcile, retry, remount, or hidden-Graph restore exists here.
 
   project_settings <- reactive({
+    if (isTRUE(graph_state_replay_active())) return(graph_state_replay_target())
     # Recipe add/delete/rename lives in stats_recipes(), while selected Analysis
     # fields are ordinary Shiny inputs. Keep an explicit dependency so the
     # canonical GraphState includes the current reproducible recipe collection.
     stats_recipes()
 
     list(
-      version = "3.3.41",
+      version = "3.3.42",
       schema_version = 4L,
       app = "ggplot GUI",
       project_name = input$project_name,
@@ -65,9 +66,16 @@
   # Live edits are canonical only when value replay/style application is idle.
   # The outer persistent-Editor callback still arbitrates Graph ownership, so
   # there is no browser semantic comparison or post-replay retry here.
-  project_settings_for_commit <- shiny::debounce(project_settings, millis = 200)
+  project_commit_candidate <- reactive({
+    list(generation = graph_state_replay_generation(),
+         replaying = graph_state_replay_active(), state = project_settings())
+  })
+  project_settings_for_commit <- shiny::debounce(project_commit_candidate, millis = 200)
   observe({
-    state_now <- project_settings_for_commit()
+    candidate <- project_settings_for_commit()
+    if (!graph_commit_candidate_current(candidate,
+        isolate(graph_state_replay_generation()), isolate(graph_state_replay_active()))) return()
+    state_now <- candidate$state
     if (!is.function(on_state_change)) return()
     if (isTRUE(isolate(graph_state_replay_active()))) return()
     if (isTRUE(restoring_style_state())) return()

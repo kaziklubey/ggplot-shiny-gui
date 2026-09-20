@@ -1331,12 +1331,22 @@
       )
     }
 
-    # Labels
+    # Labels / legend guide policy
     label_args <- list(
       x = if (nzchar(input$xlab)) normalize_multiline_label(input$xlab) else x,
       y = if (nzchar(input$ylab)) normalize_multiline_label(input$ylab) else y,
       title = if (nzchar(input$title)) input$title else NULL
     )
+
+    legend_group_show <- if (is.null(input$legend_group_show)) TRUE else isTRUE(input$legend_group_show)
+    legend_individual_show <- if (is.null(input$legend_individual_show)) TRUE else isTRUE(input$legend_individual_show)
+    legend_merge_group_individual <- if (is.null(input$legend_merge_group_individual)) TRUE else isTRUE(input$legend_merge_group_individual)
+    same_group_shape_guide <- isTRUE(has_color) && isTRUE(effective_has_shape) &&
+      nzchar(color_map_var) && identical(shape_map_var, color_map_var)
+
+    legend_policy <- graph_legend_policy(input, same_group_shape_guide)
+    group_guide_title <- legend_policy$group
+    shape_guide_title <- legend_policy$individual
 
     # Assign with single-bracket list semantics so NULL is retained as a
     # named labs() argument.  `labs(fill = NULL)` removes the guide title;
@@ -1353,24 +1363,45 @@
 
     if (has_color) {
       if (input$plot_type %in% c("bar", "box")) {
-        label_args <- set_legend_lab(label_args, "fill", color_legend_title)
+        label_args <- set_legend_lab(label_args, "fill", group_guide_title)
       }
       if (input$plot_type %in% c("line", "scatter") ||
           (!use_value && input$plot_type == "bar" &&
              identical(input$error_color_mode, "group"))) {
-        label_args <- set_legend_lab(label_args, "colour", color_legend_title)
+        label_args <- set_legend_lab(label_args, "colour", group_guide_title)
       }
     }
 
     if (input$plot_type == "line" && effective_has_linetype) {
-      label_args <- set_legend_lab(label_args, "linetype", linetype_legend_title)
+      label_args <- set_legend_lab(label_args, "linetype", group_guide_title)
     }
 
-    if (input$plot_type %in% c("line", "scatter") && effective_has_shape) {
-      label_args <- set_legend_lab(label_args, "shape", shape_legend_title)
+    # Bar/Box raw points can own a Shape guide too.  Applying the Shape title
+    # only for Line/Scatter was the reason entering a group legend title split
+    # an initially merged Bar legend into two guides.
+    if (input$plot_type %in% c("line", "scatter", "bar", "box") && effective_has_shape) {
+      label_args <- set_legend_lab(label_args, "shape", shape_guide_title)
     }
 
     p <- p + do.call(labs, label_args) + theme_object()
+
+    guide_policy <- list(
+      fill = guide_legend(order = legend_policy$group_order),
+      colour = guide_legend(order = legend_policy$group_order),
+      linetype = guide_legend(order = legend_policy$group_order),
+      shape = guide_legend(order = legend_policy$individual_order)
+    )
+    if (!isTRUE(legend_group_show)) {
+      guide_policy$fill <- "none"
+      guide_policy$colour <- "none"
+      guide_policy$linetype <- "none"
+    }
+    if (!isTRUE(legend_individual_show)) {
+      guide_policy$shape <- "none"
+    }
+    if (length(guide_policy)) {
+      p <- p + do.call(guides, guide_policy)
+    }
 
     # ---------------------------------------
     # Stable Y range

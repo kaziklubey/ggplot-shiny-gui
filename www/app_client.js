@@ -722,10 +722,34 @@ Shiny.addCustomMessageHandler('graph-state-replay-complete-request', function(ms
   }
   var ackId = String(msg.ackId || '');
   if (window.Shiny && ackId) {
+    var transportError = null;
+    try {
+      var prefix = String(msg.inputPrefix || '');
+      var bound = {};
+      $('.shiny-bound-input').each(function() {
+        var binding = $(this).data('shiny-input-binding');
+        if (!binding) return;
+        var id = binding.getId(this);
+        if (!id || !prefix || id.indexOf(prefix) !== 0 ||
+            (msg.requiredInputs || []).indexOf(id) < 0) return;
+        bound[id] = true;
+        // Replay changes values, never clicks actions or uploads files.
+        if ($(this).hasClass('action-button') || this.type === 'file') return;
+        var type = binding.getType ? binding.getType(this) : null;
+        // event priority drains/cancels Shiny's rate-policy timer, notably Ace.
+        // Read current binding values only; no canonical/browser comparison.
+        Shiny.setInputValue(id + (type ? ':' + type : ''), binding.getValue(this),
+          {priority: 'event'});
+      });
+      (msg.requiredInputs || []).forEach(function(id) {
+        if (!bound[id]) throw new Error('Replay input binding unavailable: ' + id);
+      });
+    } catch (err) { transportError = String(err.message || err); }
     Shiny.setInputValue(ackId, {
       graphId: graphId,
       generation: Number(msg.generation || 0),
       token: String(msg.token || ''),
+      error: transportError,
       nonce: Date.now()
     }, {priority:'event'});
   }

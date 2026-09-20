@@ -1,19 +1,20 @@
 # ggplot-shiny-gui
 
-R / Shiny を使った、ggplot2ベースのグラフ作成・Figure編集GUIです。
+**Current release: v3.73.2.39**
 
-コードを書かずに、複数Graphの作成・設定変更・比較、Figureへの配置、統計解析、Project保存/読込などを行えるようにしています。
+R / Shiny と ggplot2 を使ったグラフ作成・Figure編集GUIです。コードを書かずに、複数Graphの作成・設定変更・比較、Figureへの配置、統計解析、Project保存/読込などを行えます。
 
 ## 主な機能
 
 - ggplot2によるグラフ作成
-- 複数Graphの管理
+- 複数Graphの管理と切替
 - GraphごとのData / Mapping / Appearance設定
 - 軸、凡例、フォント、サイズ、色などの調整
+- グループ凡例 / 個体点凡例の独立表示、統合/分離、タイトル設定
 - Graph Settings Managerによる複数Graphの比較・一括編集
 - Graphのみ / Figureのみ / Graph + Figureへの設定反映
 - 複数Graphを配置したFigure作成
-- Figure内でのサイズ・配置・凡例調整
+- Figure内でのサイズ・配置・凡例・Inset調整
 - 統計解析
 - `.ggplotpack` によるProject保存・読込
 - 起動時のGitHub Release最新版確認
@@ -24,9 +25,7 @@ R / Shiny を使った、ggplot2ベースのグラフ作成・Figure編集GUIで
 - R
 - 必要なRパッケージは `req.txt` に記載
 
-Rは以下から入手できます。
-
-https://cran.r-project.org/
+R: https://cran.r-project.org/
 
 ## 起動方法
 
@@ -34,28 +33,21 @@ https://cran.r-project.org/
 2. ZIPを任意のフォルダへ展開
 3. `run.bat` をダブルクリック
 
-`run.bat` が `Rscript.exe` を探し、Shinyアプリを起動します。
+`run.bat` が `Rscript.exe` を探してShinyアプリを起動します。
 
 ## アップデート確認
 
-`run.bat` 起動時に、以下のGitHub Releasesの最新版を確認します。
+`run.bat` 起動時に次のGitHub Releasesを確認します。
 
 https://github.com/kaziklubey/ggplot-shiny-gui
 
-新しいバージョンがある場合は、
+新しいバージョンがある場合は、`U`でReleaseページを開くか、Enterで現在のバージョンを起動できます。ネット接続がない場合やGitHub APIへ接続できない場合も、確認をスキップして通常起動します。
 
-- `U` を押す → GitHubのReleaseページを開く
-- Enter → 現在のバージョンをそのまま起動
-
-を選択できます。
-
-ネット接続がない場合、GitHub APIに接続できない場合、Releaseがまだ無い場合でも、アップデート確認をスキップして通常起動します。
-
-更新確認を無効化したい場合は、起動前に環境変数 `GGPLOT_GUI_SKIP_UPDATE_CHECK=1` を設定します。
+更新確認を無効化する場合は、起動前に環境変数 `GGPLOT_GUI_SKIP_UPDATE_CHECK=1` を設定します。
 
 ## 必須ランタイムファイル
 
-以下はアプリの動作に必要なので削除しないでください。
+以下は削除しないでください。
 
 ```text
 anovakun_489.txt
@@ -65,13 +57,30 @@ run.R
 run.bat
 ```
 
-特に `anovakun_489.txt` と `anovakun_489_10.txt` は統計解析で使用する必須ファイルです。
+特に `anovakun_489.txt` と `anovakun_489_10.txt` は統計解析で使用します。
 
 ## Project保存
 
-作成したGraphやFigureの状態は `.ggplotpack` として保存できます。
+Graph / Figure / Statisticsの編集状態は `.ggplotpack` として保存できます。保存したProjectを読み込むことで、後から編集を再開できます。
 
-保存したProjectを読み込むことで、Graph設定やFigure配置を後から編集できます。
+v3.73.2.39では、異なる列構成のGraphを切り替えた後でも、既存GraphのColor / Shape / IDなどのMappingが空値へ巻き戻らないよう、Mapping replayを1つのtransactionとして処理します。Project保存→再読込後のMapping保持もWindows実機で確認済みです。
+
+## 現行アーキテクチャ
+
+通常Graphは **1個のpersistent Graph Editor** を共有します。Graph切替では、保存済みのcanonical `GraphState`から対象Graph用のData / Mapping choices / selected valuesを組み立て、同じEditorへreplayします。
+
+```text
+canonical GraphState
+  -> target Graph用Mapping plan
+  -> persistent Editorへvalue replay
+  -> browser completion barrier
+  -> canonical acceptance
+  -> final render
+```
+
+Figure / Export / dormant Graphへの一括設定はGraphごとのhidden Editorを生成せず、canonical stateまたはFigure-owned stateからserver-sideで直接処理します。
+
+旧来のhidden per-Graph module、Graph materialization、remount、semantic reconcile、retryによるGraph復旧経路は現行runtimeにはありません。
 
 ## GraphとFigureの関係
 
@@ -80,31 +89,43 @@ GraphとFigureは別の状態として管理します。
 ```text
 Graphを変更
 ↓
-Figureは自動では変更しない
+既存Figureは自動では変更しない
 ```
 
 Figureへ反映したい場合は明示的に更新します。Figure / Exportは保存済みGraphStateからserver-sideで直接描画し、dormant Graphのためにhidden Graph Editorを生成しません。
 
-Graph Settings Managerでは、`Graphだけ` / `Figureだけ` / `Graph + Figure` を選んで設定を反映できます。Figure側だけで最終調整しても、元Graphを変更せずに済みます。
+Graph Settings Managerでは `Graphだけ` / `Figureだけ` / `Graph + Figure` を選択できます。Figure側だけで最終調整しても元Graphは変更されません。
+
+## 凡例
+
+v3.73.2.39では、グループ凡例と個体点凡例を独立して管理できます。
+
+- グループ凡例 表示ON/OFF
+- 個体点凡例 表示ON/OFF
+- 同じ条件のグループ凡例と個体点凡例を統合 / 分離
+- グループ凡例タイトル 表示ON/OFF・文字列指定
+- 個体点凡例タイトル 表示ON/OFF・文字列指定
+- 凡例タイトルは新規GraphでデフォルトOFF
+
+同じ条件を使うguideを統合するかどうかは専用設定で決まり、タイトル文字列の変更だけで意図せず分離しません。
 
 ## GitHub上の運用
 
-- `main` ブランチ: 現在のソースコード
-- `Releases`: 配布用ZIP、SHA256、必要に応じてpatch
-- 過去Release: そのまま保存し、過去版を取得できるようにする
+- `main`: 現在のソースコード
+- `Releases`: 配布用ZIPとRelease notes
+- Release tag: `v3.73.2.39` のようなバージョン番号だけを使用
+- 過去Release: 変更せず保存
+
+今後、開発途中の「Phase」名や長い内部suffixは公開バージョン名には使用しません。
 
 ## ドキュメント
 
-- `CHANGELOG.md` — 各バージョンの短い変更履歴
-- `V34_CHANGE_NOTES.md` — 現在版の詳細変更内容
-- `REFACTOR_CHECKPOINT.md` — 開発上の重要な設計原則
+- `RELEASE_NOTES.md` — 現在版の詳細と検証状況
+- `CHANGELOG.md` — バージョンごとの短い変更履歴
+- `REFACTOR_CHECKPOINT.md` — 現行architectureの維持条件
 - `docs/README.md` — 開発者向けドキュメント索引
-- `docs/CHANGE_HISTORY_ARCHIVE.md` — v33以前の詳細変更・検証履歴を統合したアーカイブ
+- `docs/CURRENT_ARCHITECTURE_AND_PLAN.md` — 現行runtime構造
+- `docs/TEST_CHECKLIST.md` — 回帰確認項目
+- `docs/CHANGE_HISTORY_ARCHIVE.md` — 旧開発履歴のアーカイブ
 
-過去バージョン固有の `Vxx_CHANGE_NOTES.md`、`TRACE`、`VALIDATION`、`STATIC_AUDIT_SUMMARY` は、ファイル数を増やさないため `docs/CHANGE_HISTORY_ARCHIVE.md` に全文保存しています。
-
-旧バージョンで生成していた静的監査用のJSON/CSVは現行配布物には含めていません。必要な場合は過去のReleaseまたはGit履歴から参照できます。
-
-## Repository
-
-https://github.com/kaziklubey/ggplot-shiny-gui
+過去の内部Phase名は履歴アーカイブや旧Releaseに残る場合がありますが、現行版の識別には使用しません。

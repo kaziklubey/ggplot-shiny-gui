@@ -1,3 +1,4 @@
+  shared_style_pending_group_title <- reactiveVal(NULL)
 # v3.73.0 — Shared Label / Style Library bindings inside graphServer.
 # This runtime owns only the interactive Graph-side binding UI and local
 # write-through adapter. The central Library and cross-Graph propagation live
@@ -214,6 +215,12 @@
         item <- lib$items[[b$legends[[legend_key]]]]
         if (!is.list(item) || !identical(item$kind, "legend_title") || !isTRUE(item$manage$display)) next
         if (!identical(lt[[legend_key]], item$display)) { lt[[legend_key]] <- item$display; changed <- TRUE }
+        key <- graph_group_legend_key(list(mapping = list(color = input$colorvar,
+          position = input$groupvar), style = list(appearance = list(series_style_override = input$series_style_override))))
+        if (identical(legend_key, key) && !identical(input$legend_group_title, item$display)) {
+          shared_style_pending_group_title(item$display)
+          updateTextInput(session, "legend_group_title", value = item$display)
+        }
       }
     }
 
@@ -244,7 +251,12 @@
 
     # Dependencies that can represent linked user edits.
     level_labels(); color_styles(); shape_styles(); linetype_styles(); legend_titles()
-    input$xlab; input$ylab
+    input$xlab; input$ylab; input$legend_group_title
+    pending_title <- shared_style_pending_group_title()
+    if (!is.null(pending_title)) {
+      if (!identical(input$legend_group_title, pending_title)) return()
+      shared_style_pending_group_title(NULL)
+    }
 
     # Axis text controls are browser inputs. Immediately after a binding change,
     # updateTextAreaInput() may still be in flight when this low-priority
@@ -256,8 +268,11 @@
     b_write$axis <- list(x = "", y = "")
 
     partial_state <- list(
+      mapping = list(color = input$colorvar, position = input$groupvar),
       labels = list(xlab = input$xlab %||% "", ylab = input$ylab %||% ""),
       style = list(
+        appearance = list(legend_group_title = input$legend_group_title,
+                          series_style_override = input$series_style_override),
         color_styles = isolate(color_styles()),
         shape_styles = isolate(shape_styles()),
         linetype_styles = isolate(linetype_styles()),

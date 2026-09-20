@@ -9,7 +9,7 @@
 graph_render_state_apply_semantics <- function(state) {
   if (is.null(state) || !is.list(state)) return(state)
 
-  out <- state
+  out <- graph_normalize_legend_state(state)
   pl <- out$plot %||% list()
   mp <- out$mapping %||% list()
   rs <- out$reshape %||% list()
@@ -90,6 +90,13 @@ graph_render_state <- function(state) {
 
     ap <- st$appearance
     if (is.list(ap)) {
+      # Saved legend-title text is dormant while title display is OFF. Keep it
+      # in GraphState for later re-enable, but exclude it from RenderState so
+      # editing hidden text does not redraw the plot.
+      st$legend_titles <- NULL # legacy title tree is migration-only
+      if (!isTRUE(ap$legend_title_show)) ap$legend_group_title <- NULL
+      if (!isTRUE(ap$legend_individual_title_show)) ap$legend_individual_title <- NULL
+
       # Sticky preview is editor UI state, not plot appearance.
       ap$sticky_plot <- NULL
       # Render comparison uses the actual family passed to ggplot, not the
