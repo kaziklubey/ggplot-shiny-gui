@@ -45,54 +45,6 @@ https://github.com/kaziklubey/ggplot-shiny-gui
 
 更新確認を無効化する場合は、起動前に環境変数 `GGPLOT_GUI_SKIP_UPDATE_CHECK=1` を設定します。
 
-## 必須ランタイムファイル
-
-以下は削除しないでください。
-
-```text
-anovakun_489.txt
-anovakun_489_10.txt
-req.txt
-run.R
-run.bat
-```
-
-特に `anovakun_489.txt` と `anovakun_489_10.txt` は統計解析で使用します。
-
-## Project保存
-
-Graph / Figure / Statisticsの編集状態は `.ggplotpack` として保存できます。保存したProjectを読み込むことで、後から編集を再開できます。
-
-v3.73.2.39では、異なる列構成のGraphを切り替えた後でも、既存GraphのColor / Shape / IDなどのMappingが空値へ巻き戻らないよう、Mapping replayを1つのtransactionとして処理します。Project保存→再読込後のMapping保持もWindows実機で確認済みです。
-
-## 現行アーキテクチャ
-
-通常Graphは **1個のpersistent Graph Editor** を共有します。Graph切替では、保存済みのcanonical `GraphState`から対象Graph用のData / Mapping choices / selected valuesを組み立て、同じEditorへreplayします。
-
-```text
-canonical GraphState
-  -> target Graph用Mapping plan
-  -> persistent Editorへvalue replay
-  -> browser completion barrier
-  -> canonical acceptance
-  -> final render
-```
-
-Figure / Export / dormant Graphへの一括設定はGraphごとのhidden Editorを生成せず、canonical stateまたはFigure-owned stateからserver-sideで直接処理します。
-
-旧来のhidden per-Graph module、Graph materialization、remount、semantic reconcile、retryによるGraph復旧経路は現行runtimeにはありません。
-
-## GraphとFigureの関係
-
-GraphとFigureは別の状態として管理します。
-
-```text
-Graphを変更
-↓
-既存Figureは自動では変更しない
-```
-
-Figureへ反映したい場合は明示的に更新します。Figure / Exportは保存済みGraphStateからserver-sideで直接描画し、dormant Graphのためにhidden Graph Editorを生成しません。
 
 Graph Settings Managerでは `Graphだけ` / `Figureだけ` / `Graph + Figure` を選択できます。Figure側だけで最終調整しても元Graphは変更されません。
 
