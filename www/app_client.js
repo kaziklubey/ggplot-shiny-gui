@@ -270,7 +270,9 @@ function ggplotGuiRestoreEditorUiState(graphId, forceTopKey) {
   var remembered = rec && rec.open ? rec.open : {};
   details.forEach(function(el, i) {
     var key = ggplotGuiEditorDetailKey(el, i);
-    el.open = remembered[key] === true;
+    var hasRemembered = Object.prototype.hasOwnProperty.call(remembered, key);
+    var defaultOpen = String(el.getAttribute('data-default-open') || '').toLowerCase() === 'true';
+    el.open = hasRemembered ? remembered[key] === true : defaultOpen;
   });
   forceTopKey = String(forceTopKey || '');
   if (forceTopKey) {

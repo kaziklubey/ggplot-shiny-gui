@@ -434,7 +434,7 @@
   active_display_label_vars <- reactive({
     d <- dat()
     vars <- c(
-      input$xvar %||% "",
+      resolved_xvar() %||% "",
       effective_position_var(d),
       resolve_color_var(d),
       resolve_linetype_var(d),
@@ -445,9 +445,9 @@
 
     # Scatterの数値Xはカテゴリ名変更の対象外。
     if (identical(input$plot_type, "scatter") &&
-        has_selection(input$xvar) &&
-        input$xvar %in% vars) {
-      vars <- setdiff(vars, input$xvar)
+        has_selection(resolved_xvar()) &&
+        resolved_xvar() %in% vars) {
+      vars <- setdiff(vars, resolved_xvar())
     }
     vars
   })
@@ -500,6 +500,120 @@
     specs
   })
 
+  legend_spec_levels <- function(spec_key, d) {
+    key <- as.character(spec_key %||% "")[1]
+    if (!nzchar(key)) return(list(levels = character(0), defaults = character(0)))
+
+    if (startsWith(key, "__combo__::")) {
+      parts <- strsplit(sub("^__combo__::", "", key), "::", fixed = TRUE)[[1]]
+      if (length(parts) < 2L) return(list(levels = character(0), defaults = character(0)))
+      cv <- parts[1]; gv <- paste(parts[-1], collapse = "::")
+      if (!cv %in% names(d) || !gv %in% names(d)) return(list(levels = character(0), defaults = character(0)))
+
+      observed <- graph_series_combo_key(as.character(d[[cv]]), as.character(d[[gv]]))
+      observed <- unique(observed[!is.na(observed)])
+      preferred <- series_combo_levels()
+      lev <- c(preferred[preferred %in% observed], setdiff(observed, preferred))
+      defaults <- vapply(lev, function(k) {
+        bits <- strsplit(k, " × ", fixed = TRUE)[[1]]
+        if (length(bits) < 2L) return(k)
+        left <- level_label_values(cv, bits[1])
+        right <- level_label_values(gv, paste(bits[-1], collapse = " × "))
+        paste0(left, " × ", right)
+      }, character(1))
+      return(list(levels = lev, defaults = defaults))
+    }
+
+    if (!key %in% names(d)) return(list(levels = character(0), defaults = character(0)))
+    z <- d[[key]]
+    lev <- levels(z)
+    if (is.null(lev) || !length(lev)) lev <- unique(as.character(z))
+    lev <- lev[!is.na(lev)]
+    list(levels = lev, defaults = level_label_values(key, lev))
+  }
+
+  output$legend_item_labels_ui <- renderUI({
+    style_restore_epoch()
+    level_labels()
+    d <- tryCatch(dat(), error = function(e) NULL)
+    if (is.null(d)) return(NULL)
+    specs <- active_legend_specs()
+    if (!length(specs)) return(tags$em("現在、編集できる凡例項目はありません。"))
+
+    state <- isolate(legend_item_labels())
+    cards <- lapply(specs, function(spec) {
+      info <- legend_spec_levels(spec$key, d)
+      if (!length(info$levels)) return(NULL)
+      branch <- state[[spec$key]] %||% list()
+
+      tags$div(
+        class = "group-style-box",
+        tags$b(paste0(spec$used_by, "：", spec$default)),
+        lapply(seq_along(info$levels), function(i) {
+          lv <- info$levels[i]
+          def <- info$defaults[i]
+          current <- branch[[lv]]
+          if (is.null(current) || !length(current) || !nzchar(trimws(as.character(current)[1]))) current <- def
+          fluidRow(
+            column(5, tags$div(style = "padding-top:7px;", def)),
+            column(
+              7,
+              textInput(
+                style_input_id("legend_item_label", spec$key, lv),
+                label = NULL,
+                value = as.character(current)[1],
+                placeholder = def
+              )
+            )
+          )
+        })
+      )
+    })
+
+    tagList(cards)
+  })
+
+  observe({
+    if (isTRUE(graph_state_replay_active())) return()
+    if (isTRUE(restoring_style_state())) return()
+
+    d <- tryCatch(dat(), error = function(e) NULL)
+    if (is.null(d)) return()
+    specs <- active_legend_specs()
+    if (!length(specs)) return()
+
+    state <- isolate(legend_item_labels())
+    changed <- FALSE
+
+    for (spec in specs) {
+      info <- legend_spec_levels(spec$key, d)
+      if (!length(info$levels)) next
+      branch <- state[[spec$key]] %||% list()
+
+      for (i in seq_along(info$levels)) {
+        lv <- info$levels[i]
+        def <- info$defaults[i]
+        id0 <- style_input_id("legend_item_label", spec$key, lv)
+        z <- input[[id0]]
+        if (is.null(z)) next
+        z <- as.character(z)[1]
+        old <- branch[[lv]]
+
+        # Empty/default text means "follow the ordinary condition display name".
+        if (!nzchar(trimws(z)) || identical(z, def)) {
+          if (!is.null(old)) { branch[[lv]] <- NULL; changed <- TRUE }
+        } else if (is.null(old) || !identical(as.character(old)[1], z)) {
+          branch[[lv]] <- z
+          changed <- TRUE
+        }
+      }
+
+      if (length(branch)) state[[spec$key]] <- branch else state[[spec$key]] <- NULL
+    }
+
+    if (changed) legend_item_labels(state)
+  })
+
   output$display_labels_ui <- renderUI({
     style_restore_epoch()
 
@@ -512,7 +626,7 @@
 
     var_ui <- lapply(vars, function(v) {
       z <- d[[v]]
-      if (is.numeric(z) && identical(v, input$xvar) && identical(input$plot_type, "scatter")) {
+      if (is.numeric(z) && identical(v, resolved_xvar()) && identical(input$plot_type, "scatter")) {
         return(NULL)
       }
 

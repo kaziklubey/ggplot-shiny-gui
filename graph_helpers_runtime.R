@@ -63,6 +63,10 @@
   # legend_titles: legend key -> displayed title
   # level_labels: data variable -> original level -> displayed level
   legend_titles <- reactiveVal(list())
+  # Graph-specific legend entry text. Unlike level_labels(), these overrides
+  # affect legend keys only and do not rename X-axis categories or facet strips.
+  # legend key -> original level -> displayed legend text
+  legend_item_labels <- reactiveVal(list())
   level_labels <- reactiveVal(list())
 
   # v3.73.0: project-level Shared Label / Style Library bindings are Graph
@@ -99,6 +103,22 @@
       },
       character(1)
     )
+  }
+
+  legend_item_label_values <- function(legend_key, levels_now, default_labels = NULL) {
+    levels_now <- as.character(levels_now)
+    if (!length(levels_now) || !nzchar(as.character(legend_key %||% "")[1])) return(levels_now)
+    if (is.null(default_labels) || length(default_labels) != length(levels_now)) default_labels <- levels_now
+    default_labels <- as.character(default_labels)
+
+    st <- legend_item_labels()
+    branch <- st[[as.character(legend_key)[1]]]
+    if (is.null(branch)) branch <- list()
+
+    vapply(seq_along(levels_now), function(i) {
+      z <- branch[[levels_now[i]]]
+      if (is.null(z) || !length(z) || !nzchar(trimws(as.character(z)[1]))) default_labels[i] else as.character(z)[1]
+    }, character(1))
   }
 
   get_saved_order <- function(kind, var_name, observed) {

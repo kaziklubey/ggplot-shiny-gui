@@ -22,6 +22,7 @@ graph_snapshot_input_defaults <- function() {
     external_error_mode = "none", external_error_col = "",
     external_ymin_col = "", external_ymax_col = "",
     xlab = "", ylab = "", title = "", ymin = "", ymax = "",
+    x_tick_labels_show = TRUE,
     theme = "classic", base_size = 13, font_family_mode = "sans", font_family_custom = "",
     mean_color_mode = "#000000", mean_linetype = "solid", mean_shape = 16,
     point_size = 2.8, line_width = 0.9, line_group_dodge = 0.10, line_x_spacing = 1,
@@ -117,7 +118,7 @@ graph_snapshot_context <- function(state) {
   scope$series_combo_key <- graph_series_combo_key
   style <- state$style %||% list()
   for (name in c("color_styles", "linetype_styles", "shape_styles", "series_styles",
-                 "regression_styles", "raw_group_colors", "legend_titles", "level_labels")) {
+                 "regression_styles", "raw_group_colors", "legend_titles", "legend_item_labels", "level_labels")) {
     scope[[name]] <- graph_snapshot_store(style[[name]] %||% list())
   }
   scope$order_state <- graph_snapshot_store(style$orders %||% list())

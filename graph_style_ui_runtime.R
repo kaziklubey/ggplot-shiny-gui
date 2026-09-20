@@ -272,36 +272,118 @@
   # ============================================================
   # 個体点 custom colours
   # ============================================================
-  ensure_raw_group_colors <- function(variable_name, levels_now) {
-    if (!nzchar(variable_name) || !length(levels_now)) return()
-    ensure_style_branch("color", variable_name, levels_now)
-    base <- isolate(color_styles())[[variable_name]] %||% list()
-    tree <- isolate(raw_group_colors()); br <- tree[[variable_name]] %||% list(); changed <- FALSE
-    for (lv in levels_now) if (is.null(br[[lv]])) { br[[lv]] <- lighten_colour(base[[lv]] %||% "#333333", amount = 0.45); changed <- TRUE }
-    if (changed) { tree[[variable_name]] <- br; raw_group_colors(tree) }
+  raw_custom_colour_context <- reactive({
+    d <- dat()
+    cvar <- resolve_color_var(d)
+    if (!nzchar(cvar)) return(NULL)
+
+    g <- effective_position_var(d)
+    combo <- isTRUE(input$series_style_override) && nzchar(g) && !identical(g, cvar)
+
+    if (combo) {
+      observed <- graph_series_combo_key(as.character(d[[cvar]]), as.character(d[[g]]))
+      observed <- unique(observed[!is.na(observed)])
+      preferred <- series_combo_levels()
+      lev <- c(preferred[preferred %in% observed], setdiff(observed, preferred))
+      if (!length(lev)) return(NULL)
+      base <- series_style_vectors(lev)$color
+      labels <- vapply(lev, function(k) {
+        bits <- strsplit(k, " × ", fixed = TRUE)[[1]]
+        if (length(bits) < 2L) return(k)
+        paste0(
+          level_label_values(cvar, bits[1]),
+          " × ",
+          level_label_values(g, paste(bits[-1], collapse = " × "))
+        )
+      }, character(1))
+      return(list(
+        key = paste0("__combo__::", cvar, "::", g),
+        levels = lev,
+        labels = labels,
+        base = base
+      ))
+    }
+
+    lev <- style_levels()
+    if (!length(lev)) return(NULL)
+    ensure_style_branch("color", cvar, lev)
+    base <- isolate(color_styles())[[cvar]] %||% list()
+    base <- setNames(vapply(lev, function(lv) as.character(base[[lv]] %||% "#333333"), character(1)), lev)
+    list(
+      key = cvar,
+      levels = lev,
+      labels = level_label_values(cvar, lev),
+      base = base
+    )
+  })
+
+  ensure_raw_custom_colors <- function(ctx) {
+    if (is.null(ctx) || !length(ctx$levels)) return(invisible(FALSE))
+    tree <- isolate(raw_group_colors())
+    br <- tree[[ctx$key]] %||% list()
+    changed <- FALSE
+    for (lv in ctx$levels) {
+      if (is.null(br[[lv]])) {
+        br[[lv]] <- lighten_colour(ctx$base[[lv]] %||% "#333333", amount = 0.45)
+        changed <- TRUE
+      }
+    }
+    if (changed) {
+      tree[[ctx$key]] <- br
+      raw_group_colors(tree)
+    }
+    invisible(changed)
   }
 
   output$raw_group_color_ui <- renderUI({
-    style_restore_epoch(); d <- dat(); v <- resolve_color_var(d); lev <- style_levels()
-    if (!nzchar(v) || !length(lev)) return(tags$em("Colorに使う列がありません。"))
-    ensure_raw_group_colors(v, lev); br <- isolate(raw_group_colors())[[v]]
-    tagList(lapply(lev, function(lv) tags$div(class="group-style-box", tags$b(lv),
-      colourInput(style_input_id("raw_colour", v, lv), "個体点色", value=br[[lv]], showColour="both"))))
+    style_restore_epoch()
+    ctx <- raw_custom_colour_context()
+    if (is.null(ctx) || !length(ctx$levels)) return(tags$em("Colorに使う系列がありません。"))
+    ensure_raw_custom_colors(ctx)
+    br <- isolate(raw_group_colors())[[ctx$key]] %||% list()
+    tagList(lapply(seq_along(ctx$levels), function(i) {
+      lv <- ctx$levels[i]
+      tags$div(
+        class = "group-style-box",
+        tags$b(ctx$labels[i]),
+        colourInput(
+          style_input_id("raw_colour", ctx$key, lv),
+          "個体点色",
+          value = br[[lv]] %||% "#555555",
+          showColour = "both"
+        )
+      )
+    }))
   })
 
   observe({
     if (isTRUE(restoring_style_state())) return()
-    d <- dat(); v <- resolve_color_var(d); lev <- style_levels(); if (!nzchar(v) || !length(lev)) return()
-    ensure_raw_group_colors(v, lev); tree <- isolate(raw_group_colors()); br <- tree[[v]]; changed <- FALSE
-    for (lv in lev) { val <- input[[style_input_id("raw_colour", v, lv)]]; if (!is.null(val) && nzchar(val) && !identical(br[[lv]], val)) { br[[lv]] <- val; changed <- TRUE } }
-    if (changed) { tree[[v]] <- br; raw_group_colors(tree) }
+    ctx <- raw_custom_colour_context()
+    if (is.null(ctx) || !length(ctx$levels)) return()
+    ensure_raw_custom_colors(ctx)
+    tree <- isolate(raw_group_colors())
+    br <- tree[[ctx$key]] %||% list()
+    changed <- FALSE
+    for (lv in ctx$levels) {
+      val <- input[[style_input_id("raw_colour", ctx$key, lv)]]
+      if (!is.null(val) && nzchar(val) && !identical(br[[lv]], val)) {
+        br[[lv]] <- val
+        changed <- TRUE
+      }
+    }
+    if (changed) { tree[[ctx$key]] <- br; raw_group_colors(tree) }
   })
 
   observeEvent(input$apply_raw_palette, {
     if (isTRUE(restoring_style_state())) return()
-    d <- dat(); v <- resolve_color_var(d); lev <- style_levels(); if (!nzchar(v) || !length(lev)) return()
-    pal <- default_palette(length(lev), input$raw_palette_preset); tree <- isolate(raw_group_colors()); br <- tree[[v]] %||% list()
-    for (i in seq_along(lev)) br[[lev[i]]] <- pal[i]
-    tree[[v]] <- br; raw_group_colors(tree); style_restore_epoch(isolate(style_restore_epoch()) + 1L)
+    ctx <- raw_custom_colour_context()
+    if (is.null(ctx) || !length(ctx$levels)) return()
+    pal <- default_palette(length(ctx$levels), input$raw_palette_preset)
+    tree <- isolate(raw_group_colors())
+    br <- tree[[ctx$key]] %||% list()
+    for (i in seq_along(ctx$levels)) br[[ctx$levels[i]]] <- pal[i]
+    tree[[ctx$key]] <- br
+    raw_group_colors(tree)
+    style_restore_epoch(isolate(style_restore_epoch()) + 1L)
   })
 

@@ -19,6 +19,7 @@
       raw_group_colors = raw_group_colors(),
       orders = order_state(),
       legend_titles = legend_titles(),
+      legend_item_labels = legend_item_labels(),
       level_labels = level_labels(),
       shared_library = shared_style_binding(),
       # v3.64.2-format-export1: axis range is part of the rendered Graph
@@ -92,6 +93,7 @@
         y_break_to = input$y_break_to,
         y_break_space = input$y_break_space,
         y_break_symbol = input$y_break_symbol,
+        x_tick_labels_show = input$x_tick_labels_show,
         legend_pos = input$legend_pos,
         legend_colour_show = input$legend_colour_show,
         legend_linetype_show = input$legend_linetype_show,
@@ -249,6 +251,21 @@
       legend_titles(lt)
     }
 
+    if (!is.null(cfg$legend_item_labels)) {
+      li <- list()
+      for (vn in names(cfg$legend_item_labels)) {
+        branch <- cfg$legend_item_labels[[vn]]
+        bb <- list()
+        for (lv in names(branch)) bb[[lv]] <- json_chr(branch[[lv]], "")
+        li[[vn]] <- bb
+      }
+      legend_item_labels(li)
+    } else {
+      # Persistent single Editor: an older Graph without this field must not
+      # inherit legend-entry text from the previously visited Graph.
+      legend_item_labels(list())
+    }
+
     if (!is.null(cfg$level_labels)) {
       ll <- list()
       for (vn in names(cfg$level_labels)) {
@@ -359,6 +376,10 @@
       if (!is.null(a$y_break_to)) updateNumericInput(session, "y_break_to", value = as.numeric(a$y_break_to))
       if (!is.null(a$y_break_space)) updateSliderInput(session, "y_break_space", value = as.numeric(a$y_break_space))
       if (!is.null(a$y_break_symbol)) updateCheckboxInput(session, "y_break_symbol", value = isTRUE(a$y_break_symbol))
+      updateCheckboxInput(
+        session, "x_tick_labels_show",
+        value = if (is.null(a$x_tick_labels_show)) TRUE else isTRUE(a$x_tick_labels_show)
+      )
       if (!is.null(a$legend_pos)) updateSelectInput(session, "legend_pos", selected = a$legend_pos)
       updateCheckboxInput(
         session, "legend_colour_show",
@@ -409,6 +430,7 @@
       # Very old/partial GraphStates can lack appearance entirely.  Do not let
       # the persistent Editor inherit these newly-added legend controls from
       # the previously visited Graph.
+      updateCheckboxInput(session, "x_tick_labels_show", value = TRUE)
       updateCheckboxInput(session, "legend_colour_show", value = TRUE)
       updateCheckboxInput(session, "legend_linetype_show", value = TRUE)
       updateCheckboxInput(session, "legend_shape_show", value = TRUE)

@@ -74,6 +74,7 @@ graph_render_state <- function(state) {
     # affect scatter while a colour Mapping is active.
     if (identical(plot_type0, "scatter")) {
       st$raw_group_colors <- NULL
+      ap$x_tick_labels_show <- NULL
       if (isTRUE(has_color_mapping)) ap$mean_color_mode <- NULL
     }
     st$appearance <- ap

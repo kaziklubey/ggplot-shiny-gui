@@ -364,211 +364,122 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
             condition = "input.graph_main_tab == 'Plot'",
 
           tags$details(
-            class = "control-section",
-            `data-ui-section` = "plot",
-            tags$summary("2. Plot"),
-            div(class = "section-body",
-              selectInput(
-                "plot_type", "グラフ種類",
-                choices = graph_plot_type_choices(),
-                selected = "line"
-              ),
-              conditionalPanel(
-                condition = "input.plot_type == 'line' || input.plot_type == 'bar'",
-                selectInput(
-                  "summary_type", "集計方法",
-                  choices = c(
-                    "値（集計しない）" = "value",
-                    "平均" = "mean",
-                    "平均 ± SD" = "sd",
-                    "平均 ± SEM" = "sem",
-                    "平均 ± 95% CI" = "ci95"
-                  ),
-                  selected = "sem"
-                )
-              ),
-              conditionalPanel(
-                condition = "input.plot_type == 'box' || ((input.plot_type == 'line' || input.plot_type == 'bar') && input.summary_type != 'value')",
-                radioButtons(
-                  "summary_unit",
-                  "集計単位",
-                  choices = c(
-                    "各行を1観測として集計" = "row",
-                    "個体IDごとに先に平均してから集計" = "id_mean"
-                  ),
-                  selected = "row"
-                ),
-                uiOutput("summary_unit_status")
-              ),
-              conditionalPanel(
-                condition = "input.plot_type != 'scatter'",
-                checkboxInput("show_raw", "個体値を重ねる", TRUE)
-              ),
-              conditionalPanel(
-                condition = "input.plot_type == 'line' || input.plot_type == 'bar'",
-                checkboxInput("connect_id", "IDごとに線で結ぶ", FALSE)
-              ),
-              conditionalPanel(
-                condition = "input.plot_type == 'scatter'",
-                radioButtons(
-                  "scatter_connect_mode", "点の接続",
-                  choices = c(
-                    "接続しない" = "none",
-                    "個体IDごとに接続" = "id",
-                    "データの行順に接続" = "row"
-                  ),
-                  selected = "none"
-                ),
-                p(class = "help-block",
-                  "「データの行順」は、貼り付けた表の上から下へ(x, y)座標を順番に結びます。位置軌跡などに使えます。")
-              ),
-              conditionalPanel(
-                condition = "input.plot_type == 'scatter'",
-                tags$hr(),
-                tags$b("回帰直線"),
-                checkboxInput("scatter_regression", "回帰直線を表示する", FALSE),
-                conditionalPanel(
-                  condition = "input.scatter_regression == true",
-                  selectInput(
-                    "scatter_regression_group",
-                    "回帰線の単位",
-                    choices = c(
-                      "全データで1本" = "overall",
-                      "Color ごと" = "style"
-                    ),
-                    selected = "overall"
-                  ),
-                  conditionalPanel(
-                    condition = "input.scatter_regression_group == 'overall'",
-                    colourInput(
-                      "scatter_regression_color",
-                      "回帰線の色",
-                      value = "#333333",
-                      showColour = "both"
-                    ),
-                    selectInput(
-                      "scatter_regression_linetype",
-                      "回帰線タイプ",
-                      choices = c(
-                        "実線" = "solid",
-                        "破線" = "dashed",
-                        "点線" = "dotted",
-                        "一点鎖線" = "dotdash",
-                        "長い破線" = "longdash",
-                        "二重点線" = "twodash"
-                      ),
-                      selected = "solid"
-                    ),
-                    sliderInput(
-                      "scatter_regression_width",
-                      "回帰線幅",
-                      min = 0, max = 3, value = 0.9, step = 0.1
-                    )
-                  ),
-                  conditionalPanel(
-                    condition = "input.scatter_regression_group != 'overall'",
-                    uiOutput("scatter_regression_style_ui")
-                  ),
-                  checkboxInput(
-                    "scatter_regression_se",
-                    "95%信頼区間を表示",
-                    TRUE
-                  ),
-                  conditionalPanel(
-                    condition = "input.scatter_regression_se == true",
-                    sliderInput(
-                      "scatter_regression_se_alpha",
-                      "信頼区間の透明度",
-                      min = 0, max = 0.60, value = 0.20, step = 0.05
-                    )
-                  ),
-                  p(
-                    class = "help-block",
-                    "XとYが数値列の場合に、線形回帰（lm）を描画します。Groupごとの回帰線では各線の色・線種・線幅を個別設定できます。"
-                  )
-                )
-              )
-            )
-          ),
-
-          tags$details(
-            class = "control-section",
+            class = "control-section graph-editor-primary-section",
             `data-ui-section` = "mapping",
-            tags$summary("3. Mapping / Order"),
+            `data-default-open` = "true",
+            tags$summary("2. Mapping（変数の割り当て）"),
             div(
               class = "section-body",
 
-              tags$details(
-                class = "control-subsection",
-                open = TRUE,
-                tags$summary("Mapping"),
+              div(
+                class = "editor-setting-group editor-setting-group-primary",
+                tags$h5("グラフの基本設定"),
+                selectInput(
+                  "plot_type", "グラフ種類",
+                  choices = graph_plot_type_choices(),
+                  selected = "line"
+                ),
+                selectInput("xvar", "X軸", choices = character(0)),
+                selectInput("yvar", "Y軸", choices = character(0))
+              ),
+
+              div(
+                class = "editor-setting-group",
+                tags$h5("見分け方（Aesthetic Mapping）"),
+                p(
+                  class = "help-block",
+                  "色・線種・点の形に、どの列を割り当てるかを指定します。見た目そのものは『4. 見た目』で調整します。"
+                ),
                 div(
-                  class = "subsection-body",
-                  selectInput("xvar", "X軸", choices = character(0)),
-                  selectInput("yvar", "Y軸", choices = character(0)),
-                  tags$hr(),
-                  tags$h5("重ね描きの見分け方"),
-                  selectInput(
-                    "colorvar", "色で分ける",
-                    choices = c("使わない（固定）" = "")
+                  class = "mapping-aesthetic-stack",
+                  div(
+                    class = "mapping-aesthetic-card",
+                    div(
+                      class = "mapping-aesthetic-card-title",
+                      tags$span(class = "mapping-aesthetic-name", "色 / 塗り"),
+                      tags$span(class = "mapping-aesthetic-term", "Color / Fill")
+                    ),
+                    selectInput(
+                      "colorvar", "分ける変数",
+                      choices = c("使わない（固定）" = "")
+                    )
                   ),
                   # v3.63.0-editor-shell1: plot-specific Mapping controls are
                   # permanently mounted. conditionalPanel only changes visibility;
                   # the Shiny input bindings survive Graph/plot-type switches.
                   conditionalPanel(
                     condition = "input.plot_type == 'line' || input.plot_type == 'scatter'",
-                    selectInput(
-                      "linetypevar", "線の種類で分ける",
-                      choices = c(
-                        "色で分ける要因と同じ" = "__color__",
-                        "使わない（固定）" = ""
+                    div(
+                      class = "mapping-aesthetic-card",
+                      div(
+                        class = "mapping-aesthetic-card-title",
+                        tags$span(class = "mapping-aesthetic-name", "線種"),
+                        tags$span(class = "mapping-aesthetic-term", "Linetype")
                       ),
-                      selected = "__color__"
-                    ),
-                    conditionalPanel(
-                      condition = "input.plot_type == 'scatter'",
-                      p(
-                        class = "help-block",
-                        "散布図では、Linetypeは点を接続する線に使用します。点だけの場合は見た目に影響しません。"
+                      selectInput(
+                        "linetypevar", "分ける変数",
+                        choices = c(
+                          "色 / 塗りと同じ" = "__color__",
+                          "使わない（固定）" = ""
+                        ),
+                        selected = "__color__"
+                      ),
+                      conditionalPanel(
+                        condition = "input.plot_type == 'scatter'",
+                        p(
+                          class = "help-block",
+                          "散布図では、線種は点を接続する線に使用します。点だけの場合は見た目に影響しません。"
+                        )
                       )
                     )
                   ),
-                  conditionalPanel(
-                    condition = "input.plot_type == 'line' || input.plot_type == 'bar' || input.plot_type == 'box'",
-                    selectInput(
-                      "groupvar", "横ずらし / 横並び要因",
-                      choices = c("なし" = ""),
-                      selected = ""
+                  div(
+                    class = "mapping-aesthetic-card",
+                    div(
+                      class = "mapping-aesthetic-card-title",
+                      tags$span(class = "mapping-aesthetic-name", "点の形"),
+                      tags$span(class = "mapping-aesthetic-term", "Shape")
                     ),
-                    p(
-                      class = "help-block",
-                      "Lineでは系列を左右へずらす要因、Bar/Boxでは追加の横並び要因として使います。"
+                    selectInput(
+                      "shapevar", "分ける変数",
+                      choices = c("色 / 塗りと同じ" = "__color__", "使わない（固定）" = "")
                     )
-                  ),
+                  )
+                )
+              ),
+
+              div(
+                class = "editor-setting-group",
+                tags$h5("配置・個体・分割"),
+                conditionalPanel(
+                  condition = "input.plot_type == 'line' || input.plot_type == 'bar' || input.plot_type == 'box'",
                   selectInput(
-                    "shapevar", "点の形で分ける",
-                    choices = c("Color と同じ" = "__color__", "なし（固定）" = "")
+                    "groupvar", "横ずらし / 横並び要因",
+                    choices = c("なし" = ""),
+                    selected = ""
                   ),
                   p(
                     class = "help-block",
-                    "色・線の種類・点の形には別々の条件列を指定できます。Linetypeは折れ線、および散布図の接続線で使用します。"
-                  ),
-                  selectInput(
-                    "idvar", "個体ID",
-                    choices = c("なし" = "")
-                  ),
-                  p(class = "help-block",
-                    "同じ個体をPre/Postなど複数条件で測定した場合に指定します。『IDごとに線で結ぶ』とき、どの点同士が同一個体かを識別します。『各行を1個体として扱う』をONにした場合はRowIDが自動生成されます。"),
-                  selectInput(
-                    "facetvar", "Facet（分割表示）",
-                    choices = c("なし" = "")
+                    "Lineでは系列を左右へずらす要因、Bar/Boxでは追加の横並び要因として使います。"
                   )
+                ),
+                selectInput(
+                  "idvar", "個体ID",
+                  choices = c("なし" = "")
+                ),
+                p(
+                  class = "help-block",
+                  "同じ個体をPre/Postなど複数条件で測定した場合に指定します。『IDごとに線で結ぶ』とき、どの点同士が同一個体かを識別します。『各行を1個体として扱う』をONにした場合はRowIDが自動生成されます。"
+                ),
+                selectInput(
+                  "facetvar", "Facet（分割表示）",
+                  choices = c("なし" = "")
                 )
               ),
 
               tags$details(
                 class = "control-subsection",
-                tags$summary("Category order"),
+                tags$summary("Category order（表示順）"),
                 div(
                   class = "subsection-body",
                   p(
@@ -582,16 +493,159 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
           ),
 
           tags$details(
+            class = "control-section graph-editor-primary-section",
+            `data-ui-section` = "plot",
+            `data-default-open` = "true",
+            tags$summary("3. 表示内容"),
+            div(
+              class = "section-body",
+
+              div(
+                class = "editor-setting-group",
+                tags$h5("集計"),
+                conditionalPanel(
+                  condition = "input.plot_type == 'line' || input.plot_type == 'bar'",
+                  selectInput(
+                    "summary_type", "集計方法",
+                    choices = c(
+                      "値（集計しない）" = "value",
+                      "平均" = "mean",
+                      "平均 ± SD" = "sd",
+                      "平均 ± SEM" = "sem",
+                      "平均 ± 95% CI" = "ci95"
+                    ),
+                    selected = "sem"
+                  )
+                ),
+                conditionalPanel(
+                  condition = "input.plot_type == 'box' || ((input.plot_type == 'line' || input.plot_type == 'bar') && input.summary_type != 'value')",
+                  radioButtons(
+                    "summary_unit",
+                    "集計単位",
+                    choices = c(
+                      "各行を1観測として集計" = "row",
+                      "個体IDごとに先に平均してから集計" = "id_mean"
+                    ),
+                    selected = "row"
+                  ),
+                  uiOutput("summary_unit_status")
+                )
+              ),
+
+              div(
+                class = "editor-setting-group",
+                tags$h5("重ね描き・接続"),
+                conditionalPanel(
+                  condition = "input.plot_type != 'scatter'",
+                  checkboxInput("show_raw", "個体値を重ねる", TRUE)
+                ),
+                conditionalPanel(
+                  condition = "input.plot_type == 'line' || input.plot_type == 'bar'",
+                  checkboxInput("connect_id", "IDごとに線で結ぶ", FALSE)
+                ),
+                conditionalPanel(
+                  condition = "input.plot_type == 'scatter'",
+                  radioButtons(
+                    "scatter_connect_mode", "点の接続",
+                    choices = c(
+                      "接続しない" = "none",
+                      "個体IDごとに接続" = "id",
+                      "データの行順に接続" = "row"
+                    ),
+                    selected = "none"
+                  ),
+                  p(
+                    class = "help-block",
+                    "『データの行順』は、貼り付けた表の上から下へ(x, y)座標を順番に結びます。位置軌跡などに使えます。"
+                  )
+                )
+              ),
+
+              conditionalPanel(
+                condition = "input.plot_type == 'scatter'",
+                tags$details(
+                  class = "control-subsection",
+                  tags$summary("回帰直線"),
+                  div(
+                    class = "subsection-body",
+                    checkboxInput("scatter_regression", "回帰直線を表示する", FALSE),
+                    conditionalPanel(
+                      condition = "input.scatter_regression == true",
+                      selectInput(
+                        "scatter_regression_group",
+                        "回帰線の単位",
+                        choices = c(
+                          "全データで1本" = "overall",
+                          "Color ごと" = "style"
+                        ),
+                        selected = "overall"
+                      ),
+                      conditionalPanel(
+                        condition = "input.scatter_regression_group == 'overall'",
+                        colourInput(
+                          "scatter_regression_color",
+                          "回帰線の色",
+                          value = "#333333",
+                          showColour = "both"
+                        ),
+                        selectInput(
+                          "scatter_regression_linetype",
+                          "回帰線タイプ",
+                          choices = c(
+                            "実線" = "solid",
+                            "破線" = "dashed",
+                            "点線" = "dotted",
+                            "一点鎖線" = "dotdash",
+                            "長い破線" = "longdash",
+                            "二重点線" = "twodash"
+                          ),
+                          selected = "solid"
+                        ),
+                        sliderInput(
+                          "scatter_regression_width",
+                          "回帰線幅",
+                          min = 0, max = 3, value = 0.9, step = 0.1
+                        )
+                      ),
+                      conditionalPanel(
+                        condition = "input.scatter_regression_group != 'overall'",
+                        uiOutput("scatter_regression_style_ui")
+                      ),
+                      checkboxInput(
+                        "scatter_regression_se",
+                        "95%信頼区間を表示",
+                        TRUE
+                      ),
+                      conditionalPanel(
+                        condition = "input.scatter_regression_se == true",
+                        sliderInput(
+                          "scatter_regression_se_alpha",
+                          "信頼区間の透明度",
+                          min = 0, max = 0.60, value = 0.20, step = 0.05
+                        )
+                      ),
+                      p(
+                        class = "help-block",
+                        "XとYが数値列の場合に、線形回帰（lm）を描画します。Groupごとの回帰線では各線の色・線種・線幅を個別設定できます。"
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          ),
+
+          tags$details(
             class = "control-section",
             `data-ui-section` = "appearance",
-            tags$summary("4. Appearance"),
+            tags$summary("4. 見た目"),
             div(
               class = "section-body",
 
               tags$details(
                 class = "control-subsection",
                 open = TRUE,
-                tags$summary("Theme / Font"),
+                tags$summary("全体 / フォント"),
                 div(
                   class = "subsection-body",
                   selectInput(
@@ -634,24 +688,24 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
               tags$details(
                 class = "control-subsection",
                 open = TRUE,
-                tags$summary("色・線種・点形状"),
+                tags$summary("Mappingの見た目"),
                 div(
                   class = "subsection-body aesthetic-style-stack",
                   tags$details(
                     class = "aesthetic-style-panel",
                     open = TRUE,
                     tags$summary(
-                      tags$span(class = "aesthetic-style-title", "色"),
-                      tags$span(class = "aesthetic-style-term", "Color")
+                      tags$span(class = "aesthetic-style-title", "色 / 塗り"),
+                      tags$span(class = "aesthetic-style-term", "Color / Fill")
                     ),
                     div(
                       class = "aesthetic-style-body",
-                      p(class="help-block", "Mapping『Colorで分ける』の各水準の色を設定します。"),
+                      p(class="help-block", "Mapping『色 / 塗り』へ割り当てた各水準の色を設定します。"),
                       uiOutput("color_style_ui"),
                       selectInput("palette_preset", "色パレットを一括適用",
                         choices=c("自動 (hue)"="hue","Okabe-Ito (色覚多様性対応)"="okabe_ito","Set2"="set2","Dark2"="dark2"), selected="okabe_ito"),
-                      actionButton("apply_palette", "Colorへパレットを適用"),
-                      checkboxInput("series_style_override", "Color × 横位置要因ごとに色を上書きする", FALSE),
+                      actionButton("apply_palette", "色 / 塗りへパレットを適用"),
+                      checkboxInput("series_style_override", "色 / 塗り × 横位置要因ごとに色を上書きする", FALSE),
                       conditionalPanel(condition="input.series_style_override == true", uiOutput("series_style_ui"))
                     )
                   ),
@@ -663,7 +717,7 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                     ),
                     div(
                       class = "aesthetic-style-body",
-                      p(class="help-block", "Mapping『線の種類で分ける』の各水準について、実線・破線などを設定します。"),
+                      p(class="help-block", "Mapping『線種』へ割り当てた各水準について、実線・破線などを設定します。"),
                       uiOutput("linetype_style_ui")
                     )
                   ),
@@ -675,7 +729,7 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                     ),
                     div(
                       class = "aesthetic-style-body",
-                      p(class="help-block", "Mapping『点の形で分ける』の各水準について、丸・三角などを設定します。"),
+                      p(class="help-block", "Mapping『点の形』へ割り当てた各水準について、丸・三角などを設定します。"),
                       uiOutput("shape_style_ui")
                     )
                   )
@@ -684,7 +738,7 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
 
               tags$details(
                 class = "control-subsection",
-                tags$summary("Representative line / point"),
+                tags$summary("固定スタイル（Mappingしない場合）"),
                 div(
                   class = "subsection-body",
                   p(
@@ -742,7 +796,7 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                 tags$details(
                   class = "control-subsection",
                   open = TRUE,
-                  tags$summary("横位置 / 横ずらし"),
+                  tags$summary("配置 / 横ずらし"),
                   div(
                     class = "subsection-body",
                     conditionalPanel(
@@ -783,7 +837,7 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                 condition = "input.plot_type == 'bar' || input.plot_type == 'box'",
               tags$details(
                 class = "control-subsection",
-                tags$summary("Plot-specific appearance"),
+                tags$summary("Bar / Box の見た目"),
                 div(
                   class = "subsection-body",
 
@@ -848,7 +902,7 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
             tags$details(
               class = "control-section",
               `data-ui-section` = "error-bars",
-              tags$summary("5. Error bars"),
+              tags$summary("5. Error bar"),
               div(
                 class = "section-body",
                 conditionalPanel(
@@ -917,7 +971,7 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
           tags$details(
             class = "control-section",
             `data-ui-section` = "individual",
-            tags$summary("6. Individual data"),
+            tags$summary("6. 個体データ"),
             div(
               class = "section-body",
 
@@ -926,7 +980,7 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                 tags$details(
                   class = "control-subsection",
                   open = TRUE,
-                  tags$summary("Point"),
+                  tags$summary("個体点"),
                   div(
                     class = "subsection-body",
                     selectInput(
@@ -934,7 +988,7 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                       choices = c(
                         "Colorの色を薄くした色" = "group_light",
                         "Colorの色そのまま" = "group",
-                        "水準ごとに個別指定" = "custom_group",
+                        "系列 / 組み合わせごとに個別指定" = "custom_group",
                         "任意の固定色" = "custom_fixed"
                       ),
                       selected = "group_light"
@@ -1027,7 +1081,7 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                 condition = "input.plot_type == 'line' || input.plot_type == 'bar' || input.plot_type == 'scatter'",
                 tags$details(
                   class = "control-subsection",
-                  tags$summary("Line"),
+                  tags$summary("個体接続線"),
                   div(
                     class = "subsection-body",
                     selectInput(
@@ -1091,18 +1145,43 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
           tags$details(
             class = "control-section",
             `data-ui-section` = "axes-legend",
-            tags$summary("7. Axes / Legend"),
+            tags$summary("7. 軸・Label"),
             div(
               class = "section-body",
-              textAreaInput("xlab", "X軸タイトル", "", rows = 2, resize = "vertical"),
-              textAreaInput("ylab", "Y軸タイトル", "", rows = 2, resize = "vertical"),
-              p(class = "help-block", "Enterで改行できます。文字として入力した \\n も改行として扱います。"),
-              textInput("title", "タイトル", ""),
+
+              div(
+                class = "editor-setting-group",
+                tags$h5("タイトル / 表示名"),
+                textAreaInput("xlab", "X軸タイトル", "", rows = 2, resize = "vertical"),
+                textAreaInput("ylab", "Y軸タイトル", "", rows = 2, resize = "vertical"),
+                p(class = "help-block", "Enterで改行できます。文字として入力した \\n も改行として扱います。"),
+                textInput("title", "グラフタイトル", ""),
+                conditionalPanel(
+                  condition = "input.plot_type != 'scatter'",
+                  checkboxInput(
+                    "x_tick_labels_show",
+                    "X軸のカテゴリ名（各グループ名）を表示",
+                    TRUE
+                  )
+                ),
+                tags$details(
+                  class = "control-subsection",
+                  tags$summary("X軸カテゴリ名 / Facet名"),
+                  div(
+                    class = "subsection-body",
+                    p(
+                      class = "help-block",
+                      "元データは変更せず、Normal / ExpertのようなX軸カテゴリ名やFacet名など、グラフ上の表示名だけを変更します。"
+                    ),
+                    uiOutput("display_labels_ui")
+                  )
+                )
+              ),
 
               tags$details(
                 class = "control-subsection",
                 open = TRUE,
-                tags$summary("軸の長さ / X目盛間隔"),
+                tags$summary("軸サイズ / X目盛間隔"),
                 div(
                   class = "subsection-body",
                   conditionalPanel(
@@ -1139,76 +1218,99 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                   ),
                   p(
                     class = "help-block",
-                    "スライダーまたは数値入力で指定できます。Plot横幅 / 縦幅は軸に囲まれたプロット領域そのもののサイズです。凡例の表示/非表示や位置を変えても、この領域の大きさは維持されます。X目盛間隔はカテゴリ同士の距離です。"
+                    "スライダーまたは数値入力で指定できます。Plot横幅 / 縦幅は軸に囲まれたプロット領域そのもののサイズです。凡例の表示/非表示や位置を変えても、この領域の大きさは維持されます。"
                   )
                 )
               ),
-              fluidRow(
-                column(6, textInput("ymin", "Y最小", value = "")),
-                column(6, textInput("ymax", "Y最大", value = ""))
-              ),
-              checkboxInput(
-                "y_breaks_auto",
-                "Y軸目盛り間隔を自動にする",
-                TRUE
-              ),
-              checkboxInput(
-                "y_top_to_tick",
-                "Y軸上端を最終目盛りに合わせる",
-                TRUE
-              ),
-              conditionalPanel(
-                condition = "!input.y_breaks_auto",
-                numericInput(
-                  "y_breaks_step",
-                  "Y軸目盛り間隔",
-                  value = 1,
-                  min = 0.000001,
-                  step = 0.1
-                )
-              ),
-              checkboxInput(
-                "y_break_enabled",
-                "Y軸の途中の値域を省略する",
-                FALSE
-              ),
-              conditionalPanel(
-                condition = "input.y_break_enabled == true",
-                fluidRow(
-                  column(
-                    6,
+
+              tags$details(
+                class = "control-subsection",
+                tags$summary("Y軸範囲 / 目盛り / 途中省略"),
+                div(
+                  class = "subsection-body",
+                  fluidRow(
+                    column(6, textInput("ymin", "Y最小", value = "")),
+                    column(6, textInput("ymax", "Y最大", value = ""))
+                  ),
+                  checkboxInput(
+                    "y_breaks_auto",
+                    "Y軸目盛り間隔を自動にする",
+                    TRUE
+                  ),
+                  checkboxInput(
+                    "y_top_to_tick",
+                    "Y軸上端を最終目盛りに合わせる",
+                    TRUE
+                  ),
+                  conditionalPanel(
+                    condition = "!input.y_breaks_auto",
                     numericInput(
-                      "y_break_from",
-                      "省略開始",
-                      value = 2,
-                      step = 1
+                      "y_breaks_step",
+                      "Y軸目盛り間隔",
+                      value = 1,
+                      min = 0.000001,
+                      step = 0.1
                     )
                   ),
-                  column(
-                    6,
-                    numericInput(
-                      "y_break_to",
-                      "省略終了",
-                      value = 10,
-                      step = 1
+                  checkboxInput(
+                    "y_break_enabled",
+                    "Y軸の途中の値域を省略する",
+                    FALSE
+                  ),
+                  conditionalPanel(
+                    condition = "input.y_break_enabled == true",
+                    fluidRow(
+                      column(
+                        6,
+                        numericInput(
+                          "y_break_from",
+                          "省略開始",
+                          value = 2,
+                          step = 1
+                        )
+                      ),
+                      column(
+                        6,
+                        numericInput(
+                          "y_break_to",
+                          "省略終了",
+                          value = 10,
+                          step = 1
+                        )
+                      )
+                    ),
+                    sliderInput(
+                      "y_break_space",
+                      "省略部分の見た目の隙間",
+                      min = 0.02, max = 0.30, value = 0.08, step = 0.01
+                    ),
+                    checkboxInput(
+                      "y_break_symbol",
+                      "省略位置を記号で示す",
+                      TRUE
+                    ),
+                    p(
+                      class = "help-block",
+                      "例：2〜10を省略すると、2付近から10付近へ軸がジャンプします。≈ は値域を省略したことを示す目印です。データそのものは削除しません。"
                     )
                   )
-                ),
-                sliderInput(
-                  "y_break_space",
-                  "省略部分の見た目の隙間",
-                  min = 0.02, max = 0.30, value = 0.08, step = 0.01
-                ),
-                checkboxInput(
-                  "y_break_symbol",
-                  "省略位置を記号で示す",
-                  TRUE
-                ),
-                p(
-                  class = "help-block",
-                  "例：2〜10を省略すると、2付近から10付近へ軸がジャンプします。≈ は値域を省略したことを示す目印です。データそのものは削除しません。"
                 )
               ),
+
+              sliderInput(
+                "facet_spacing_x", "Facet間隔（左右）",
+                min = 0, max = 1.5, value = 0.12, step = 0.02,
+                post = " cm"
+              )
+            )
+          ),
+
+          tags$details(
+            class = "control-section",
+            `data-ui-section` = "legend",
+            tags$summary("8. 凡例"),
+            div(
+              class = "section-body",
               selectInput(
                 "legend_pos",
                 "凡例位置",
@@ -1222,26 +1324,26 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                 selected = "right"
               ),
               tags$div(
-                class = "group-style-box",
-                tags$b("凡例の表示"),
+                class = "group-style-box legend-control-card",
+                tags$b("表示する凡例"),
                 checkboxInput(
                   "legend_colour_show",
-                  "色 / 塗り凡例を表示",
+                  "色 / 塗り",
                   TRUE
                 ),
                 checkboxInput(
                   "legend_linetype_show",
-                  "線種凡例を表示",
+                  "線種",
                   TRUE
                 ),
                 checkboxInput(
                   "legend_shape_show",
-                  "点形状凡例を表示",
+                  "点の形",
                   TRUE
                 ),
                 checkboxInput(
                   "legend_merge_linetype_shape",
-                  "同じ変数の線種と点形状を1つの凡例にまとめる",
+                  "同じ変数の線種 + 点の形を1つにまとめる",
                   TRUE
                 ),
                 # Hidden compatibility input: preserves the old Color+Shape
@@ -1249,60 +1351,70 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                 tags$div(
                   style = "display:none;",
                   checkboxInput("legend_merge_colour_shape", "legacy", TRUE)
-                ),
-                checkboxInput(
-                  "legend_title_show",
-                  "色 / 塗り凡例タイトルを表示",
-                  FALSE
-                ),
-                textInput("legend_group_title", "色 / 塗り凡例タイトル", ""),
-                checkboxInput("legend_individual_title_show", "線種 / 点形状凡例タイトルを表示", FALSE),
-                textInput("legend_individual_title", "線種 / 点形状凡例タイトル", ""),
-                p(
-                  class = "help-block",
-                  "凡例の表示/非表示はPlot本体のMappingを変更しません。線種と点形状が同じ変数を表す場合だけ、上の統合設定で1つの凡例にまとめます。"
                 )
+              ),
+              tags$details(
+                class = "control-subsection",
+                tags$summary("凡例の項目名"),
+                div(
+                  class = "subsection-body",
+                  p(
+                    class = "help-block",
+                    "凡例に表示する各項目名だけを変更します。X軸やFacetの条件名は変更しません。空欄にすると条件名（表示名）へ戻ります。"
+                  ),
+                  uiOutput("legend_item_labels_ui")
+                )
+              ),
+              tags$details(
+                class = "control-subsection",
+                tags$summary("凡例タイトル"),
+                div(
+                  class = "subsection-body",
+                  checkboxInput(
+                    "legend_title_show",
+                    "色 / 塗り凡例タイトルを表示",
+                    FALSE
+                  ),
+                  textInput("legend_group_title", "色 / 塗り凡例タイトル", ""),
+                  checkboxInput(
+                    "legend_individual_title_show",
+                    "線種 / 点形状凡例タイトルを表示",
+                    FALSE
+                  ),
+                  textInput("legend_individual_title", "線種 / 点形状凡例タイトル", "")
+                )
+              ),
+              p(
+                class = "help-block",
+                "凡例の表示/非表示はPlot本体のMappingを変更しません。線種と点形状が同じ変数を表す場合だけ、統合設定で1つの凡例にまとめます。"
               ),
               sliderInput(
                 "legend_key_width",
                 "凡例の線サンプル長",
                 min = 0, max = 4.0, value = 1.8, step = 0.1,
                 post = " cm"
-              ),
-              sliderInput(
-                "facet_spacing_x", "Facet間隔（左右）",
-                min = 0, max = 1.5, value = 0.12, step = 0.02,
-                post = " cm"
-              ),
-              tags$hr(),
-              if (!controls_only) tagList(
-                tags$details(
-                  class = "control-subsection shared-label-style-subsection",
-                  tags$summary("共通Label / Style"),
-                  div(
-                    class = "subsection-body",
-                    p(
-                      class = "help-block",
-                      "ProjectのShared Libraryへ、群・条件・軸ラベル・凡例タイトルを明示的に対応付けます。自動bindingは行いません。"
-                    ),
-                    uiOutput("shared_style_binding_ui")
-                  )
-                ),
-                tags$hr()
-              ),
-              tags$h5("凡例・条件名"),
+              )
+            )
+          ),
+
+          if (!controls_only) tags$details(
+            class = "control-section shared-label-style-section",
+            `data-ui-section` = "shared-style",
+            tags$summary("9. 共通 Label / Style"),
+            div(
+              class = "section-body",
               p(
                 class = "help-block",
-                "元データは変更せず、グラフ上の条件名だけを変更します。X軸の条件名やFacet名にも反映されます。凡例タイトルは上の欄で設定します。"
+                "ProjectのShared Libraryへ、群・条件・軸ラベル・凡例タイトルを明示的に対応付けます。自動bindingは行いません。"
               ),
-              uiOutput("display_labels_ui")
+              uiOutput("shared_style_binding_ui")
             )
           ),
 
           tags$details(
             class = "control-section",
             `data-ui-section` = "export",
-            tags$summary("8. Export"),
+            tags$summary(if (controls_only) "9. Export" else "10. Export"),
             div(
               class = "section-body",
               p(

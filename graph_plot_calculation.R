@@ -266,13 +266,18 @@
       )
     }
 
-    color_display_labels <- if (has_color) combo_display_labels(display_levels) else character(0)
+    color_legend_key <- if (combo_override) paste0("__combo__::", cvar, "::", g) else cvar
+    color_display_defaults <- if (has_color) combo_display_labels(display_levels) else character(0)
+    color_display_labels <- if (has_color) {
+      legend_item_label_values(color_legend_key, display_levels, color_display_defaults)
+    } else character(0)
 
     linetype_display_labels <- if (effective_has_linetype) {
       if (identical(linetype_map_var, color_map_var) && has_color) {
         color_display_labels
       } else {
-        level_label_values(lvar, linetype_levels)
+        defaults <- level_label_values(lvar, linetype_levels)
+        legend_item_label_values(lvar, linetype_levels, defaults)
       }
     } else character(0)
 
@@ -280,7 +285,8 @@
       if (identical(shape_map_var, color_map_var) && has_color) {
         color_display_labels
       } else {
-        level_label_values(svar, shape_levels)
+        defaults <- level_label_values(svar, shape_levels)
+        legend_item_label_values(svar, shape_levels, defaults)
       }
     } else character(0)
 
@@ -305,14 +311,18 @@
       } else if (identical(input$raw_color_mode, "group")) {
         base_cols
       } else if (identical(input$raw_color_mode, "custom_group")) {
-        if (combo_override) {
-          # 組み合わせ上書き時は、その組み合わせの基本色を個体点にも反映
-          base_cols
-        } else {
-          ensure_raw_group_colors(cvar, display_levels)
-          rc <- raw_group_colors()[[cvar]] %||% list()
-          setNames(vapply(display_levels, function(nm) as.character(rc[[nm]] %||% "#777777"), character(1)), display_levels)
-        }
+        raw_key <- if (combo_override) paste0("__combo__::", cvar, "::", g) else cvar
+        rc <- raw_group_colors()[[raw_key]] %||% list()
+        setNames(
+          vapply(display_levels, function(nm) {
+            saved <- rc[[nm]]
+            if (!is.null(saved) && length(saved) && nzchar(as.character(saved)[1])) {
+              return(as.character(saved)[1])
+            }
+            lighten_colour(base_cols[[nm]] %||% "#333333", amount = input$raw_lighten %||% 0.45)
+          }, character(1)),
+          display_levels
+        )
       } else if (identical(input$raw_color_mode, "custom_fixed")) {
         setNames(rep(input$raw_fixed_custom, length(display_levels)), display_levels)
       } else {
@@ -772,7 +782,7 @@
 
         p <- p + scale_x_continuous(
           breaks = x_positions,
-          labels = level_label_values(x, xl),
+          labels = if (isTRUE(input$x_tick_labels_show)) level_label_values(x, xl) else rep("", length(xl)),
           limits = line_x_view,
           oob = scales::oob_keep,
           expand = expansion(mult = c(0, 0))
@@ -946,7 +956,7 @@
 
         p <- p + scale_x_continuous(
           breaks = unname(x_positions),
-          labels = level_label_values(x, xl),
+          labels = if (isTRUE(input$x_tick_labels_show)) level_label_values(x, xl) else rep("", length(xl)),
           limits = bar_x_view,
           oob = scales::oob_keep,
           expand = expansion(mult = c(0, 0))
@@ -1183,7 +1193,7 @@
 
       p <- p + scale_x_continuous(
         breaks=unname(x_positions),
-        labels=level_label_values(x,xl),
+        labels=if (isTRUE(input$x_tick_labels_show)) level_label_values(x,xl) else rep("", length(xl)),
         expand=expansion(mult=c(0.06,0.06))
       ) +
       theme(
@@ -1354,6 +1364,12 @@
         individual = individual_title
       )
     )
+
+    # X category names are independent from the X-axis title.  Hide only the
+    # per-category text; tick marks/axis line remain available.
+    if (input$plot_type %in% c("line", "bar", "box") && !isTRUE(input$x_tick_labels_show)) {
+      p <- p + theme(axis.text.x = element_blank())
+    }
 
     # ---------------------------------------
     # Stable Y range

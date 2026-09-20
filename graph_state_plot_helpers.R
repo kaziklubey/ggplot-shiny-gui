@@ -30,6 +30,22 @@ level_label_values <- function(var_name, levels_now) {
     )
   }
 
+legend_item_label_values <- function(legend_key, levels_now, default_labels = NULL) {
+    levels_now <- as.character(levels_now)
+    if (!length(levels_now) || !nzchar(as.character(legend_key %||% "")[1])) return(levels_now)
+    if (is.null(default_labels) || length(default_labels) != length(levels_now)) default_labels <- levels_now
+    default_labels <- as.character(default_labels)
+
+    st <- legend_item_labels()
+    branch <- st[[as.character(legend_key)[1]]]
+    if (is.null(branch)) branch <- list()
+
+    vapply(seq_along(levels_now), function(i) {
+      z <- branch[[levels_now[i]]]
+      if (is.null(z) || !length(z) || !nzchar(trimws(as.character(z)[1]))) default_labels[i] else as.character(z)[1]
+    }, character(1))
+  }
+
 get_saved_order <- function(kind, var_name, observed) {
     st <- order_state()
     saved <- st[[kind]][[var_name]]
