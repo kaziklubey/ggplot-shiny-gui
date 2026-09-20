@@ -96,36 +96,4 @@ Figureへ反映したい場合は明示的に更新します。Figure / Export�
 
 Graph Settings Managerでは `Graphだけ` / `Figureだけ` / `Graph + Figure` を選択できます。Figure側だけで最終調整しても元Graphは変更されません。
 
-## 凡例
 
-v3.73.2.39では、グループ凡例と個体点凡例を独立して管理できます。
-
-- グループ凡例 表示ON/OFF
-- 個体点凡例 表示ON/OFF
-- 同じ条件のグループ凡例と個体点凡例を統合 / 分離
-- グループ凡例タイトル 表示ON/OFF・文字列指定
-- 個体点凡例タイトル 表示ON/OFF・文字列指定
-- 凡例タイトルは新規GraphでデフォルトOFF
-
-同じ条件を使うguideを統合するかどうかは専用設定で決まり、タイトル文字列の変更だけで意図せず分離しません。
-
-## GitHub上の運用
-
-- `main`: 現在のソースコード
-- `Releases`: 配布用ZIPとRelease notes
-- Release tag: `v3.73.2.39` のようなバージョン番号だけを使用
-- 過去Release: 変更せず保存
-
-今後、開発途中の「Phase」名や長い内部suffixは公開バージョン名には使用しません。
-
-## ドキュメント
-
-- `RELEASE_NOTES.md` — 現在版の詳細と検証状況
-- `CHANGELOG.md` — バージョンごとの短い変更履歴
-- `REFACTOR_CHECKPOINT.md` — 現行architectureの維持条件
-- `docs/README.md` — 開発者向けドキュメント索引
-- `docs/CURRENT_ARCHITECTURE_AND_PLAN.md` — 現行runtime構造
-- `docs/TEST_CHECKLIST.md` — 回帰確認項目
-- `docs/CHANGE_HISTORY_ARCHIVE.md` — 旧開発履歴のアーカイブ
-
-過去の内部Phase名は履歴アーカイブや旧Releaseに残る場合がありますが、現行版の識別には使用しません。
