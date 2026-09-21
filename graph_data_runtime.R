@@ -18,6 +18,11 @@
       "データを読み込めませんでした。タブ区切り、または空白区切りか確認してください。"
     ))
     shiny::validate(shiny::need(ncol(x) >= 2, "2列以上のデータが必要です。"))
+    header_status <- graph_data_column_name_status(x)
+    shiny::validate(shiny::need(
+      isTRUE(header_status$valid),
+      header_status$message %||% "列名を確認してください。"
+    ))
     x
   })
 
@@ -25,6 +30,14 @@
   # Wide→Long変換エラーはアプリ全体へ伝播させず、
   # 元データへフォールバックして利用者へ表示する。
   reshape_warning <- reactiveVal(NULL)
+
+  # When an incompatible Wide→Long selection is auto-disabled once, the next
+  # manual enable enters an edit/recovery mode.  In that mode the transform may
+  # stay invalid (and the raw data continues to be used), but the checkbox is
+  # not immediately forced OFF again.  This keeps the column checklist visible
+  # long enough for the user to repair mixed-type selections such as numeric +
+  # character columns.  Recovery ends as soon as a valid transform succeeds.
+  reshape_edit_recovery <- reactiveVal(FALSE)
 
   # Short-lived value seed used only while canonical GraphState replay updates
   # Wide→Long selections in the persistent Editor. No browser binding handshake
@@ -42,13 +55,16 @@
     msg <- reshape_warning()
     if (is.null(msg) || !nzchar(msg)) return(NULL)
 
+    editing <- isTRUE(reshape_edit_recovery()) && isTRUE(input$reshape_wide)
     div(
       class = "alert alert-warning",
       style = "padding:6px 9px; margin-top:6px; margin-bottom:8px;",
-      tags$b("Wide→Long変換を停止しました。"),
+      tags$b(if (editing) "Wide→Long変換を保留しています。" else "Wide→Long変換を停止しました。"),
       tags$br(),
       "元データをそのまま使用しています。",
       tags$br(),
+      if (editing) tags$small("列の選択を修正してください。候補リストは開いたまま編集できます。"),
+      if (editing) tags$br(),
       tags$small(msg)
     )
   })
@@ -64,7 +80,8 @@
     d0 <- raw_dat()
     req(d0)
     if (!graph_mapping_choices_changed("reshape", d0)) return()
-    cols <- names(d0)
+    cols <- graph_usable_column_names(d0)
+    if (!length(cols)) return()
     default_cols <- graph_default_reshape_columns(d0)
 
     restore_cols <- isolate(reshape_restore_seed())
@@ -130,21 +147,30 @@
     plot_source_data()
   })
 
-  # Incompatible selected columns (for example integer ID + character Group)
-  # mean this is not a valid wide measurement selection. Automatically switch
-  # the converter off so value replay and Mapping can continue on raw data.
+  # Incompatible selected columns (for example numeric phase2 + character
+  # phase) are not a valid wide measurement selection.  The first failure is
+  # auto-disabled so Mapping can continue on raw data.  If the user enables the
+  # transform again, keep the panel open in recovery mode instead of repeatedly
+  # closing it before the offending column selection can be edited.
   observe({
     if (isTRUE(graph_state_replay_active())) return()
-    # A replay can transiently expose the new Wide toggle before its saved
-    # column selection reaches the browser. Defer only this destructive
-    # auto-disable action; because the replay flag is a real dependency (not
-    # isolate()), the same ordinary rule re-runs once value replay completes.
-    if (isTRUE(graph_state_replay_active())) return()
+
     msg <- reshape_warning()
-    if (is.null(msg) || !nzchar(msg)) return()
-    if (!isTRUE(input$reshape_wide)) return()
+    enabled <- isTRUE(input$reshape_wide)
+
+    # Do not clear recovery while the checkbox is OFF: the next manual enable
+    # needs that grace period.  A successful enabled transform ends recovery.
+    if (is.null(msg) || !nzchar(msg)) {
+      if (enabled && isTRUE(reshape_edit_recovery())) {
+        reshape_edit_recovery(FALSE)
+      }
+      return()
+    }
+    if (!enabled) return()
 
     if (grepl("結合できません", msg, fixed = TRUE)) {
+      if (isTRUE(reshape_edit_recovery())) return()
+      reshape_edit_recovery(TRUE)
       updateCheckboxInput(
         session,
         "reshape_wide",
@@ -193,8 +219,10 @@
     if (isTRUE(graph_state_replay_active())) return()
     d <- dat()
     req(d)
-    cols <- names(d)
-    numeric_cols <- cols[vapply(d, is.numeric, logical(1))]
+    cols <- graph_usable_column_names(d)
+    all_names <- as.character(names(d) %||% rep("", ncol(d)))
+    numeric_flags <- vapply(d, is.numeric, logical(1))
+    numeric_cols <- unique(all_names[numeric_flags & all_names %in% cols])
     if (!length(numeric_cols)) return()
     if (!graph_mapping_choices_changed("mapping", d)) return()
 
@@ -254,7 +282,8 @@
     if (isTRUE(graph_state_replay_active())) return()
     d <- dat()
     req(d)
-    cols <- names(d)
+    cols <- graph_usable_column_names(d)
+    if (!length(cols)) return()
     color_now <- resolve_color_var(d)
     if (!graph_mapping_choices_changed("group", list(d, color_now))) return()
 
@@ -300,7 +329,10 @@
   observe({
     if (isTRUE(graph_state_replay_active())) return()
     d <- dat()
-    numeric_cols <- names(d)[vapply(d, is.numeric, logical(1))]
+    cols <- graph_usable_column_names(d)
+    all_names <- as.character(names(d) %||% rep("", ncol(d)))
+    numeric_flags <- vapply(d, is.numeric, logical(1))
+    numeric_cols <- unique(all_names[numeric_flags & all_names %in% cols])
     if (!length(numeric_cols)) return()
 
     y_now <- input$yvar %||% ""
@@ -722,22 +754,19 @@
     d <- dat()
     v <- resolve_color_var(d)
     if (!nzchar(v)) return(character(0))
-    observed <- unique(as.character(d[[v]]))
-    observed[!is.na(observed)]
+    ordered_levels_for_var(d, v)
   })
 
   linetype_style_levels <- reactive({
     d <- dat(); v <- resolve_linetype_var(d)
     if (!nzchar(v) || !v %in% names(d)) return(character(0))
-    z <- levels(d[[v]]); if (is.null(z) || !length(z)) z <- unique(as.character(d[[v]]))
-    z[!is.na(z)]
+    ordered_levels_for_var(d, v)
   })
 
   shape_style_levels <- reactive({
     d <- dat(); v <- resolve_shape_var(d)
     if (!nzchar(v) || !v %in% names(d)) return(character(0))
-    z <- levels(d[[v]]); if (is.null(z) || !length(z)) z <- unique(as.character(d[[v]]))
-    z[!is.na(z)]
+    ordered_levels_for_var(d, v)
   })
 
   x_levels <- reactive({

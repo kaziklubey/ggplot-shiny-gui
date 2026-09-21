@@ -82,21 +82,26 @@ figureLayoutPrimaryControlsUI <- function() {
         selected = "row", width = "105px"
       ),
       selectInput(
-        "figure_size_basis", "整列基準",
-        choices = c("Plot領域" = "plot", "Facet領域" = "facet", "Axis・軸位置" = "axis", "Axis＋凡例" = "axis_legend"),
-        selected = "plot", width = "140px"
+        "figure_size_basis", "Panel整列",
+        choices = c(
+          "Plot panel＋周辺余白を自動整列" = "panel_auto",
+          "Plot panelのみ" = "plot",
+          "軸＋凡例（旧方式）" = "axis_legend"
+        ),
+        selected = "panel_auto", width = "220px"
       ),
-      selectInput(
+      # Backward-compatible input owner. Graph title alignment was an old
+      # workaround for panel-label drift and is no longer exposed in the UI.
+      div(style = "display:none;", selectInput(
         "figure_title_align", "Graph title整列",
-        choices = c("なし" = "none", "Row内で上端を揃える" = "row_top"),
-        selected = "none", width = "170px"
-      ),
+        choices = c("なし" = "none"), selected = "none", width = "1px"
+      )),
       numericInput("figure_gap_x", "Panel横間隔 (px)", value = 12, min = 0, max = 300, step = 2, width = "100px"),
       numericInput("figure_gap_y", "Panel縦間隔 (px)", value = 12, min = 0, max = 300, step = 2, width = "100px")
     ),
     tags$p(
       class = "figure-layout-card-help",
-      "Axis基準では同じRowの軸gutterを共有します。Axis＋凡例は通常の付随凡例まで含む外接領域を基準にします。Free legendはoverlayなので整列基準には含めません。Graph title整列はRow内でタイトル上端を揃える独立オプションです。"
+      "通常は『Plot panel＋周辺余白を自動整列』を使用してください。データ描画領域を基準に、Facet・軸・Plot title/captionの有無を周辺余白として吸収します。Panel label (A/B/C…) はGraph titleとは独立して整列します。Free legendはoverlayとして扱います。"
     )
   )
 }
@@ -385,7 +390,7 @@ figureOverrideDetailUI <- function(id, ov, source_choices = character(0), is_ext
       radioButtons("figure_label_mode", "配置", choices = c("整列" = "align", "自由配置" = "free"), selected = ov$label_mode %||% "align", inline = TRUE),
       conditionalPanel(
         condition = "input.figure_label_mode == 'align'",
-        selectInput("figure_label_anchor", "基準位置", choices = c("Graph上・Y軸付近" = "plot_axis", "Graph左上" = "plot_left", "セル左上" = "cell_left"), selected = ov$label_anchor %||% "plot_axis", width = "170px"),
+        selectInput("figure_label_anchor", "基準位置", choices = c("Plot panel左端（推奨）" = "panel", "Graph左端" = "plot_left", "セル左端" = "cell_left"), selected = ov$label_anchor %||% "panel", width = "180px"),
         div(class = "figure-inline-controls",
             numericInput("figure_label_x_offset", "X微調整", value = ov$label_x_offset %||% 0, min = -300, max = 300, step = 1, width = "105px"),
             numericInput("figure_label_y_offset", "Y微調整", value = ov$label_y_offset %||% 0, min = -300, max = 300, step = 1, width = "105px"))
@@ -413,7 +418,7 @@ figureOverrideDetailUI <- function(id, ov, source_choices = character(0), is_ext
     div(
       class = fold_class("alignment", TRUE),
       `data-figure-fold-key` = "alignment",
-      tags$h5("Panel alignment"),
+      tags$h5("Panel内のGraph位置（高度な設定）"),
       selectInput("figure_align_h", "横位置", choices = c("左" = "left", "中央" = "center", "右" = "right"), selected = ov$align_h %||% "center", width = "120px"),
       selectInput("figure_align_v", "縦位置", choices = c("上" = "top", "中央" = "center", "下" = "bottom"), selected = ov$align_v %||% "center", width = "120px")
     )

@@ -96,10 +96,10 @@
     gy <- if (!is.null(restore_seed)) restore_seed$gap_y else suppressWarnings(as.numeric(input$figure_gap_y %||% 12))
     size_mode <- if (!is.null(restore_seed)) as.character(restore_seed$mode %||% "fixed") else as.character(input$figure_size_mode %||% "auto")
     if (!size_mode %in% c("auto", "fixed")) size_mode <- "auto"
-    size_basis <- if (!is.null(restore_seed)) as.character(restore_seed$basis %||% "plot") else as.character(input$figure_size_basis %||% "plot")
-    if (!size_basis %in% c("plot", "facet", "axis", "axis_legend")) size_basis <- "plot"
-    title_align <- if (!is.null(restore_seed)) as.character(restore_seed$title_align %||% "none") else as.character(input$figure_title_align %||% "none")
-    if (!title_align %in% c("none", "row_top")) title_align <- "none"
+    size_basis <- if (!is.null(restore_seed)) as.character(restore_seed$basis %||% "panel_auto") else as.character(input$figure_size_basis %||% "panel_auto")
+    if (size_basis %in% c("facet", "axis")) size_basis <- "panel_auto"
+    if (!size_basis %in% c("panel_auto", "plot", "axis_legend")) size_basis <- "panel_auto"
+    title_align <- "none"
     layout_mode <- if (!is.null(restore_seed)) as.character(restore_seed$layout_mode %||% "row") else as.character(input$figure_layout_mode %||% "row")
     if (!layout_mode %in% c("row", "free")) layout_mode <- "row"
     autofit_policy <- if (!is.null(restore_seed)) as.character(restore_seed$autofit_policy %||% "live") else as.character(input$figure_autofit_policy %||% "live")
@@ -657,9 +657,9 @@
     geo_ovs <- isolate(figure_requested_overrides())
     mode <- figure_requested_size_mode()
     basis <- figure_requested_size_basis()
-    if (!basis %in% c("plot", "facet", "axis", "axis_legend")) basis <- "plot"
-    title_align <- figure_requested_title_align()
-    if (!title_align %in% c("none", "row_top")) title_align <- "none"
+    if (basis %in% c("facet", "axis")) basis <- "panel_auto"
+    if (!basis %in% c("panel_auto", "plot", "axis_legend")) basis <- "panel_auto"
+    title_align <- "none"
     gx <- figure_requested_gap_x()
     gy <- figure_requested_gap_y()
     layout_mode <- figure_requested_layout_mode()
@@ -703,11 +703,16 @@
         base_vh <- suppressWarnings(as.numeric(src$height %||% NA_real_)[1])
         vh <- if (is.finite(base_vh) && is.finite(sc)) base_vh * sc else NA_real_
         rect_basis <- as.character(rect$size_basis %||% basis)[1]
+        pgl <- suppressWarnings(as.numeric(rect$panel_common_left %||% NA_real_)[1])
+        pgt <- suppressWarnings(as.numeric(rect$panel_common_top %||% NA_real_)[1])
+        pgr <- suppressWarnings(as.numeric(rect$panel_common_right %||% NA_real_)[1])
+        pgb <- suppressWarnings(as.numeric(rect$panel_common_bottom %||% NA_real_)[1])
         agl <- suppressWarnings(as.numeric(rect$axis_common_left %||% NA_real_)[1])
         agt <- suppressWarnings(as.numeric(rect$axis_common_top %||% NA_real_)[1])
         agr <- suppressWarnings(as.numeric(rect$axis_common_right %||% NA_real_)[1])
         agb <- suppressWarnings(as.numeric(rect$axis_common_bottom %||% NA_real_)[1])
         sig <- paste(id, rect$key %||% "", rect_basis, round(bw, 1), round(bh, 1), round(sc, 4), round(vw, 1), round(vh, 1),
+                     round(pgl, 1), round(pgt, 1), round(pgr, 1), round(pgb, 1),
                      round(agl, 1), round(agt, 1), round(agr, 1), round(agb, 1), sep = "|")
         if (!exists(sig, envir = diag_figure_size_basis_seen, inherits = FALSE)) {
           assign(sig, TRUE, envir = diag_figure_size_basis_seen)
@@ -721,7 +726,9 @@
               " basis=", if (is.finite(bw)) round(bw, 1) else "NA", "x", if (is.finite(bh)) round(bh, 1) else "NA",
               " scale=", if (is.finite(sc)) round(sc, 4) else "NA",
               " visual=", if (is.finite(vw)) round(vw, 1) else "NA", "x", if (is.finite(vh)) round(vh, 1) else "NA",
-              if (identical(rect_basis, "axis") && all(is.finite(c(agl, agt, agr, agb)))) {
+              if (identical(rect_basis, "panel_auto") && all(is.finite(c(pgl, pgt, pgr, pgb)))) {
+                paste0(" panel_gutter=", round(pgl, 1), ",", round(pgt, 1), ",", round(pgr, 1), ",", round(pgb, 1))
+              } else if (identical(rect_basis, "axis") && all(is.finite(c(agl, agt, agr, agb)))) {
                 paste0(" shared_gutter=", round(agl, 1), ",", round(agt, 1), ",", round(agr, 1), ",", round(agb, 1))
               } else ""
             ), id = id
@@ -865,9 +872,9 @@
         "[", if (identical(figure_requested_layout_mode(), "free")) "Free" else "Row", "] ",
         if (identical(figure_requested_size_mode(), "auto")) paste0("[Canvas Auto: ", switch(figure_requested_autofit_policy(), live="常時追従", manual="手動更新", lock="固定", "常時追従"), "]") else "[Canvas Fixed]",
         if (identical(figure_requested_size_mode(), "auto")) paste0(
-          " [基準: ", switch(figure_requested_size_basis(), plot = "Plot", facet = "Facet", axis = "軸ラベル", axis_legend = "軸＋凡例", "Plot"), "]"
+          " [基準: ", switch(figure_requested_size_basis(), panel_auto = "Plot panel自動整列", plot = "Plot panelのみ", axis_legend = "軸＋凡例（旧方式）", "Plot panel自動整列"), "]"
         ) else "",
-        if (identical(figure_requested_title_align(), "row_top")) " [Graph title: Row上端揃え]" else ""
+        ""
       )
     } else {
       paste0("未準備sourceがあります（Graph ", loaded_n, "/", length(ids), "・Asset ", asset_n, "/", length(asset_ids), "）")

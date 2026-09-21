@@ -117,7 +117,7 @@ compute_plot_data <- function() {
       if (length(existing_levels)) {
         sl <- existing_levels
       } else {
-        sl <- style_levels()
+        sl <- get_saved_order("display", cvar_plot, observed_style)
         if (length(sl) == 0L) {
           sl <- observed_style
         } else {
@@ -143,7 +143,9 @@ compute_plot_data <- function() {
       if (v %in% already_ordered_vars && is.factor(d[[v]])) next
       obs <- unique(as.character(d[[v]]))
       obs <- obs[!is.na(obs)]
-      d[[v]] <- factor(as.character(d[[v]]), levels = obs)
+      disp <- get_saved_order("display", v, obs)
+      if (!length(disp)) disp <- obs
+      d[[v]] <- factor(as.character(d[[v]]), levels = disp)
     }
 
     # Facetは専用順序を使う。ただし同じ列が先にX/Group/Color/Linetype/Shape

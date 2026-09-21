@@ -23,11 +23,59 @@ graph_sample_data_text <- function() {
   )
 }
 
+
+# Column-name validation shared by paste parsing, Mapping defaults and replay.
+# A transient malformed paste can contain blank or duplicated headers; those
+# names are not safe selectInput values and must never reach data[character]
+# lookups.  Keep this pure so every caller can fail softly instead of tearing
+# down a Shiny observer/session.
+graph_data_column_name_status <- function(data) {
+  if (!is.data.frame(data)) {
+    return(list(valid = FALSE, usable = character(0), message = "データ形式を確認してください。"))
+  }
+
+  nm <- names(data)
+  if (is.null(nm) || length(nm) != ncol(data)) nm <- rep("", ncol(data))
+  nm <- as.character(nm)
+  blank <- is.na(nm) | !nzchar(trimws(nm))
+  duplicated_name <- duplicated(nm) | duplicated(nm, fromLast = TRUE)
+  duplicated_name[blank] <- FALSE
+
+  usable <- nm[!blank & !duplicated_name]
+  message <- NULL
+  if (any(blank)) {
+    message <- "列名が空欄の列があります。貼り付けたデータのヘッダー行を確認してください。"
+  } else if (any(duplicated_name)) {
+    dup <- unique(nm[duplicated_name])
+    message <- paste0(
+      "同じ列名が複数あります（", paste(dup, collapse = ", "),
+      "）。列名を一意にしてから貼り直してください。"
+    )
+  }
+
+  list(
+    valid = is.null(message),
+    usable = usable,
+    message = message,
+    blank = blank,
+    duplicated = duplicated_name
+  )
+}
+
+graph_usable_column_names <- function(data) {
+  st <- graph_data_column_name_status(data)
+  if (!is.data.frame(data) || !length(st$usable)) return(character(0))
+  st$usable
+}
+
 # Pure helper shared by the reshape UI.
 graph_default_reshape_columns <- function(data) {
   if (!is.data.frame(data) || !ncol(data)) return(character(0))
-  cols <- names(data)
-  numeric_cols <- cols[vapply(data, is.numeric, logical(1))]
+  cols <- graph_usable_column_names(data)
+  if (!length(cols)) return(character(0))
+  numeric_flags <- vapply(data, is.numeric, logical(1))
+  all_names <- as.character(names(data) %||% rep("", ncol(data)))
+  numeric_cols <- unique(all_names[numeric_flags & all_names %in% cols])
   defaults <- setdiff(
     numeric_cols,
     c("ID", "Id", "id", "Subject", "subject", "SubjectID", "subject_id")
@@ -50,8 +98,17 @@ graph_default_mapping_for_data <- function(data) {
     ))
   }
 
-  cols <- names(data)
-  numeric_cols <- cols[vapply(data, is.numeric, logical(1))]
+  cols <- graph_usable_column_names(data)
+  if (!length(cols)) {
+    return(list(
+      x = "", y = "", color = "", linetype = "__color__", shape = "__color__",
+      id = "", facet = "", position = "",
+      external_error = "", external_ymin = "", external_ymax = ""
+    ))
+  }
+  all_names <- as.character(names(data) %||% rep("", ncol(data)))
+  numeric_flags <- vapply(data, is.numeric, logical(1))
+  numeric_cols <- unique(all_names[numeric_flags & all_names %in% cols])
   id_candidates <- cols[tolower(cols) %in% c(
     "id", "subject", "subjectid", "subject_id",
     "rat", "ratid", "rat_id", "rowid", ".rowid"
@@ -99,8 +156,12 @@ graph_default_mapping_for_data <- function(data) {
   named_factor_candidates <- non_id_cols[
     tolower(non_id_cols) %in% factor_like_names & non_id_cols != default_y
   ]
-  categorical_candidates <- non_id_cols[
-    !vapply(data[non_id_cols], is.numeric, logical(1)) & non_id_cols != default_y
+  non_id_positions <- which(all_names %in% non_id_cols)
+  categorical_candidates <- unique(all_names[
+    non_id_positions[!numeric_flags[non_id_positions]]
+  ])
+  categorical_candidates <- categorical_candidates[
+    categorical_candidates %in% non_id_cols & categorical_candidates != default_y
   ]
 
   default_x <- if ("Time" %in% cols && !identical("Time", default_y)) {

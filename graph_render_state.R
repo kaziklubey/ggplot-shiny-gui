@@ -54,7 +54,7 @@ graph_render_state_apply_semantics <- function(state) {
 graph_render_state <- function(state) {
   if (is.null(state) || !is.list(state)) return(state)
   out <- graph_render_state_apply_semantics(state)
-  for (nm in c("version", "schema_version", "app", "project_name", "export", "statistics_recipes", "ui_snapshot")) {
+  for (nm in c("version", "schema_version", "app", "project_name", "export", "statistics_recipes", "statistics_selected_id", "ui_snapshot")) {
     out[[nm]] <- NULL
   }
 

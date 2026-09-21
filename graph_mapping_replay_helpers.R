@@ -10,7 +10,8 @@ graph_replay_mapping_plan <- function(cfg) {
     )
     if (!is.data.frame(raw) || ncol(raw) < 2L) return(NULL)
 
-    raw_cols <- names(raw)
+    raw_cols <- graph_usable_column_names(raw)
+    if (length(raw_cols) < 2L) return(NULL)
     reshape_cols <- as.character(r$columns %||% character(0))
     reshape_cols <- reshape_cols[reshape_cols %in% raw_cols]
     recipe <- graph_plot_data_transform_recipe(
@@ -25,8 +26,10 @@ graph_replay_mapping_plan <- function(cfg) {
       error = function(e) NULL
     )
     d <- if (is.list(transformed) && is.data.frame(transformed$data)) transformed$data else raw
-    cols <- names(d)
-    numeric_cols <- cols[vapply(d, is.numeric, logical(1))]
+    cols <- graph_usable_column_names(d)
+    all_names <- as.character(names(d) %||% rep("", ncol(d)))
+    numeric_flags <- vapply(d, is.numeric, logical(1))
+    numeric_cols <- unique(all_names[numeric_flags & all_names %in% cols])
     defaults <- graph_default_mapping_for_data(d)
 
     choose <- function(value, choices, fallback = "", specials = character(0), allow_empty = FALSE) {

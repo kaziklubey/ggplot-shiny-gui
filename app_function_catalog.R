@@ -43,6 +43,8 @@ app_function_catalog <- function() {
       graph_apply_data_transform = list(kind = "pure dispatcher", input = "data + recipe", output = "transform result"),
       graph_default_reshape_columns = list(kind = "pure UI/data default", input = "data.frame", output = "default reshape columns"),
       graph_default_mapping_for_data = list(kind = "pure UI/data default", input = "data.frame", output = "default Mapping"),
+      graph_data_column_name_status = list(kind = "pure data validation", input = "data.frame", output = "column-name validity/status"),
+      graph_usable_column_names = list(kind = "pure data validation", input = "data.frame", output = "safe unique nonblank column names"),
       graph_state_materialize_dynamic_style_defaults = list(kind = "pure GraphState style migration", input = "GraphState + prepared data", output = "schema-4 GraphState with deterministic Style defaults"),
       graph_state_prepare_replay_snapshot = list(kind = "pure GraphState migration", input = "GraphState", output = "GraphState with replayable UI snapshot + current style schema")
     ),
@@ -50,7 +52,9 @@ app_function_catalog <- function() {
       normalize_stats_recipe = list(kind = "analysis-state canonicalizer", input = "saved Analysis recipe", output = "canonical recipe"),
       stats_request_restore_barrier = list(kind = "Statistics restore barrier", input = "Analysis id + restore token + attempt", output = "browser round-trip ACK request"),
       stats_settle_restore_barrier = list(kind = "Statistics restore settle", input = "Analysis id + restore token + attempt", output = "stable release or next bounded barrier"),
+      stats_replace_graph_context = list(kind = "Statistics Graph-switch boundary", input = "target Graph recipes + preferred Analysis", output = "replaced persistent Statistics context"),
       stats_capture_recipe_from_inputs = list(kind = "Statistics state adapter", input = "current Analysis recipe + active-type Statistics inputs", output = "updated recipe"),
+      stats_selected_id_for_project = list(kind = "Statistics persistence boundary", input = "current selected Analysis + recipes", output = "Graph-local Analysis id or NULL"),
       stats_recipes_for_project = list(kind = "Statistics persistence boundary", input = "current Analysis state", output = "serializable recipes")
     ),
     shared_style = list(

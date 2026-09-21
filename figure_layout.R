@@ -49,7 +49,7 @@ figure_layout_rects <- function(layout, canvas_w, canvas_h, gap_x = 12, gap_y = 
         label_size = figure_num_or(cell$label_size, 18, 6, 72),
         top_gutter = figure_num_or(cell$top_gutter, 48, 0, 240),
         label_mode = as.character(cell$label_mode %||% "align")[1],
-        label_anchor = as.character(cell$label_anchor %||% "plot_axis")[1],
+        label_anchor = as.character(cell$label_anchor %||% "panel")[1],
         label_x_offset = figure_num_or(cell$label_x_offset, 0, -300, 300),
         label_y_offset = figure_num_or(cell$label_y_offset, 0, -300, 300),
         label_x = figure_num_or(cell$label_x, 0.06, -0.2, 1.2),
@@ -75,7 +75,7 @@ figure_layout_rects <- function(layout, canvas_w, canvas_h, gap_x = 12, gap_y = 
 # Panels do not contribute to the content bounding box.
 figure_auto_outer_margin <- function() 0
 
-figure_size_basis_bbox <- function(source_size = list(), basis = c("plot", "facet", "axis", "axis_legend")) {
+figure_size_basis_bbox <- function(source_size = list(), basis = c("panel_auto", "plot", "facet", "axis", "axis_legend")) {
   basis <- match.arg(basis)
   bbox_valid <- function(x) {
     if (!is.list(x)) return(NULL)
@@ -96,6 +96,7 @@ figure_size_basis_bbox <- function(source_size = list(), basis = c("plot", "face
     facet = source_size$facet_bbox,
     axis = source_size$axis_outer_bbox,
     axis_legend = bbox_union(source_size$axis_outer_bbox, source_size$legend_bbox),
+    panel_auto = source_size$panel_bbox,
     source_size$panel_bbox
   )
   if (is.list(z)) {
@@ -145,6 +146,35 @@ figure_axis_gutter_metrics <- function(source_size = list(), scale = 1) {
     outer_bottom = max(0, bh - axis$bottom) * sc,
     visual_width = bw * sc,
     visual_height = bh * sc
+  )
+}
+
+# v3.73.2.50: practical Figure alignment metrics.
+# The data panel is the invariant. Facet strips, axis labels/ticks and plot
+# titles/captions are treated as surrounding gutters instead of alternative
+# alignment bases. content_outer_bbox intentionally excludes the legend, so
+# ordinary attached legends remain handled by the dedicated legend-slot pass.
+figure_panel_gutter_metrics <- function(source_size = list(), scale = 1) {
+  bb <- function(z) {
+    if (!is.list(z)) return(NULL)
+    v <- suppressWarnings(as.numeric(c(z$left, z$top, z$width, z$height)))
+    if (length(v) != 4L || any(!is.finite(v)) || v[3] <= 0 || v[4] <= 0) return(NULL)
+    list(left=v[1], top=v[2], width=v[3], height=v[4], right=v[1]+v[3], bottom=v[2]+v[4])
+  }
+  panel <- bb(source_size$panel_bbox)
+  core <- bb(source_size$content_outer_bbox)
+  if (is.null(core)) core <- bb(source_size$axis_outer_bbox)
+  if (is.null(panel) || is.null(core)) return(NULL)
+  sc <- suppressWarnings(as.numeric(scale)[1]); if (!is.finite(sc) || sc <= 0) sc <- 1
+  list(
+    left = max(0, panel$left - core$left) * sc,
+    top = max(0, panel$top - core$top) * sc,
+    right = max(0, core$right - panel$right) * sc,
+    bottom = max(0, core$bottom - panel$bottom) * sc,
+    core_left = core$left * sc,
+    core_top = core$top * sc,
+    core_right = core$right * sc,
+    core_bottom = core$bottom * sc
   )
 }
 
@@ -285,7 +315,7 @@ figure_crop_render_geometry <- function(rect, sp, ov = list()) {
   )
 }
 
-figure_natural_graph_size <- function(cell, source_size = NULL, ov = list(), basis = c("plot", "facet", "axis", "axis_legend")) {
+figure_natural_graph_size <- function(cell, source_size = NULL, ov = list(), basis = c("panel_auto", "plot", "facet", "axis", "axis_legend")) {
   # v3.3.70 geometry contract:
   # - source_size$panel_width/panel_height are Graph Axes UI Plot横幅/Plot縦幅
   #   (the axis-enclosed ggplot panel; authoritative plot size).
@@ -356,9 +386,64 @@ figure_natural_graph_size <- function(cell, source_size = NULL, ov = list(), bas
   )
 }
 
+# v3.73.2.51: Auto Figure rows share one horizontal column-track model.
+# A wide attached legend (or any other horizontal decoration) in a lower Row
+# may enlarge its own column, but it must not move the start of the next column
+# relative to Rows above it.  Keep each Graph's natural content placement and
+# absorb the difference as empty space at the right edge of the narrower cell.
+# This is deliberately a layout-only pass: Graph/Figure snapshot ownership and
+# source geometry remain unchanged.
+figure_apply_shared_column_tracks <- function(rects = list(), rows = list(), gap_x = 12, outer_margin = 0) {
+  if (!length(rects) || !length(rows)) return(list(rects=rects, rows=rows, column_widths=numeric()))
+  gx <- suppressWarnings(as.numeric(gap_x)[1]); if (!is.finite(gx) || gx < 0) gx <- 0
+  om <- suppressWarnings(as.numeric(outer_margin)[1]); if (!is.finite(om) || om < 0) om <- 0
+
+  cols <- vapply(rects, function(z) suppressWarnings(as.integer(z$col %||% NA_integer_)[1]), integer(1))
+  widths <- vapply(rects, function(z) suppressWarnings(as.numeric(z$width %||% NA_real_)[1]), numeric(1))
+  ok <- is.finite(cols) & cols >= 1L & is.finite(widths) & widths > 0
+  if (!any(ok)) return(list(rects=rects, rows=rows, column_widths=numeric()))
+
+  max_col <- max(cols[ok])
+  col_widths <- rep(1, max_col)
+  for (cc in seq_len(max_col)) {
+    ww <- widths[ok & cols == cc]
+    if (length(ww) && any(is.finite(ww))) col_widths[cc] <- max(ww[is.finite(ww)], 1)
+  }
+  starts <- om + c(0, head(cumsum(col_widths + gx), -1L))
+
+  rects <- lapply(rects, function(z) {
+    cc <- suppressWarnings(as.integer(z$col %||% NA_integer_)[1])
+    if (!is.finite(cc) || cc < 1L || cc > length(col_widths)) return(z)
+    natural_w <- suppressWarnings(as.numeric(z$width %||% col_widths[cc])[1])
+    if (!is.finite(natural_w) || natural_w <= 0) natural_w <- col_widths[cc]
+    z$column_natural_width <- natural_w
+    z$column_track_width <- col_widths[cc]
+    z$x <- starts[cc]
+    z$width <- col_widths[cc]
+    z
+  })
+
+  rows <- lapply(rows, function(z) {
+    rr <- suppressWarnings(as.integer(z$row %||% NA_integer_)[1])
+    row_cols <- vapply(rects, function(q) {
+      qr <- suppressWarnings(as.integer(q$row %||% NA_integer_)[1])
+      qc <- suppressWarnings(as.integer(q$col %||% NA_integer_)[1])
+      if (is.finite(rr) && is.finite(qr) && rr == qr && is.finite(qc) && qc >= 1L) qc else NA_integer_
+    }, integer(1))
+    row_cols <- row_cols[is.finite(row_cols)]
+    if (!length(row_cols)) return(z)
+    last_col <- max(row_cols)
+    z$width <- sum(col_widths[seq_len(last_col)]) + gx * max(0, last_col - 1L)
+    z$shared_column_tracks <- TRUE
+    z
+  })
+
+  list(rects=rects, rows=rows, column_widths=col_widths)
+}
+
 figure_auto_layout_geometry <- function(layout, source_sizes = list(), overrides = list(),
                                         gap_x = 12, gap_y = 12, outer_margin = figure_auto_outer_margin(),
-                                        size_basis = c("plot", "facet", "axis", "axis_legend"),
+                                        size_basis = c("panel_auto", "plot", "facet", "axis", "axis_legend"),
                                         title_align = c("none", "row_top")) {
   layout <- figure_reindex_layout(layout)
   size_basis <- match.arg(size_basis)
@@ -386,21 +471,25 @@ figure_auto_layout_geometry <- function(layout, source_sizes = list(), overrides
     occupied <- Filter(function(cell) nzchar(as.character(cell$id %||% '')), active_cells)
 
     row_basis <- as.character(layout[[r]]$size_basis %||% "inherit")[1]
-    if (!row_basis %in% c("inherit", "plot", "facet", "axis", "axis_legend")) row_basis <- "inherit"
+    if (!row_basis %in% c("inherit", "panel_auto", "plot", "facet", "axis", "axis_legend")) row_basis <- "inherit"
     effective_basis <- if (identical(row_basis, "inherit")) size_basis else row_basis
 
     sizes <- lapply(active_cells, function(cell) {
       id <- as.character(cell$id %||% '')
       if (!nzchar(id)) return(NULL)
       ov <- figure_apply_slot_label_to_override(figure_override_for(id, overrides), cell)
-      # Axis mode is alignment-by-gutter, not fit-the-whole-axis-box.  Keep the
-      # Graph's plot panel scale authoritative, then reserve a shared axis
-      # gutter within this Row. This prevents multiline titles from shrinking
-      # only the Graph that owns the larger label.
-      base_basis <- if (identical(effective_basis, "axis")) "plot" else effective_basis
+      # panel_auto is the practical alignment contract: scale from the data
+      # panel, then reserve the surrounding non-legend gutters (facet strips,
+      # axes, plot title/subtitle/caption) so the data panels line up. Legacy
+      # axis remains available for old projects, but is no longer the primary UI.
+      base_basis <- if (effective_basis %in% c("panel_auto", "axis")) "plot" else effective_basis
       if (identical(base_basis, "axis_legend") && isTRUE(figure_legend_is_detached(ov))) base_basis <- "axis"
       z <- figure_natural_graph_size(cell, source_sizes[[id]] %||% list(), ov, basis = base_basis)
       if (identical(effective_basis, "axis_legend")) z$size_basis <- "axis_legend"
+      if (identical(effective_basis, "panel_auto")) {
+        z$size_basis <- "panel_auto"
+        z$panel_metrics <- figure_panel_gutter_metrics(source_sizes[[id]] %||% list(), z$scale)
+      }
       if (identical(effective_basis, "axis")) {
         z$size_basis <- "axis"
         z$axis_metrics <- figure_axis_gutter_metrics(source_sizes[[id]] %||% list(), z$scale)
@@ -419,6 +508,43 @@ figure_auto_layout_geometry <- function(layout, source_sizes = list(), overrides
       z$title_metrics <- figure_title_bbox_metrics(source_sizes[[id]] %||% list(), z$scale)
       z
     })
+
+    if (identical(effective_basis, "panel_auto")) {
+      valid_panel <- vapply(sizes, function(z) is.list(z) && is.list(z$panel_metrics), logical(1))
+      if (any(valid_panel)) {
+        common_left <- max(vapply(sizes[valid_panel], function(z) z$panel_metrics$left, numeric(1)), 0)
+        common_top <- max(vapply(sizes[valid_panel], function(z) z$panel_metrics$top, numeric(1)), 0)
+        common_right <- max(vapply(sizes[valid_panel], function(z) z$panel_metrics$right, numeric(1)), 0)
+        common_bottom <- max(vapply(sizes[valid_panel], function(z) z$panel_metrics$bottom, numeric(1)), 0)
+        sizes <- lapply(sizes, function(z) {
+          if (!is.list(z) || !is.list(z$panel_metrics)) return(z)
+          m <- z$panel_metrics
+          pad_l <- max(0, common_left - m$left)
+          pad_t <- max(0, common_top - m$top)
+          pad_r <- max(0, common_right - m$right)
+          pad_b <- max(0, common_bottom - m$bottom)
+          z$content_left <- pad_l
+          z$content_top <- pad_t
+          z$content_width <- z$visual_width
+          z$content_height <- z$visual_height
+          z$width <- pad_l + z$visual_width + pad_r
+          z$height <- z$band + pad_t + z$visual_height + pad_b
+          z$basis_width <- z$graph_width + common_left + common_right
+          z$basis_height <- z$graph_height + common_top + common_bottom
+          # The fixed-canvas fitter centres the selected basis. For panel_auto,
+          # that basis is the common non-legend envelope around the data panel,
+          # so its origin must be shifted from panel-left/top by the shared
+          # gutters instead of keeping the raw panel bbox origin.
+          z$basis_left <- suppressWarnings(as.numeric(z$basis_left %||% 0)[1]) - common_left
+          z$basis_top <- suppressWarnings(as.numeric(z$basis_top %||% 0)[1]) - common_top
+          z$panel_common_left <- common_left
+          z$panel_common_top <- common_top
+          z$panel_common_right <- common_right
+          z$panel_common_bottom <- common_bottom
+          z
+        })
+      }
+    }
 
     if (identical(effective_basis, "axis")) {
       valid_axis <- vapply(sizes, function(z) is.list(z) && is.list(z$axis_metrics), logical(1))
@@ -567,7 +693,7 @@ figure_auto_layout_geometry <- function(layout, source_sizes = list(), overrides
         label_size = figure_num_or(cell$label_size, 18, 6, 72),
         top_gutter = figure_num_or(cell$top_gutter, 48, 0, 240),
         label_mode = as.character(cell$label_mode %||% 'align')[1],
-        label_anchor = as.character(cell$label_anchor %||% 'plot_axis')[1],
+        label_anchor = as.character(cell$label_anchor %||% 'panel')[1],
         label_x_offset = figure_num_or(cell$label_x_offset, 0, -300, 300),
         label_y_offset = figure_num_or(cell$label_y_offset, 0, -300, 300),
         label_x = figure_num_or(cell$label_x, 0.06, -0.2, 1.2),
@@ -593,6 +719,10 @@ figure_auto_layout_geometry <- function(layout, source_sizes = list(), overrides
         content_top = suppressWarnings(as.numeric(sz$content_top %||% NA_real_)[1]),
         content_width = suppressWarnings(as.numeric(sz$content_width %||% NA_real_)[1]),
         content_height = suppressWarnings(as.numeric(sz$content_height %||% NA_real_)[1]),
+        panel_common_left = suppressWarnings(as.numeric(sz$panel_common_left %||% NA_real_)[1]),
+        panel_common_top = suppressWarnings(as.numeric(sz$panel_common_top %||% NA_real_)[1]),
+        panel_common_right = suppressWarnings(as.numeric(sz$panel_common_right %||% NA_real_)[1]),
+        panel_common_bottom = suppressWarnings(as.numeric(sz$panel_common_bottom %||% NA_real_)[1]),
         axis_common_left = suppressWarnings(as.numeric(sz$axis_common_left %||% NA_real_)[1]),
         axis_common_top = suppressWarnings(as.numeric(sz$axis_common_top %||% NA_real_)[1]),
         axis_common_right = suppressWarnings(as.numeric(sz$axis_common_right %||% NA_real_)[1]),
@@ -620,6 +750,15 @@ figure_auto_layout_geometry <- function(layout, source_sizes = list(), overrides
     return(list(rects = list(), rows = list(), content_width = 1, content_height = 1,
                 canvas_width = 1, canvas_height = 1, outer_margin = outer_margin))
   }
+
+  # Column starts must be Figure-global, not Row-local. Without this pass a
+  # long right-side legend in D can widen only Row 2 column 1 and push E to the
+  # right while B above stays put. Shared tracks make A/D occupy the same column
+  # footprint, so B/E start at exactly the same x coordinate.
+  shared_cols <- figure_apply_shared_column_tracks(rects, rows, gap_x, outer_margin)
+  rects <- shared_cols$rects
+  rows <- shared_cols$rows
+
   content_w <- max(vapply(rows, function(z) z$width, numeric(1)), 1)
   content_h <- sum(vapply(rows, function(z) z$height, numeric(1))) + gap_y * max(0, length(rows) - 1L)
   list(
@@ -706,8 +845,9 @@ figure_override_for <- function(id, overrides = list()) {
   ov$top_gutter <- min(max(ov$top_gutter, 0), 240)
   ov$label_mode <- scalar_chr(ov$label_mode, "align")
   if (!ov$label_mode %in% c("align", "free")) ov$label_mode <- "align"
-  ov$label_anchor <- scalar_chr(ov$label_anchor, "plot_axis")
-  if (!ov$label_anchor %in% c("plot_axis", "plot_left", "cell_left")) ov$label_anchor <- "plot_axis"
+  ov$label_anchor <- scalar_chr(ov$label_anchor, "panel")
+  if (identical(ov$label_anchor, "plot_axis")) ov$label_anchor <- "panel"
+  if (!ov$label_anchor %in% c("panel", "plot_left", "cell_left")) ov$label_anchor <- "panel"
   ov$label_x_offset <- scalar_num(ov$label_x_offset, 0)
   ov$label_y_offset <- scalar_num(ov$label_y_offset, 0)
   ov$label_x <- scalar_num(ov$label_x, 0.06)
@@ -1175,12 +1315,16 @@ figure_label_position <- function(rect, sp, ov) {
     y <- max(2, (figure_label_band(ov) - ov$label_size) / 2)
   } else if (identical(ov$label_anchor, "plot_left")) {
     x <- off$dx + 4
-    y <- max(2, off$dy - ov$label_size - 6)
+    y <- max(2, (figure_label_band(ov) - ov$label_size) / 2)
   } else {
+    # Figure panel labels belong to the Figure slot, not to ggplot title/facet
+    # geometry. Anchor X to the aligned data-panel left edge, but keep Y in the
+    # dedicated label band so A/B/C remain level even when only some Graphs
+    # have facets or plot titles.
     panel_left <- suppressWarnings(as.numeric(sp$panel_left %||% 0))
     if (!is.finite(panel_left)) panel_left <- 0
     x <- off$dx + panel_left
-    y <- max(2, off$dy - ov$label_size - 6)
+    y <- max(2, (figure_label_band(ov) - ov$label_size) / 2)
   }
   x <- x + ov$label_x_offset
   y <- y + ov$label_y_offset
@@ -1248,7 +1392,7 @@ figure_seed_free_geometry <- function(layout, row_rects = list(), min_width = 12
 
 figure_free_layout_geometry <- function(layout, source_sizes = list(), overrides = list(),
                                         canvas_w = 1600, canvas_h = 1000, padding = 24,
-                                        size_basis = c("plot", "facet", "axis", "axis_legend")) {
+                                        size_basis = c("panel_auto", "plot", "facet", "axis", "axis_legend")) {
   layout <- figure_reindex_layout(layout)
   size_basis <- match.arg(size_basis)
   padding <- max(0, suppressWarnings(as.numeric(padding)[1]))
@@ -1259,13 +1403,13 @@ figure_free_layout_geometry <- function(layout, source_sizes = list(), overrides
   max_bottom <- padding
   for (r in seq_along(layout)) {
     row_basis <- as.character(layout[[r]]$size_basis %||% "inherit")[1]
-    eff_basis <- if (row_basis %in% c("plot", "facet", "axis", "axis_legend")) row_basis else size_basis
+    eff_basis <- if (row_basis %in% c("panel_auto", "plot", "facet", "axis", "axis_legend")) row_basis else size_basis
     for (c in seq_along(layout[[r]]$cells)) {
       cell <- layout[[r]]$cells[[c]]
       id <- as.character(cell$id %||% "")
       if (!nzchar(id)) next
       ov <- figure_apply_slot_label_to_override(figure_override_for(id, overrides), cell)
-      natural_basis <- if (identical(eff_basis, "axis")) "plot" else eff_basis
+      natural_basis <- if (eff_basis %in% c("panel_auto", "axis")) "plot" else eff_basis
       if (identical(natural_basis, "axis_legend") && isTRUE(figure_legend_is_detached(ov))) natural_basis <- "axis"
       natural <- figure_natural_graph_size(
         cell, source_sizes[[id]] %||% list(), ov,
@@ -1291,7 +1435,7 @@ figure_free_layout_geometry <- function(layout, source_sizes = list(), overrides
         label_size = figure_num_or(cell$label_size, 18, 6, 72),
         top_gutter = figure_num_or(cell$top_gutter, 48, 0, 240),
         label_mode = as.character(cell$label_mode %||% "align")[1],
-        label_anchor = as.character(cell$label_anchor %||% "plot_axis")[1],
+        label_anchor = as.character(cell$label_anchor %||% "panel")[1],
         label_x_offset = figure_num_or(cell$label_x_offset, 0, -300, 300),
         label_y_offset = figure_num_or(cell$label_y_offset, 0, -300, 300),
         label_x = figure_num_or(cell$label_x, 0.06, -0.2, 1.2),
@@ -1342,12 +1486,12 @@ figure_crop_css <- function(ov) {
 # Build the Row's natural, basis-normalised footprints first (the same contract
 # used by Auto Canvas), then apply one secondary fit factor to every occupied
 # Graph in that Row so those footprints fit their fixed slots. The selected
-# Plot/Facet/Axis basis therefore remains comparable across Graphs; outside
+# panel/basis contract therefore remains comparable across Graphs; outside
 # decorations only consume/reserve footprint around that basis.
 figure_fixed_basis_layout_geometry <- function(layout, source_sizes = list(), overrides = list(),
                                                canvas_w = 1600, canvas_h = 1000,
                                                gap_x = 12, gap_y = 12,
-                                               size_basis = c("plot", "facet", "axis", "axis_legend"),
+                                               size_basis = c("panel_auto", "plot", "facet", "axis", "axis_legend"),
                                                title_align = c("none", "row_top")) {
   layout <- figure_reindex_layout(layout)
   size_basis <- match.arg(size_basis)
@@ -1359,7 +1503,7 @@ figure_fixed_basis_layout_geometry <- function(layout, source_sizes = list(), ov
   }
 
   # Auto geometry is used only as a side-effect-free normalizer: it converts
-  # Plot/Facet/Axis basis, axis gutters, and side-legend reservations into one
+  # panel/basis geometry, shared gutters, and side-legend reservations into one
   # natural footprint for every occupied slot. Fixed Canvas keeps its own slot
   # rectangles and only borrows these normalized dimensions.
   natural_geo <- figure_auto_layout_geometry(
@@ -1388,7 +1532,7 @@ figure_fixed_basis_layout_geometry <- function(layout, source_sizes = list(), ov
   # Equal fixed slots with the same basis/Graph target form one sizing cohort,
   # even when they live in different Rows. This is the key F1-4h invariant:
   # a right-side legend may lower the common fit scale for that cohort, but it
-  # cannot make only its own Plot/Facet/Axis basis smaller than its peers.
+  # cannot make only its own aligned panel/basis smaller than its peers.
   rect_group <- list()
   fit_candidates <- list()
   for (ii in seq_along(fixed_rects)) {
@@ -1420,9 +1564,9 @@ figure_fixed_basis_layout_geometry <- function(layout, source_sizes = list(), ov
       cc <- c(aw / nw, ah / nh_graph)
 
       # F1-4i: when a fixed slot requests centered alignment, fit against the
-      # selected size-basis center rather than only the asymmetric visual box.
+      # selected alignment-basis center rather than only the asymmetric visual box.
       # This prevents a right legend from shifting the data panel/vertical axis
-      # even though Plot/Facet/Axis basis sizes are already equal.  The extra
+      # even though the aligned basis sizes are already equal.  The extra
       # candidate also guarantees the whole decorated footprint still fits.
       nat_content_left <- num(nr$content_left, 0)
       nat_content_top <- num(nr$content_top, 0)
@@ -1481,7 +1625,7 @@ figure_fixed_basis_layout_geometry <- function(layout, source_sizes = list(), ov
     nat_content_top <- num(nr$content_top, 0)
 
     # Edge modes continue to keep the complete decorated footprint inside the
-    # slot.  Center mode is basis-aware: center the Plot/Facet/Axis bbox itself,
+    # slot.  Center mode is basis-aware: center the selected alignment bbox itself,
     # not the full visual box.  The cohort fit above has already reserved enough
     # room for asymmetric axes/titles/outside legends, so this needs no clipping.
     if (identical(as.character(ov$align_h %||% "center")[1], "center")) {
@@ -1524,7 +1668,8 @@ figure_fixed_basis_layout_geometry <- function(layout, source_sizes = list(), ov
     fr$content_height <- max(1, visual_h * fit_scale)
     fr$fixed_basis_fit_scale <- fit_scale
     fr$fixed_basis_fit_group <- gkey
-    for (nm in c("axis_common_left","axis_common_top","axis_common_right","axis_common_bottom",
+    for (nm in c("panel_common_left","panel_common_top","panel_common_right","panel_common_bottom",
+                 "axis_common_left","axis_common_top","axis_common_right","axis_common_bottom",
                  "legend_common_left","legend_common_top","legend_common_right","legend_common_bottom")) {
       vv <- num(nr[[nm]], NA_real_)
       if (is.finite(vv)) fr[[nm]] <- vv * fit_scale

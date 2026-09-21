@@ -10,7 +10,8 @@ figure_apply_layout_edit_state <- function(st, event, valid_graph_ids = characte
 
   if (identical(typ, "row_basis")) {
     x <- as.character(event$value %||% "inherit")[1]
-    if (!x %in% c("inherit", "plot", "facet", "axis", "axis_legend")) x <- "inherit"
+    if (x %in% c("facet", "axis")) x <- "panel_auto"
+    if (!x %in% c("inherit", "panel_auto", "plot", "axis_legend")) x <- "inherit"
     old <- as.character(st[[r]]$size_basis %||% "inherit")[1]
     if (!identical(old, x)) {
       st[[r]]$size_basis <- x

@@ -192,25 +192,28 @@
       if (!isTRUE(restore_release_scheduled)) restoring_style_state(FALSE)
     }, add = TRUE)
 
-    if (!is.null(cfg$color_styles)) color_styles(parse_style_tree(cfg$color_styles, "color"))
-    if (!is.null(cfg$linetype_styles)) linetype_styles(parse_style_tree(cfg$linetype_styles, "linetype"))
-    if (!is.null(cfg$shape_styles)) shape_styles(parse_style_tree(cfg$shape_styles, "shape"))
+    # Persistent single Editor: target GraphState owns these trees completely.
+    # Replace (rather than merge) them on every replay so an empty/new Graph can
+    # never inherit branches from the previously visited Graph.
+    color_styles(parse_style_tree(cfg$color_styles %||% list(), "color"))
+    linetype_styles(parse_style_tree(cfg$linetype_styles %||% list(), "linetype"))
+    shape_styles(parse_style_tree(cfg$shape_styles %||% list(), "shape"))
     if (is.null(cfg$color_styles) && !is.null(cfg$group_styles) && length(cfg$group_styles)) {
       mv <- legacy_mapping_vars(NULL)
       migrate_legacy_group_styles(cfg$group_styles, mv$color, mv$linetype, mv$shape)
     }
 
+    ss <- list()
     if (!is.null(cfg$series_styles) && length(cfg$series_styles)) {
-      ss <- list()
       for (nm in names(cfg$series_styles)) {
         st <- cfg$series_styles[[nm]]
         ss[[nm]] <- list(color = as.character(st$color %||% "#333333"))
       }
-      series_styles(ss)
     }
+    series_styles(ss)
 
+    rs <- list()
     if (!is.null(cfg$regression_styles) && length(cfg$regression_styles)) {
-      rs <- list()
       for (nm in names(cfg$regression_styles)) {
         st <- cfg$regression_styles[[nm]]
         rs[[nm]] <- list(
@@ -219,37 +222,39 @@
           width = as.numeric(json_chr(st$width, "0.9"))
         )
       }
-      regression_styles(rs)
     }
+    regression_styles(rs)
 
+    rc <- list()
     if (!is.null(cfg$raw_group_colors) && length(cfg$raw_group_colors)) {
       # v3.1+: variable -> level -> color. Legacy flat level -> color is migrated.
       first_val <- cfg$raw_group_colors[[1]]
       if (is.list(first_val) && !is.null(names(first_val))) {
-        raw_group_colors(parse_style_tree(cfg$raw_group_colors, "color"))
+        rc <- parse_style_tree(cfg$raw_group_colors, "color")
       } else {
-        mv <- legacy_mapping_vars(NULL); rc <- list(); br <- list()
+        mv <- legacy_mapping_vars(NULL); br <- list()
         for (nm in names(cfg$raw_group_colors)) br[[nm]] <- as.character(unlist(cfg$raw_group_colors[[nm]])[[1]])
         if (nzchar(mv$color)) rc[[mv$color]] <- br
-        raw_group_colors(rc)
       }
     }
+    raw_group_colors(rc)
 
+    os <- list(x = list(), group = list(), display = list(), facet = list())
     if (!is.null(cfg$orders)) {
-      os <- list(x = list(), group = list(), facet = list())
       if (!is.null(cfg$orders$x)) os$x <- cfg$orders$x
       if (!is.null(cfg$orders$group)) os$group <- cfg$orders$group
+      if (!is.null(cfg$orders$display)) os$display <- cfg$orders$display
       if (!is.null(cfg$orders$facet)) os$facet <- cfg$orders$facet
-      order_state(os)
     }
+    order_state(os)
 
+    lt <- list()
     if (!is.null(cfg$legend_titles)) {
-      lt <- list()
       for (nm in names(cfg$legend_titles)) {
         lt[[nm]] <- json_chr(cfg$legend_titles[[nm]], "")
       }
-      legend_titles(lt)
     }
+    legend_titles(lt)
 
     if (!is.null(cfg$legend_item_labels)) {
       li <- list()
@@ -266,16 +271,16 @@
       legend_item_labels(list())
     }
 
+    ll <- list()
     if (!is.null(cfg$level_labels)) {
-      ll <- list()
       for (vn in names(cfg$level_labels)) {
         branch <- cfg$level_labels[[vn]]
         bb <- list()
         for (lv in names(branch)) bb[[lv]] <- json_chr(branch[[lv]], lv)
         ll[[vn]] <- bb
       }
-      level_labels(ll)
     }
+    level_labels(ll)
 
     ax <- cfg$axes
     if (!is.null(ax)) {

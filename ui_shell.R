@@ -98,6 +98,16 @@ div(
         )
       ),
       div(
+        class = "project-window-launch",
+        tags$button(
+          id = "open_project_window_all",
+          type = "button",
+          class = "btn btn-default action-button",
+          title = "現在のProjectを残したまま、別のProjectを操作できる新しいウィンドウを開きます。",
+          "Projectウィンドウを追加 ↗"
+        )
+      ),
+      div(
         class = "project-save-note",
         tags$small(
           "※ 「保存先を記憶する」をONにすると、対応ブラウザではこのProjectの上書き保存先をProject ID単位で記憶します。Project名を変更しても保存先は維持されます。ファイルを移動・削除した場合や権限が失われた場合は、次回の上書き保存時に保存先を再選択します。"

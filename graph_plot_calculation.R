@@ -67,7 +67,29 @@
                                  spacing = 1.0, slot_name = ".slot__") {
       z <- add_interaction_key(raw, slot_vars, slot_name)
       z[[slot_name]] <- as.character(z[[slot_name]])
-      global_slots <- unique(z[[slot_name]])
+
+      # Derive slot order from factor / Mapping order instead of raw row order.
+      # slot_vars is built as horizontal-position factor first, Color/Fill next,
+      # so the horizontal factor is the primary left-to-right grouping.
+      if (length(slot_vars)) {
+        combo_cols <- unique(c(slot_vars, slot_name))
+        slot_table <- z[, combo_cols, drop = FALSE]
+        slot_table <- slot_table[!duplicated(slot_table[[slot_name]]), , drop = FALSE]
+        rank_cols <- character(0)
+        for (i in seq_along(slot_vars)) {
+          v <- slot_vars[[i]]
+          lv <- levels(raw[[v]])
+          if (is.null(lv) || !length(lv)) lv <- unique(as.character(raw[[v]]))
+          lv <- lv[!is.na(lv)]
+          rn <- paste0(".slot_rank__", i)
+          slot_table[[rn]] <- match(as.character(slot_table[[v]]), lv)
+          slot_table[[rn]][is.na(slot_table[[rn]])] <- length(lv) + seq_len(sum(is.na(slot_table[[rn]])))
+          rank_cols <- c(rank_cols, rn)
+        }
+        global_slots <- slot_table[[slot_name]][do.call(order, lapply(rank_cols, function(nm) slot_table[[nm]]))]
+      } else {
+        global_slots <- unique(z[[slot_name]])
+      }
       global_slots <- global_slots[!is.na(global_slots)]
 
       key_vars <- unique(c(xcol, if (nzchar(facetcol)) facetcol else "", slot_name))

@@ -1386,7 +1386,7 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
               ),
               p(
                 class = "help-block",
-                "凡例の表示/非表示はPlot本体のMappingを変更しません。線種と点形状が同じ変数を表す場合だけ、統合設定で1つの凡例にまとめます。"
+                "凡例の表示/非表示はPlot本体のMappingを変更しません。凡例項目の順序は Mapping → Category order の条件順に連動します。同じ変数が横並び / 横ずらし要因なら、左右順と凡例順を共通化します。線種と点形状が同じ変数を表す場合だけ、統合設定で1つの凡例にまとめます。"
               ),
               sliderInput(
                 "legend_key_width",

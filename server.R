@@ -340,10 +340,11 @@ shinyServer(function(input, output, session) {
   figure_requested_height <- reactiveVal(1000)
   # v3.3.68: auto-fit derives the effective Figure canvas from occupied Graph content.
   figure_requested_size_mode <- reactiveVal("auto")
-  # Measured bbox used as the global Figure alignment basis.
-  figure_requested_size_basis <- reactiveVal("plot")
-  # Optional Row-level visual alignment for Graph titles. This is independent
-  # from the Plot/Facet/Axis sizing basis and never changes GraphState.
+  # Figure alignment policy. panel_auto keeps the data panel authoritative and
+  # treats facet/axis/title/caption geometry as surrounding gutters.
+  figure_requested_size_basis <- reactiveVal("panel_auto")
+  # Compatibility owner for older saved projects. v3.73.2.50 retires Graph-title
+  # alignment from the active UI; Figure panel labels have an independent band.
   figure_requested_title_align <- reactiveVal("none")
   # v3.4.0-alpha1: Row layout remains the stable default; free layout uses the
   # same cell identities and persists independent free-canvas geometry.

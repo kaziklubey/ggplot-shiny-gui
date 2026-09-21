@@ -6,9 +6,11 @@
   project_settings <- reactive({
     if (isTRUE(graph_state_replay_active())) return(graph_state_replay_target())
     # Recipe add/delete/rename lives in stats_recipes(), while selected Analysis
-    # fields are ordinary Shiny inputs. Keep an explicit dependency so the
-    # canonical GraphState includes the current reproducible recipe collection.
+    # fields are ordinary Shiny inputs. Keep explicit dependencies so the
+    # canonical GraphState includes both the reproducible recipe collection and
+    # the Graph-local currently selected Analysis.
     stats_recipes()
+    stats_selected_id()
 
     list(
       version = "3.3.42",
@@ -59,6 +61,7 @@
       ),
       style = style_settings(),
       statistics_recipes = stats_recipes_for_project(),
+      statistics_selected_id = stats_selected_id_for_project(),
       ui_snapshot = graph_capture_editor_ui_snapshot()
     )
   })

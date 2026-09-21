@@ -36,6 +36,16 @@
   # recipe本体だけ保持し、Statisticsタブを開いた時にUIへ反映する。
   pending_stats_ui_restore <- reactiveVal(NULL)
 
+  # While GraphState replay or lazy Analysis restore is in progress, the saved
+  # target recipe is authoritative. Browser inputs can still contain values
+  # from the previously attached Graph for one or more client flushes.
+  stats_canonical_context_active <- function() {
+    pending_id <- pending_stats_ui_restore()
+    isTRUE(graph_state_replay_active()) ||
+      isTRUE(stats_restoring()) ||
+      (!is.null(pending_id) && length(pending_id) == 1L && nzchar(pending_id))
+  }
+
   stats_new_id <- function() {
     paste0("analysis_", as.integer(Sys.time()), "_", sample.int(99999, 1))
   }
@@ -190,7 +200,13 @@
   }
 
   stats_custom_parsed_data <- reactive({
-    txt <- input$stats_custom_data %||% ""
+    canonical_context <- isTRUE(stats_canonical_context_active())
+    r <- if (isTRUE(canonical_context)) stats_selected_recipe() else isolate(stats_selected_recipe())
+    txt <- if (isTRUE(canonical_context)) {
+      r$custom_data %||% ""
+    } else {
+      input$stats_custom_data %||% r$custom_data %||% ""
+    }
     shiny::validate(shiny::need(nzchar(trimws(txt)), "別データを貼り付けてください。"))
 
     d <- tryCatch(
@@ -208,7 +224,14 @@
   })
 
   stats_base_data <- reactive({
-    if (identical(input$stats_data_source %||% "graph", "custom")) {
+    canonical_context <- isTRUE(stats_canonical_context_active())
+    r <- if (isTRUE(canonical_context)) stats_selected_recipe() else isolate(stats_selected_recipe())
+    source_mode <- if (isTRUE(canonical_context)) {
+      r$data_source %||% "graph"
+    } else {
+      input$stats_data_source %||% r$data_source %||% "graph"
+    }
+    if (identical(source_mode, "custom")) {
       return(stats_custom_parsed_data())
     }
 
@@ -229,7 +252,7 @@
     # can still contain the preceding Analysis for several flushes.  In this
     # guarded phase the recipe collection is allowed to be a reactive source so
     # an Analysis switch can immediately rebuild from its canonical recipe.
-    if (isTRUE(stats_restoring())) {
+    if (isTRUE(stats_canonical_context_active())) {
       r <- stats_selected_recipe()
       return(graph_normalize_data_transform_recipe(list(
         type = r$transform_type %||% "as_is",
@@ -303,7 +326,7 @@
     r <- if (!is.null(rid) && rid %in% names(rr)) rr[[rid]] else stats_default_recipe()
     saved <- as.character(r$transform_columns %||% character(0))
     current <- isolate(input$stats_transform_columns)
-    selected <- if (isTRUE(isolate(stats_restoring()))) {
+    selected <- if (isTRUE(isolate(stats_canonical_context_active()))) {
       saved[saved %in% cols]
     } else if (!is.null(current) && length(current)) {
       as.character(current)[as.character(current) %in% cols]
@@ -332,6 +355,10 @@
     }
 
     if (is.null(selected)) selected <- isolate(stats_selected_id())
+    # Graph/Analysis replay owns this select value. Freeze the corresponding
+    # browser echo so an updateSelectInput() message cannot be mistaken for a
+    # user Analysis switch by the persistent Editor.
+    freezeReactiveValue(input, "stats_selected")
     updateSelectInput(session, "stats_selected", choices = choices, selected = selected)
   }
 
@@ -373,9 +400,9 @@
 
   observeEvent(input$stats_factor_n, {
     # Normal user operation: radioButtons -> dynamic ANOVA UI.
-    # During recipe restoration, load_stats_recipe() already sets the correct
-    # R-side value synchronously; ignore transient browser values until restore ends.
-    if (isTRUE(isolate(stats_restoring()))) return()
+    # During GraphState/recipe restoration the R-side target is authoritative;
+    # ignore transient browser values until the owning replay has ended.
+    if (isTRUE(isolate(stats_canonical_context_active()))) return()
     x <- input$stats_factor_n %||% "two"
     if (!x %in% c("one", "two", "three")) x <- "two"
     stats_ui_factor_n(x)
@@ -476,7 +503,7 @@
       # Analysis切替中は、直前Analysisのinput値が一時的に残っているため
       # current inputを優先すると水準数が別Analysisへ混入する。
       # 復元中は必ずrecipe側の保存値を優先する。
-      if (isTRUE(isolate(stats_restoring()))) {
+      if (isTRUE(isolate(stats_canonical_context_active()))) {
         sv <- suppressWarnings(as.numeric(saved))
         if (length(sv) == 1L && is.finite(sv)) return(sv)
         return(fallback)
@@ -787,10 +814,10 @@
       updateSelectInput(session, paste0("stats_", nm), selected = r[[nm]] %||% "")
     }
 
-    if (isTRUE(include_cor_levels) && length(r$cor_levels %||% character(0))) {
+    if (isTRUE(include_cor_levels)) {
       updateCheckboxGroupInput(
         session, "stats_cor_levels",
-        selected = as.character(unlist(r$cor_levels, use.names = FALSE))
+        selected = as.character(unlist(r$cor_levels %||% character(0), use.names = FALSE))
       )
     }
     invisible(TRUE)
@@ -964,6 +991,94 @@
     invisible(TRUE)
   }
 
+
+  # The Statistics controls live inside the one persistent Graph Editor, so a
+  # Graph switch must replace their transient context just like Mapping/Style.
+  # In particular, an in-flight Analysis restore from the previous Graph must
+  # be cancelled explicitly; otherwise its token becomes stale while
+  # stats_restoring() can remain TRUE indefinitely.
+  stats_cancel_restore <- function(reason = "graph-context-replace") {
+    had_restore <- isTRUE(isolate(stats_restoring())) ||
+      !is.null(isolate(stats_restore_token())) ||
+      !is.null(isolate(stats_restore_barrier_state()))
+    old_id <- isolate(stats_selected_id())
+
+    stats_restore_token(NULL)
+    stats_restore_barrier_state(NULL)
+    stats_post_restore_baseline(NULL)
+    stats_restoring(FALSE)
+
+    if (isTRUE(had_restore)) {
+      diag(
+        "STATS-RESTORE-CANCEL",
+        paste0("reason=", reason, " previous_id=", as.character(old_id %||% "<none>"))
+      )
+    }
+    invisible(had_restore)
+  }
+
+  stats_clear_browser_controls <- function() {
+    empty <- stats_default_recipe(name = "")
+    stats_ui_factor_n("two")
+    stats_restore_static_controls(empty)
+    stats_restore_dynamic_controls(empty, include_cor_levels = TRUE)
+    invisible(TRUE)
+  }
+
+  # Replace all Statistics ownership for the target Graph in one focused
+  # boundary. The actual data-dependent recipe UI is restored lazily after the
+  # outer GraphState replay completes, so select choices are always derived from
+  # the target Graph rather than the previous one.
+  stats_replace_graph_context <- function(restored = list(), preferred_id = NULL, legacy_reshape = NULL) {
+    restored <- normalize_stats_recipes(restored, legacy_reshape = legacy_reshape)
+
+    stats_cancel_restore("graph-switch")
+    pending_stats_ui_restore(NULL)
+    stats_recipes(restored)
+
+    ids <- names(restored)
+    preferred <- as.character(unlist(preferred_id %||% "", recursive = TRUE, use.names = FALSE))
+    preferred <- if (length(preferred)) preferred[[1]] else ""
+    target_id <- if (nzchar(preferred) && preferred %in% ids) {
+      preferred
+    } else if (length(ids)) {
+      ids[[1]]
+    } else {
+      NULL
+    }
+
+    stats_selected_id(target_id)
+    if (!is.null(target_id)) {
+      factor_n <- restored[[target_id]]$factor_n %||% "two"
+      if (!factor_n %in% c("one", "two", "three")) factor_n <- "two"
+      stats_ui_factor_n(factor_n)
+      pending_stats_ui_restore(target_id)
+    } else {
+      # No Analysis belongs to the target Graph. Clear the persistent browser
+      # controls as well as the canonical recipe collection so the previous
+      # Graph's settings/result cannot remain visible as a false carry-over.
+      stats_clear_browser_controls()
+    }
+
+    refresh_stats_choices(target_id)
+    diag(
+      "STATS-GRAPH-CONTEXT",
+      paste0(
+        "replace recipes=", length(restored),
+        " selected=", as.character(target_id %||% "<none>"),
+        " preferred=", if (nzchar(preferred)) preferred else "<none>"
+      )
+    )
+    invisible(target_id)
+  }
+
+  stats_selected_id_for_project <- function() {
+    id <- stats_selected_id()
+    rr <- stats_recipes()
+    if (is.null(id) || length(id) != 1L || !nzchar(id) || !id %in% names(rr)) return(NULL)
+    as.character(id)[1]
+  }
+
   stats_capture_common_inputs <- function(r) {
     nm <- trimws(input$stats_name %||% r$name %||% "Analysis")
     if (!nzchar(nm)) nm <- "Analysis"
@@ -1037,6 +1152,7 @@
   }
 
   save_current_stats_recipe <- function() {
+    if (isTRUE(isolate(graph_state_replay_active()))) return(invisible(FALSE))
     if (isTRUE(isolate(stats_restoring()))) return(invisible(FALSE))
 
     pending_id <- isolate(pending_stats_ui_restore())
@@ -1137,6 +1253,7 @@
   })
 
   observeEvent(input$stats_selected, {
+    if (isTRUE(isolate(graph_state_replay_active()))) return()
     id <- input$stats_selected %||% ""
     if (!nzchar(id)) return()
     if (identical(id, isolate(stats_selected_id()))) return()
@@ -1194,6 +1311,7 @@
   })
 
   observeEvent(input$stats_name, {
+    if (isTRUE(isolate(graph_state_replay_active()))) return()
     if (isTRUE(stats_restoring())) return()
 
     pending_id <- isolate(pending_stats_ui_restore())
@@ -1221,6 +1339,7 @@
 
   observe({
     req(stats_selected_id())
+    if (isTRUE(graph_state_replay_active())) return()
 
     # Project読込後のlazy restore待ちでは、static UIの初期値を無視する。
     pending_id <- pending_stats_ui_restore()
@@ -1815,11 +1934,20 @@
 
   stats_plot_preview_payload <- reactive({
     req(identical(input$graph_main_tab, "Statistics"))
+    if (isTRUE(graph_state_replay_active())) {
+      return(list(status = "switching", svg = "", width = 600, height = 600))
+    }
     statistics_plot_preview()
   })
 
   output$stats_plot_preview <- renderUI({
     preview <- stats_plot_preview_payload()
+    if (is.list(preview) && identical(preview$status %||% "", "switching")) {
+      return(div(
+        class = "statistics-plot-preview-empty",
+        "Graphを切り替えています…"
+      ))
+    }
     if (!is.list(preview) || !nzchar(preview$svg %||% "")) {
       return(div(
         class = "statistics-plot-preview-empty",
@@ -1852,16 +1980,21 @@
   })
 
   stats_auto_result <- reactive({
-    req(stats_selected_id())
+    id <- stats_selected_id()
+    if (is.null(id) || length(id) != 1L || !nzchar(id)) return("")
 
-    # Persistent-Editor value replay中はStatisticsを動かさない。
-    req(!isTRUE(graph_state_replay_active()))
+    # During Graph/recipe replacement return an explicit empty result instead
+    # of a req() cancellation. This clears the previous Graph's visible result
+    # immediately rather than leaving stale text on screen until recalculation.
+    if (isTRUE(graph_state_replay_active())) return("")
+    pending_id <- pending_stats_ui_restore()
+    if (!is.null(pending_id) && length(pending_id) == 1L && nzchar(pending_id)) return("")
 
     # Statisticsタブを実際に開いている時だけ計算する。
-    req(identical(input$graph_main_tab, "Statistics"))
+    if (!identical(input$graph_main_tab, "Statistics")) return("")
 
     # recipe復元の途中では中途半端な設定で計算しない。
-    req(!isTRUE(stats_restoring()))
+    if (isTRUE(stats_restoring())) return("")
 
     typ <- input$stats_type %||% "anova"
 
@@ -1895,6 +2028,7 @@
   stats_recipes_for_project <- function() {
     rr <- isolate(stats_recipes())
     if (!length(rr)) return(rr)
+    if (isTRUE(isolate(graph_state_replay_active()))) return(rr)
     if (isTRUE(isolate(stats_restoring()))) return(rr)
 
     pending_id <- isolate(pending_stats_ui_restore())

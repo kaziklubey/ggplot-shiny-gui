@@ -48,9 +48,30 @@ legend_item_label_values <- function(legend_key, levels_now, default_labels = NU
 
 get_saved_order <- function(kind, var_name, observed) {
     st <- order_state()
-    saved <- st[[kind]][[var_name]]
+    branch <- st[[kind]]
+    saved <- if (is.null(branch)) NULL else branch[[var_name]]
     if (is.null(saved)) saved <- character(0)
     complete_order(saved, observed)
+  }
+
+ordered_levels_for_var <- function(d, var_name) {
+    var_name <- as.character(var_name %||% "")[1]
+    if (!nzchar(var_name) || is.null(d) || !var_name %in% names(d)) return(character(0))
+    observed <- unique(as.character(d[[var_name]]))
+    observed <- observed[!is.na(observed)]
+    if (!length(observed)) return(character(0))
+
+    x_now <- as.character(input$xvar %||% "")[1]
+    if (nzchar(x_now) && identical(var_name, x_now) && !identical(input$plot_type %||% "line", "scatter")) {
+      return(get_saved_order("x", var_name, observed))
+    }
+
+    g_now <- effective_position_var(d)
+    if (nzchar(g_now) && identical(var_name, g_now)) {
+      return(get_saved_order("group", var_name, observed))
+    }
+
+    get_saved_order("display", var_name, observed)
   }
 
 ensure_style_branch <- function(kind, variable_name, levels_now) {
@@ -149,10 +170,8 @@ series_combo_levels <- function() {
     g0 <- effective_position_var(d)
     cvar0 <- resolve_color_var(d)
     if (!nzchar(cvar0) || !nzchar(g0) || identical(cvar0, g0)) return(character(0))
-    sl0 <- unique(as.character(d[[cvar0]]))
-    gl0 <- unique(as.character(d[[g0]]))
-    sl0 <- sl0[!is.na(sl0)]
-    gl0 <- gl0[!is.na(gl0)]
+    sl0 <- ordered_levels_for_var(d, cvar0)
+    gl0 <- ordered_levels_for_var(d, g0)
     as.vector(outer(sl0, gl0, series_combo_key))
   }
 
@@ -193,8 +212,7 @@ style_levels <- function() {
     d <- dat()
     v <- resolve_color_var(d)
     if (!nzchar(v)) return(character(0))
-    observed <- unique(as.character(d[[v]]))
-    observed[!is.na(observed)]
+    ordered_levels_for_var(d, v)
   }
 
 ensure_regression_styles <- function(levels_now) {

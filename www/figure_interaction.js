@@ -110,7 +110,7 @@ Shiny.addCustomMessageHandler('figure-label-overlay-update', function(msg) {
   var size = parseFloat(msg.size);
   if (!isFinite(size)) size = 18;
   var mode = String(msg.mode || 'align');
-  var anchor = String(msg.anchor || 'plot_axis');
+  var anchor = String(msg.anchor || 'panel');
   var xo = parseFloat(msg.xOffset); if (!isFinite(xo)) xo = 0;
   var yo = parseFloat(msg.yOffset); if (!isFinite(yo)) yo = 0;
   var gx = parseFloat(msg.x); if (!isFinite(gx)) gx = 0.06;
@@ -144,10 +144,13 @@ Shiny.addCustomMessageHandler('figure-label-overlay-update', function(msg) {
       y = Math.max(2, (gutter - size) / 2);
     } else if (anchor === 'plot_left') {
       x = shellLeft + 4;
-      y = Math.max(2, shellTop - size - 6);
+      y = Math.max(2, (gutter - size) / 2);
     } else {
+      // Panel labels are Figure-owned: X follows the aligned data-panel edge,
+      // while Y stays in the dedicated label band and does not follow
+      // facet/title/axis geometry.
       x = zoneLeft;
-      y = Math.max(2, shellTop - size - 6);
+      y = Math.max(2, (gutter - size) / 2);
     }
     x += xo;
     y += yo;

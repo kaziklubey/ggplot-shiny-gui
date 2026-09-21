@@ -133,13 +133,17 @@
   graph_replay_apply_statistics <- function(cfg) {
     restored <- cfg$statistics_recipes
     if (!is.list(restored)) restored <- list()
-    restored <- normalize_stats_recipes(restored, legacy_reshape = cfg$reshape %||% list())
-    stats_post_restore_baseline(NULL)
-    stats_recipes(restored)
-    first_id <- if (length(restored)) names(restored)[1] else NULL
-    stats_selected_id(first_id)
-    pending_stats_ui_restore(first_id)
-    refresh_stats_choices(first_id)
+
+    # Statistics has persistent browser controls just like the Graph Editor.
+    # Replace the entire Graph-linked context at the replay boundary so an
+    # in-flight restore or stale Analysis from the previous Graph cannot leak
+    # into the target Graph. The selected Analysis is Graph-local when saved;
+    # older Projects without that field safely fall back to the first recipe.
+    stats_replace_graph_context(
+      restored = restored,
+      preferred_id = cfg$statistics_selected_id %||% NULL,
+      legacy_reshape = cfg$reshape %||% list()
+    )
     invisible(TRUE)
   }
 

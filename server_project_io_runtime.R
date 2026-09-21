@@ -57,12 +57,14 @@
     stats_rr <- st$statistics_recipes
     stats_n <- if (is.list(stats_rr)) length(stats_rr) else 0L
     stats_ids <- if (stats_n) paste(names(stats_rr) %||% seq_len(stats_n), collapse = ",") else ""
+    stats_selected <- as.character(st$statistics_selected_id %||% "")[1]
     diag_log(
       "STATE-SAVE",
       paste0(
         "source=registry plot_type=", plot_type,
         " statistics_recipes=", stats_n,
         " ids={", stats_ids, "}",
+        " selected=", if (nzchar(stats_selected)) stats_selected else "<none>",
         " results_saved=FALSE"
       ),
       id = id
@@ -107,7 +109,7 @@
       renderer_schema = "asset-layer-v7-editable-graph-snapshot",
       autofit_policy = as.character(isolate(figure_requested_autofit_policy()) %||% "live"),
       size_mode = as.character(isolate(figure_requested_size_mode()) %||% "fixed"),
-      size_basis = as.character(isolate(figure_requested_size_basis()) %||% "plot"),
+      size_basis = as.character(isolate(figure_requested_size_basis()) %||% "panel_auto"),
       title_align = as.character(isolate(figure_requested_title_align()) %||% "none"),
       layout_mode = as.character(isolate(figure_requested_layout_mode()) %||% "row"),
       free_canvas_padding = as.numeric(isolate(figure_requested_free_padding()) %||% 24),
@@ -143,7 +145,7 @@
     figure_plot_overrides(list())
     figure_control_restore_seed(NULL)
     figure_requested_size_mode("auto")
-    figure_requested_size_basis("plot")
+    figure_requested_size_basis("panel_auto")
     figure_requested_title_align("none")
     figure_requested_layout_mode("row")
     figure_requested_autofit_policy("live")
@@ -219,7 +221,7 @@
       figure_requested_gap_x(12)
       figure_requested_gap_y(12)
       figure_requested_size_mode("auto")
-      figure_requested_size_basis("plot")
+      figure_requested_size_basis("panel_auto")
       figure_requested_title_align("none")
       figure_requested_layout_mode("row")
       figure_requested_autofit_policy("live")
@@ -227,9 +229,9 @@
       figure_geometry_revision(0L)
       figure_reorder_undo(NULL)
       figure_requested_free_padding(24)
-      figure_control_restore_seed(list(width = 1600, height = 1000, gap_x = 12, gap_y = 12, mode = "auto", basis = "plot", title_align = "none", layout_mode = "row", autofit_policy = "live"))
+      figure_control_restore_seed(list(width = 1600, height = 1000, gap_x = 12, gap_y = 12, mode = "auto", basis = "panel_auto", title_align = "none", layout_mode = "row", autofit_policy = "live"))
       updateSelectInput(session, "figure_size_mode", selected = "auto")
-      updateSelectInput(session, "figure_size_basis", selected = "plot")
+      updateSelectInput(session, "figure_size_basis", selected = "panel_auto")
       updateSelectInput(session, "figure_title_align", selected = "none")
       updateSelectInput(session, "figure_layout_mode", selected = "row")
       updateSelectInput(session, "figure_autofit_policy", selected = "live")
@@ -262,10 +264,14 @@
       size_mode <- as.character(saved$size_mode)[1]
     }
     if (!size_mode %in% c("auto", "fixed")) size_mode <- "fixed"
-    size_basis <- as.character(saved$size_basis %||% "plot")[1]
-    if (!size_basis %in% c("plot", "facet", "axis", "axis_legend")) size_basis <- "plot"
-    title_align <- as.character(saved$title_align %||% "none")[1]
-    if (!title_align %in% c("none", "row_top")) title_align <- "none"
+    size_basis <- as.character(saved$size_basis %||% "panel_auto")[1]
+    # v3.73.2.50 migration: Facet/Axis were alternative alignment bases.
+    # They now map to the practical data-panel + automatic-gutter model.
+    if (size_basis %in% c("facet", "axis")) size_basis <- "panel_auto"
+    if (!size_basis %in% c("panel_auto", "plot", "axis_legend")) size_basis <- "panel_auto"
+    # Graph-title alignment was a workaround for label drift. Panel labels now
+    # have their own Figure-owned band/anchor, so old title alignment is retired.
+    title_align <- "none"
     layout_mode <- as.character(saved$layout_mode %||% "row")[1]
     if (!layout_mode %in% c("row", "free")) layout_mode <- "row"
     autofit_policy <- as.character(saved$autofit_policy %||% "live")[1]

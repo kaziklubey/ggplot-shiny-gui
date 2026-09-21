@@ -7,7 +7,7 @@ figure_make_cell <- function(row, col, id = "", width = 1, source_type = "intern
                              free_x = NA_real_, free_y = NA_real_, free_width = NA_real_, free_height = NA_real_,
                              z_index = NA_real_, panel_label = "", panel_label_auto = TRUE,
                              label_size = 18, top_gutter = 32,
-                             label_mode = "align", label_anchor = "plot_axis",
+                             label_mode = "align", label_anchor = "panel",
                              label_x_offset = 0, label_y_offset = 0,
                              label_x = 0.06, label_y = 0.02) {
   sid <- as.character(source_id %||% id %||% "")[1]
@@ -33,7 +33,11 @@ figure_make_cell <- function(row, col, id = "", width = 1, source_type = "intern
     label_size = figure_num_or(label_size, 18, 6, 72),
     top_gutter = figure_num_or(top_gutter, 32, 0, 240),
     label_mode = if (as.character(label_mode %||% "align")[1] %in% c("align", "free")) as.character(label_mode)[1] else "align",
-    label_anchor = if (as.character(label_anchor %||% "plot_axis")[1] %in% c("plot_axis", "plot_left", "cell_left")) as.character(label_anchor)[1] else "plot_axis",
+    label_anchor = {
+      a <- as.character(label_anchor %||% "panel")[1]
+      if (identical(a, "plot_axis")) a <- "panel"
+      if (a %in% c("panel", "plot_left", "cell_left")) a else "panel"
+    },
     label_x_offset = figure_num_or(label_x_offset, 0, -300, 300),
     label_y_offset = figure_num_or(label_y_offset, 0, -300, 300),
     label_x = figure_num_or(label_x, 0.06, -0.2, 1.2),
@@ -64,7 +68,8 @@ figure_reindex_layout <- function(st) {
     nc <- min(nc, 12L)
     hh <- figure_num_or(row$height, 1, 0.1, 10)
     basis_override <- as.character(row$size_basis %||% "inherit")[1]
-    if (!basis_override %in% c("inherit", "plot", "facet", "axis", "axis_legend")) basis_override <- "inherit"
+    if (basis_override %in% c("facet", "axis")) basis_override <- "panel_auto"
+    if (!basis_override %in% c("inherit", "panel_auto", "plot", "axis_legend")) basis_override <- "inherit"
     if (length(cells) < nc) {
       start <- length(cells) + 1L
       if (start <= nc) for (cc in seq.int(start, nc)) cells[[cc]] <- figure_make_cell(r, cc)
@@ -95,7 +100,7 @@ figure_reindex_layout <- function(st) {
         label_size = figure_num_or(cell$label_size, 18, 6, 72),
         top_gutter = figure_num_or(cell$top_gutter, 48, 0, 240),
         label_mode = as.character(cell$label_mode %||% "align")[1],
-        label_anchor = as.character(cell$label_anchor %||% "plot_axis")[1],
+        label_anchor = as.character(cell$label_anchor %||% "panel")[1],
         label_x_offset = figure_num_or(cell$label_x_offset, 0, -300, 300),
         label_y_offset = figure_num_or(cell$label_y_offset, 0, -300, 300),
         label_x = figure_num_or(cell$label_x, 0.06, -0.2, 1.2),
@@ -168,7 +173,11 @@ figure_slot_label_payload <- function(cell) {
     label_size = figure_num_or(cell$label_size, 18, 6, 72),
     top_gutter = figure_num_or(cell$top_gutter, 48, 0, 240),
     label_mode = if (as.character(cell$label_mode %||% "align")[1] %in% c("align", "free")) as.character(cell$label_mode)[1] else "align",
-    label_anchor = if (as.character(cell$label_anchor %||% "plot_axis")[1] %in% c("plot_axis", "plot_left", "cell_left")) as.character(cell$label_anchor)[1] else "plot_axis",
+    label_anchor = {
+      a <- as.character(cell$label_anchor %||% "panel")[1]
+      if (identical(a, "plot_axis")) a <- "panel"
+      if (a %in% c("panel", "plot_left", "cell_left")) a else "panel"
+    },
     label_x_offset = figure_num_or(cell$label_x_offset, 0, -300, 300),
     label_y_offset = figure_num_or(cell$label_y_offset, 0, -300, 300),
     label_x = figure_num_or(cell$label_x, 0.06, -0.2, 1.2),

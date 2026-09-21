@@ -267,10 +267,9 @@
               class = "form-control input-sm figure-row-basis-edit",
               `data-row` = r,
               option_tag("inherit", "Figure設定を継承", identical(as.character(row$size_basis %||% "inherit"), "inherit")),
-              option_tag("plot", "Plot領域", identical(as.character(row$size_basis %||% "inherit"), "plot")),
-              option_tag("facet", "Facet込み", identical(as.character(row$size_basis %||% "inherit"), "facet")),
-              option_tag("axis", "軸ラベル込み", identical(as.character(row$size_basis %||% "inherit"), "axis")),
-              option_tag("axis_legend", "軸＋凡例込み", identical(as.character(row$size_basis %||% "inherit"), "axis_legend"))
+              option_tag("panel_auto", "Plot panel＋周辺余白を自動整列", identical(as.character(row$size_basis %||% "inherit"), "panel_auto")),
+              option_tag("plot", "Plot panelのみ", identical(as.character(row$size_basis %||% "inherit"), "plot")),
+              option_tag("axis_legend", "軸＋凡例（旧方式）", identical(as.character(row$size_basis %||% "inherit"), "axis_legend"))
             )
           ),
           tags$button(type = "button", class = "btn btn-default btn-sm figure-layout-structure-action",
@@ -1041,7 +1040,7 @@
         text = as.character(ov$panel_label %||% ""),
         size = as.numeric(ov$label_size %||% 18),
         mode = as.character(ov$label_mode %||% "align"),
-        anchor = as.character(ov$label_anchor %||% "plot_axis"),
+        anchor = as.character(ov$label_anchor %||% "panel"),
         xOffset = as.numeric(ov$label_x_offset %||% 0),
         yOffset = as.numeric(ov$label_y_offset %||% 0),
         x = as.numeric(ov$label_x %||% 0.06),
@@ -1073,8 +1072,9 @@
     top_gutter <- min(max(top_gutter, 0), 240)
     label_mode <- as.character(isolate(input$figure_label_mode %||% "align"))
     if (!label_mode %in% c("align", "free")) label_mode <- "align"
-    label_anchor <- as.character(isolate(input$figure_label_anchor %||% "plot_axis"))
-    if (!label_anchor %in% c("plot_axis", "plot_left", "cell_left")) label_anchor <- "plot_axis"
+    label_anchor <- as.character(isolate(input$figure_label_anchor %||% "panel"))
+    if (identical(label_anchor, "plot_axis")) label_anchor <- "panel"
+    if (!label_anchor %in% c("panel", "plot_left", "cell_left")) label_anchor <- "panel"
     label_x_offset <- suppressWarnings(as.numeric(isolate(input$figure_label_x_offset %||% 0)))
     if (!is.finite(label_x_offset)) label_x_offset <- 0
     label_x_offset <- min(max(label_x_offset, -300), 300)
