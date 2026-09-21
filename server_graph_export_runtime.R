@@ -38,6 +38,25 @@
     w <- pw / ref_res
     h <- ph / ref_res
 
+    if (identical(format, "pptx")) {
+      info <- pptx_write_ggplot_editable(
+        path, p, width_px = pw, height_px = ph, reference_res = ref_res,
+        label = paste0("ggplot-editable-graph-", id)
+      )
+      diag_log(
+        "GRAPH-PPTX-EDITABLE",
+        paste0(
+          "flattened_groups=", as.integer(info$flattened_groups %||% 0L),
+          " skipped_groups=", as.integer(info$skipped_groups %||% 0L),
+          " exposed_shapes=", as.integer(info$exposed_shapes %||% 0L),
+          " slide=", round(info$slide_width_in %||% NA_real_, 3), "x",
+          round(info$slide_height_in %||% NA_real_, 3), "in"
+        ),
+        id = id
+      )
+      return(invisible(TRUE))
+    }
+
     if (identical(format, "svg")) {
       svglite::svglite(path, width = w, height = h)
       svg_device <- grDevices::dev.cur()
@@ -88,6 +107,7 @@
       png = "png",
       pdf = "pdf",
       svg = "svg",
+      pptx = "pptx",
       "svg"
     )
 
@@ -125,7 +145,7 @@
     ids <- export_ids_now()
     fmt <- isolate(input$top_export_format %||% "svg")
     meta <- isolate(graph_meta())
-    ext <- switch(fmt, png = "png", pdf = "pdf", svg = "svg", "svg")
+    ext <- switch(fmt, png = "png", pdf = "pdf", svg = "svg", pptx = "pptx", "svg")
 
     if (length(ids) == 1L) {
       nm <- meta$name[match(ids, meta$id)]

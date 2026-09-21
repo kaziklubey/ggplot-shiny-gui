@@ -297,11 +297,25 @@
 .inline-select .form-group {
   margin: 0;
 }
-.export-target {
+.graph-export-target {
+  width: 120px;
+}
+.graph-export-format,
+.figure-top-export-format {
   width: 155px;
 }
-.export-format {
-  width: 90px;
+.top-output-row .form-group {
+  margin-bottom: 0;
+}
+.top-output-row .btn {
+  white-space: nowrap;
+}
+.top-export-note {
+  margin-left: 3px;
+  color: #777;
+  font-size: 11px;
+  line-height: 1.25;
+  white-space: nowrap;
 }
 .export-status {
   font-size: 12px;
@@ -386,8 +400,7 @@
   align-items: flex-end;
   gap: 8px 12px;
 }
-.figure-layout-basics .form-group,
-.figure-export-controls .form-group {
+.figure-layout-basics .form-group {
   margin-bottom: 0;
 }
 
@@ -581,22 +594,6 @@
   border-top: 1px solid #ddd;
   font-size: 11px;
   color: #777;
-}
-.figure-export-controls {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 8px;
-}
-/* F1-5h: export-format choices must remain visible even though generic
-   Figure config cards clip their contents for rounded corners. */
-.figure-config-section.figure-export-section {
-  overflow: visible;
-}
-.figure-export-section select.form-control {
-  min-width: 120px;
-  color: #222;
-  background: #fff;
 }
 @media (max-width: 1200px) {
   .figure-config-columns {
@@ -1003,10 +1000,6 @@
   align-items: flex-end;
   gap: 6px;
 }
-.figure-export-section {
-  margin-top: 12px;
-}
-
 /* v3.43: Figure editing uses a left-to-right drawer.  The Figure canvas
    remains visible on the right while the editor scrolls independently.
    Each major heading and the Graph module's own control sections can be
@@ -1137,8 +1130,7 @@
 }
 .figure-control-drawer .figure-layout-basics,
 .figure-control-drawer .figure-asset-load-bar,
-.figure-control-drawer .figure-graph-load-bar,
-.figure-control-drawer .figure-export-controls {
+.figure-control-drawer .figure-graph-load-bar {
   gap: 7px;
 }
 .figure-control-drawer .form-group {
@@ -2166,8 +2158,7 @@
   font-size: 11px;
   line-height: 1;
 }
-.figure-workflow-import,
-.figure-export-workflow {
+.figure-workflow-import {
   border: 1px solid #d9dfe4;
   border-radius: 8px;
   background: #fafbfc;
@@ -2266,15 +2257,6 @@
 .shared-style-portable-row {
   align-items: center;
 }
-.figure-export-workflow {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 14px;
-}
-.figure-export-primary {
-  margin-left: auto;
-}
 .shared-style-graph-binding {
   margin: 6px 0 10px;
   padding: 8px 9px;
@@ -2313,13 +2295,6 @@
   font-size: 11px;
 }
 @media (max-width: 760px) {
-  .figure-export-workflow {
-    align-items: stretch;
-    flex-direction: column;
-  }
-  .figure-export-primary {
-    margin-left: 0;
-  }
   .shared-style-binding-row {
     grid-template-columns: 1fr;
   }

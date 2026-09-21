@@ -25,6 +25,15 @@ graph_render_state_apply_semantics <- function(state) {
   summary_type <- as.character(pl$summary %||% "mean")[[1]]
   external_mode <- as.character(pl$external_error_mode %||% "none")[[1]]
 
+  # Line-break selections are render-active only for line plots. Normalize old
+  # Projects without the field to the same empty representation as new ones.
+  if (identical(plot_type, "line")) {
+    pl$line_breaks <- unique(as.character(unlist(pl$line_breaks %||% character(0), use.names = FALSE)))
+    pl$line_breaks <- pl$line_breaks[!is.na(pl$line_breaks) & nzchar(pl$line_breaks)]
+  } else {
+    pl$line_breaks <- NULL
+  }
+
   # External error-column selectors affect rendering only for direct-value
   # Line/Bar plots. Their selectInputs remain populated while hidden, so the
   # browser may hold a column name even when GraphState stores an empty value.

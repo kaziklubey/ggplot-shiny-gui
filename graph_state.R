@@ -55,6 +55,7 @@ graph_ui_seed_from_state <- function(cfg) {
     put("show_raw", cfg$plot$show_raw)
     put("connect_id", cfg$plot$connect_id)
     put("scatter_connect_mode", cfg$plot$scatter_connect_mode)
+    out$line_breaks <- as.character(unlist(cfg$plot$line_breaks %||% character(0), use.names = FALSE))
   }
 
   if (is.list(cfg$labels)) {

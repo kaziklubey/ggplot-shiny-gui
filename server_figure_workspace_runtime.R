@@ -1535,13 +1535,22 @@
     # compatibility path. PDF is produced from the composed vector SVG via
     # librsvg/Cairo PDF, never through figure_svg_snapshot_grob().
     vector_svg_mode <- identical(format, "svg")
+    office_svg_mode <- identical(format, "svg_office")
+    editable_pptx_mode <- identical(format, "pptx")
     vector_pdf_mode <- identical(format, "pdf")
+    raster_png_mode <- identical(format, "png")
     vector_compositor_mode <- isTRUE(vector_svg_mode) || isTRUE(vector_pdf_mode)
     closed <- FALSE
     dev_id <- NA_integer_
-    if (!isTRUE(vector_compositor_mode)) {
+    png_temp_path <- ""
+    if (isTRUE(raster_png_mode)) {
+      # Do not ask the Windows graphics device to open Shiny's download path
+      # directly. Some Windows configurations keep that path locked long
+      # enough to trigger sharing violation 32. Render privately, close, copy.
+      png_temp_path <- tempfile("figure_png_", fileext = ".png")
+      on.exit(try(unlink(png_temp_path), silent = TRUE), add = TRUE)
       app_open_png_device(
-        filename = path, width_px = canvas_w, height_px = canvas_h, res = ref_res
+        filename = png_temp_path, width_px = canvas_w, height_px = canvas_h, res = ref_res
       )
       dev_id <- grDevices::dev.cur()
       on.exit({
@@ -1658,7 +1667,8 @@
             "vector_compositor=TRUE converter=rsvg_pdf",
             " panels=", length(draw_summary$drawn_ids %||% character(0)),
             " persisted_vector=", length(draw_summary$persisted_svg_ids %||% character(0)),
-            " textlength_removed=", as.integer(draw_summary$textlength_removed %||% 0L)
+            " textlength_removed=", as.integer(draw_summary$textlength_removed %||% 0L),
+            " redundant_clips_removed=", as.integer(draw_summary$redundant_clips_removed %||% 0L)
           )
         )
       } else {
@@ -1668,10 +1678,55 @@
             "vector_compositor=TRUE",
             " panels=", length(draw_summary$drawn_ids %||% character(0)),
             " persisted_vector=", length(draw_summary$persisted_svg_ids %||% character(0)),
-            " illustrator_textlength_removed=", as.integer(draw_summary$textlength_removed %||% 0L)
+            " illustrator_textlength_removed=", as.integer(draw_summary$textlength_removed %||% 0L),
+            " redundant_clips_removed=", as.integer(draw_summary$redundant_clips_removed %||% 0L)
           )
         )
       }
+    } else if (isTRUE(editable_pptx_mode)) {
+      draw_summary <- figure_write_pptx_editable(
+        path, layout, canvas_w, canvas_h, overrides, plots, exports, gap_x, gap_y,
+        rects = export_rects,
+        external_assets = isolate(figure_requested_external_assets()),
+        inset_snapshots = isolate(figure_inset_preview_cache()),
+        persisted_previews = persisted,
+        reference_res = ref_res
+      )
+      diag_log(
+        "FIGURE-PPTX-EDITABLE",
+        paste0(
+          "drawingml=TRUE",
+          " panels=", length(draw_summary$drawn_ids %||% character(0)),
+          " persisted_raster=", length(draw_summary$persisted_svg_ids %||% character(0)),
+          " flattened_groups=", as.integer(draw_summary$flattened_groups %||% 0L),
+          " skipped_groups=", as.integer(draw_summary$skipped_groups %||% 0L),
+          " slide=", round(draw_summary$slide_width_in %||% NA_real_, 3), "x",
+          round(draw_summary$slide_height_in %||% NA_real_, 3), "in",
+          " figure=", round(draw_summary$figure_width_in %||% NA_real_, 3), "x",
+          round(draw_summary$figure_height_in %||% NA_real_, 3), "in"
+        )
+      )
+    } else if (isTRUE(office_svg_mode)) {
+      # Compatibility path retained for old sessions/projects, but no longer
+      # exposed in the normal UI. Editable PowerPoint export uses DrawingML.
+      draw_summary <- figure_write_svg_office(
+        path, layout, canvas_w, canvas_h, overrides, plots, exports, gap_x, gap_y,
+        rects = export_rects,
+        external_assets = isolate(figure_requested_external_assets()),
+        inset_snapshots = isolate(figure_inset_preview_cache()),
+        persisted_previews = persisted,
+        reference_res = ref_res
+      )
+      diag_log(
+        "FIGURE-SVG-OFFICE",
+        paste0(
+          "single_device=TRUE",
+          " panels=", length(draw_summary$drawn_ids %||% character(0)),
+          " persisted_raster=", length(draw_summary$persisted_svg_ids %||% character(0)),
+          " textlength_removed=", as.integer(draw_summary$textlength_removed %||% 0L),
+          " redundant_clips_removed=", as.integer(draw_summary$redundant_clips_removed %||% 0L)
+        )
+      )
     } else {
       draw_summary <- figure_draw_to_device(
         layout, canvas_w, canvas_h, overrides, plots, exports, gap_x, gap_y,
@@ -1696,9 +1751,11 @@
         ))
       }
     }
-    if (!isTRUE(vector_compositor_mode)) {
+    if (isTRUE(raster_png_mode)) {
       grDevices::dev.off()
       closed <- TRUE
+      figure_commit_temp_export(png_temp_path, path)
+      diag_log("FIGURE-PNG-COMMIT", paste0("temp_closed=TRUE bytes=", file.info(path)$size %||% NA))
     }
     invisible(TRUE)
   }
@@ -1707,8 +1764,17 @@
   output$download_figure <- downloadHandler(
     filename = function() {
       fmt <- isolate(input$figure_export_format %||% "png")
-      ext <- switch(fmt, png = "png", pdf = "pdf", svg = "svg", "png")
-      paste0(safe_name(input$project_name, "Project"), "_Figure.", ext)
+      ext <- switch(
+        fmt, png = "png", pdf = "pdf", svg = "svg", svg_office = "svg", pptx = "pptx", "png"
+      )
+      suffix <- if (identical(fmt, "pptx")) {
+        "_Figure_Editable."
+      } else if (identical(fmt, "svg_office")) {
+        "_Figure_PowerPoint."
+      } else {
+        "_Figure."
+      }
+      paste0(safe_name(input$project_name, "Project"), suffix, ext)
     },
     content = function(file) {
       fmt <- isolate(input$figure_export_format %||% "png")

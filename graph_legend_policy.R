@@ -276,7 +276,12 @@ graph_legend_guide_override <- function(policy, aesthetic) {
   }
   if (identical(aesthetic, "shape")) {
     out <- list()
-    if (isTRUE(items$colour$active) && !same_component("shape", "colour")) out$colour <- "#333333"
+    # When Shape and Linetype intentionally share one merged guide, let the
+    # Linetype guide own the shared fixed colour override. Supplying the same
+    # override.aes name from both guides makes ggplot2 emit
+    # "Duplicated override.aes is ignored" every time the plot is rebuilt.
+    if (isTRUE(items$colour$active) && !same_component("shape", "colour") &&
+        !same_component("shape", "linetype")) out$colour <- "#333333"
     if (isTRUE(items$fill$active) && !same_component("shape", "fill")) out$fill <- "#333333"
     if (isTRUE(items$linetype$active) && !same_component("shape", "linetype")) out$linetype <- 0
     if (length(out)) return(out)

@@ -14,3 +14,6 @@ ggbreak
 zip
 ggh4x
 rsvg
+officer
+rvg
+xml2

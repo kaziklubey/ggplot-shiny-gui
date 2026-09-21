@@ -267,7 +267,7 @@
               class = "form-control input-sm figure-row-basis-edit",
               `data-row` = r,
               option_tag("inherit", "Figure設定を継承", identical(as.character(row$size_basis %||% "inherit"), "inherit")),
-              option_tag("panel_auto", "Plot panel＋周辺余白を自動整列", identical(as.character(row$size_basis %||% "inherit"), "panel_auto")),
+              option_tag("panel_auto", "自動整列（推奨）", identical(as.character(row$size_basis %||% "inherit"), "panel_auto")),
               option_tag("plot", "Plot panelのみ", identical(as.character(row$size_basis %||% "inherit"), "plot")),
               option_tag("axis_legend", "軸＋凡例（旧方式）", identical(as.character(row$size_basis %||% "inherit"), "axis_legend"))
             )

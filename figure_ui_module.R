@@ -11,7 +11,7 @@ figureWorkflowHeaderUI <- function() {
     ),
     tags$span(
       class = "figure-workspace-hint",
-      "取込 → 配置・整列 → 共通Label / Style → 個別調整 → Export の順で作業します。最終仕上げはSVG/PDFをIllustrator等へ渡す前提です。"
+      "取込 → 配置・整列 → 共通Label / Style → 個別調整の順で作業します。Figureの書き出しは画面上部の『Figure出力』から行います。"
     )
   )
 }
@@ -84,11 +84,11 @@ figureLayoutPrimaryControlsUI <- function() {
       selectInput(
         "figure_size_basis", "Panel整列",
         choices = c(
-          "Plot panel＋周辺余白を自動整列" = "panel_auto",
+          "自動整列（推奨）" = "panel_auto",
           "Plot panelのみ" = "plot",
           "軸＋凡例（旧方式）" = "axis_legend"
         ),
-        selected = "panel_auto", width = "220px"
+        selected = "panel_auto", width = "165px"
       ),
       # Backward-compatible input owner. Graph title alignment was an old
       # workaround for panel-label drift and is no longer exposed in the UI.
@@ -101,7 +101,7 @@ figureLayoutPrimaryControlsUI <- function() {
     ),
     tags$p(
       class = "figure-layout-card-help",
-      "通常は『Plot panel＋周辺余白を自動整列』を使用してください。データ描画領域を基準に、Facet・軸・Plot title/captionの有無を周辺余白として吸収します。Panel label (A/B/C…) はGraph titleとは独立して整列します。Free legendはoverlayとして扱います。"
+      "通常は『自動整列（推奨）』を使用します。Plot panelを基準にFacet・軸・Plot title/captionの差を周辺余白として吸収します。Panel label (A/B/C…) はGraph titleとは独立して整列し、Free legendはoverlayとして扱います。"
     )
   )
 }
@@ -298,18 +298,31 @@ figureSelectedPanelDrawerUI <- function() {
   )
 }
 
-figureExportWorkflowUI <- function() {
+figureTopExportUI <- function() {
   div(
-    class = "figure-workflow-step figure-export-workflow",
-    div(class = "figure-workflow-step-title", tags$span(class = "figure-step-number", "5"), "Export"),
+    class = "top-row top-output-row figure-output-row",
+    tags$span(class = "top-label", "Figure出力"),
     div(
-      class = "figure-export-controls figure-export-primary",
+      class = "inline-select figure-top-export-format",
       selectInput(
-        "figure_export_format", "形式",
-        choices = c("SVG" = "svg", "PDF" = "pdf", "PNG" = "png"),
-        selected = "svg", width = "110px", selectize = FALSE
-      ),
-      downloadButton("download_figure", "Figureを書き出す")
+        "figure_export_format",
+        NULL,
+        choices = c(
+          "SVG" = "svg",
+          "PowerPoint (.pptx)" = "pptx",
+          "PDF" = "pdf",
+          "PNG" = "png"
+        ),
+        selected = "svg", width = "155px", selectize = FALSE
+      )
+    ),
+    downloadButton("download_figure", "Figureを書き出す"),
+    conditionalPanel(
+      condition = "input.figure_export_format == 'pptx'",
+      tags$small(
+        class = "top-export-note",
+        "線・点・文字をPowerPoint上で編集可能"
+      )
     )
   )
 }
@@ -351,8 +364,7 @@ figureWorkspaceUI <- function() {
       class = "figure-editor-shell",
       figureSelectedPanelDrawerUI(),
       div(class = "figure-canvas-column", figurePreviewWorkflowUI())
-    ),
-    figureExportWorkflowUI()
+    )
   )
 }
 

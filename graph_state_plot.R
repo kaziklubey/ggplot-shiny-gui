@@ -17,6 +17,7 @@ graph_snapshot_input_defaults <- function() {
   list(
     plot_type = "line", summary_type = "sem", summary_unit = "row",
     show_raw = TRUE, connect_id = FALSE, scatter_connect_mode = "none",
+    line_breaks = character(0),
     xvar = "", yvar = "", groupvar = "", colorvar = "",
     linetypevar = "__color__", shapevar = "__color__", idvar = "", facetvar = "",
     external_error_mode = "none", external_error_col = "",
@@ -108,6 +109,11 @@ graph_snapshot_memo <- function(calculate) {
 graph_snapshot_context <- function(state) {
   scope <- new.env(parent = environment(graph_snapshot_context))
   scope$input <- graph_snapshot_inputs(state)
+  # graph_plot_calculation.R is shared with the live Graph Editor, where
+  # line-break selection is held in a module-local canonical reactive. The
+  # synchronous Figure/export context supplies the same interface from saved
+  # GraphState so direct-state rendering stays Shiny-free.
+  scope$line_break_state <- graph_snapshot_store(scope$input$line_breaks %||% character(0))
   scope$dat <- graph_snapshot_store(graph_snapshot_data(state))
   scope$has_selection <- graph_has_selection
   scope$complete_order <- graph_complete_order

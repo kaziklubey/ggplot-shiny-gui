@@ -492,6 +492,7 @@
 
       xl <- levels(d[[x]])
       if (is.null(xl)) xl <- unique(as.character(d[[x]]))
+      line_breaks_now <- graph_line_break_normalize(line_break_state(), xl)
 
       # Line専用 X目盛間隔。
       # 単純に座標を一律倍するとggplotがscaleを再調整して見た目の
@@ -577,6 +578,10 @@
       overlay_vars_d <- unique(c(g, color_map_var, linetype_map_var, shape_map_var))
       if (has_id && use_value) overlay_vars_d <- unique(c(id, overlay_vars_d))
       d <- add_interaction_key(d, overlay_vars_d, ".line_group__")
+      d <- graph_line_break_apply_group(
+        d, x, xl, line_breaks_now,
+        group_col = ".line_group__", output_col = ".line_group__"
+      )
 
       # Individual connection lines must never bridge different routes /
       # conditions of the same ID. Example:
@@ -586,6 +591,10 @@
           id, g, color_map_var, linetype_map_var, shape_map_var
         ))
         d <- add_interaction_key(d, id_overlay_vars, ".id_group__")
+        d <- graph_line_break_apply_group(
+          d, x, xl, line_breaks_now,
+          group_col = ".id_group__", output_col = ".id_group__"
+        )
       }
 
       if (use_value) {
@@ -676,6 +685,10 @@
           s,
           unique(c(g, color_map_var, linetype_map_var, shape_map_var)),
           ".line_group__"
+        )
+        s <- graph_line_break_apply_group(
+          s, x, xl, line_breaks_now,
+          group_col = ".line_group__", output_col = ".line_group__"
         )
 
         errcol <- switch(input$summary_type, sd = "sd", sem = "sem", ci95 = "ci95", NULL)

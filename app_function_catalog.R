@@ -22,6 +22,9 @@ app_function_catalog <- function() {
       graph_default_palette = list(kind = "pure", input = "n + preset", output = "colour vector"),
       graph_style_input_id = list(kind = "pure", input = "style identity", output = "stable input id"),
       graph_parse_pasted_data = list(kind = "pure parser", input = "pasted text", output = "data.frame or NULL"),
+      graph_line_break_choices = list(kind = "pure line-connection helper", input = "ordered X levels + display labels", output = "adjacent X-boundary choices"),
+      graph_line_break_apply_group = list(kind = "pure line-connection helper", input = "data + X order + selected boundaries + existing group", output = "line-only segmented grouping"),
+      graph_line_break_plan = list(kind = "pure replay helper", input = "GraphState + Mapping replay plan", output = "target-derived line-break choices + selection"),
       app_state_diff_paths = list(kind = "pure diagnostic", input = "old/new state", output = "changed paths"),
       app_state_diff_summary = list(kind = "pure diagnostic", input = "old/new state", output = "compact diff summary"),
       graph_render_state_apply_semantics = list(kind = "pure render canonicalizer", input = "GraphState", output = "GraphState with inactive render controls collapsed"),
@@ -75,7 +78,7 @@ app_function_catalog <- function() {
       figureLayoutPrimaryControlsUI = list(kind = "UI component", input = "none", output = "visible primary layout controls"),
       figureSharedStylePanelUI = list(kind = "UI component", input = "none", output = "Shared Style step"),
       figureSelectedPanelDrawerUI = list(kind = "UI component", input = "none", output = "individual adjustment drawer"),
-      figureExportWorkflowUI = list(kind = "UI component", input = "none", output = "export step"),
+      figureTopExportUI = list(kind = "UI component", input = "none", output = "workspace-aware top Figure output bar"),
       figurePreviewWorkflowUI = list(kind = "UI component", input = "none", output = "Figure preview shell"),
       figureWorkspaceUI = list(kind = "UI composition", input = "none", output = "workflow-first Figure workspace"),
       figure_reorder_content_state = list(kind = "pure Figure reorder transition", input = "layout + source/destination slot + swap/shift mode", output = "validated layout transition"),
@@ -112,6 +115,9 @@ app_function_catalog <- function() {
       graph_single_abort_activation = list(kind = "editor transaction fail-safe", input = "Graph id + reason", output = "stale shell clear + explicit reselection"),
       graph_preview_record_from_plot = list(kind = "direct-state vector snapshot helper", input = "GraphState + plot + export meta", output = "caller-owned SVG record or NULL"),
       graph_state_export_snapshot = list(kind = "pure direct-state export renderer", input = "GraphState", output = "plot + measured export metadata"),
+      pptx_write_ggplot_editable = list(kind = "Graph PowerPoint export boundary", input = "ggplot + physical export size", output = "editable DrawingML pptx with safe wrapper flattening"),
+      pptx_flatten_editable_groups = list(kind = "PowerPoint postprocessor", input = "generated pptx + owned label prefix", output = "identity wrapper groups flattened; child shapes exposed"),
+      pptx_validate_package_structure = list(kind = "PowerPoint package guard", input = "pptx path", output = "required OPC paths validated before/after postprocessing"),
       request_figure_source_snapshot = list(kind = "direct-state Figure snapshot service", input = "Graph id + optional GraphState override", output = "Figure-owned SVG snapshot"),
       registry_commit = list(kind = "server state mutation", input = "Graph id + state", output = "canonical Registry update")
     )

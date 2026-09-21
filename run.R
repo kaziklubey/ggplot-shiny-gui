@@ -1,19 +1,23 @@
 wd <- commandArgs(trailingOnly = TRUE)
 app_dir <- if (length(wd) >= 1 && nzchar(wd[1])) wd[1] else getwd()
 root_dir <- dirname(app_dir)
-lib_path <- .libPaths()[1]
 req_file <- file.path(app_dir, "req.txt")
 if (!file.exists(req_file)) req_file <- file.path(root_dir, "req.txt")
 
-ensure_package <- function(pkg, lib_path = .libPaths()[1]) {
-  if (!requireNamespace(pkg, quietly = TRUE)) {
-    install.packages(pkg, lib = lib_path, repos = "https://cloud.r-project.org/", type = "binary")
-  }
-  suppressPackageStartupMessages(library(pkg, character.only = TRUE))
-}
+bootstrap_file <- file.path(app_dir, "bootstrap_packages.R")
+if (!file.exists(bootstrap_file)) bootstrap_file <- file.path(root_dir, "bootstrap_packages.R")
+if (!file.exists(bootstrap_file)) stop("bootstrap_packages.R was not found.", call. = FALSE)
+source(bootstrap_file, local = .GlobalEnv)
 
 req <- trimws(readLines(req_file, warn = FALSE))
 req <- req[nzchar(req)]
+missing_req <- req[!vapply(req, requireNamespace, logical(1L), quietly = TRUE)]
+
+lib_path <- NULL
+if (length(missing_req)) {
+  lib_path <- ggplot_gui_resolve_install_library()
+  message(sprintf("Package install library: %s", lib_path))
+}
 for (pkg in req) ensure_package(pkg, lib_path)
 
 # FileSystemHandle/IndexedDBは browser origin(host+port)単位。

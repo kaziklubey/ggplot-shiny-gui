@@ -544,6 +544,24 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                   checkboxInput("connect_id", "IDごとに線で結ぶ", FALSE)
                 ),
                 conditionalPanel(
+                  condition = "input.plot_type == 'line'",
+                  selectizeInput(
+                    "line_breaks",
+                    "接続しないX区間",
+                    choices = character(0),
+                    selected = character(0),
+                    multiple = TRUE,
+                    options = list(
+                      plugins = list("remove_button"),
+                      placeholder = "すべて接続"
+                    )
+                  ),
+                  p(
+                    class = "help-block",
+                    "指定した隣接X目盛の間だけ線を切ります。点・Error bar・元データは変更しません。ID接続線にも同じ境界を適用します。"
+                  )
+                ),
+                conditionalPanel(
                   condition = "input.plot_type == 'scatter'",
                   radioButtons(
                     "scatter_connect_mode", "点の接続",
@@ -1411,21 +1429,6 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
             )
           ),
 
-          tags$details(
-            class = "control-section",
-            `data-ui-section` = "export",
-            tags$summary(if (controls_only) "9. Export" else "10. Export"),
-            div(
-              class = "section-body",
-              p(
-                "書き出しサイズは現在のPlot横幅・縦幅に連動します。"
-              ),
-              p(
-                class = "help-block",
-                "SVG / PDFは本番向けのベクター形式です。PNGは現在のPlotと同じピクセル寸法を基準にした、確認・共有向けの軽量版です。"
-              )
-            )
-          )
           ),
         ),
 

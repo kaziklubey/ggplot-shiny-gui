@@ -12,3 +12,6 @@ library(jsonlite)
 library(ggbeeswarm)
 library(ggbreak)
 library(ggh4x)
+
+library(officer)
+library(rvg)

@@ -121,6 +121,8 @@
       selected = json_chr(pl$scatter_connect_mode, if (isTRUE(pl$connect_id)) "id" else "none")
     )
 
+    line_break_restore_from_cfg(cfg, isolate(graph_mapping_replay_plan()))
+
     if (!is.null(lb$xlab)) updateTextAreaInput(session, "xlab", value = json_chr(lb$xlab))
     if (!is.null(lb$ylab)) updateTextAreaInput(session, "ylab", value = json_chr(lb$ylab))
     if (!is.null(lb$title)) updateTextInput(session, "title", value = json_chr(lb$title))
@@ -242,7 +244,7 @@
           requiredInputs = session$ns(c("text", "reshape_wide", "reshape_row_id",
             "reshape_columns", "reshape_x_name", "reshape_y_name", "xvar", "yvar",
             "colorvar", "shapevar", "idvar", "facetvar", "groupvar", "linetypevar",
-            "external_error_col", "external_ymin_col", "external_ymax_col"))
+            "external_error_col", "external_ymin_col", "external_ymax_col", "line_breaks"))
         )
       )
       diag("STATE-REPLAY", paste0("apply fields=batch generation=", generation, " completion-barrier requested"))

@@ -29,9 +29,12 @@ figure_draw_plot_grob_cropped <- function(grob, cx, cy, ww, hh,
     }
   }
 
+  # The source grob already owns any real plot-panel clipping. Adding an
+  # extra Figure-cell clip here creates a large redundant clipping mask in
+  # SVG/Office exports. Only the explicit crop branch above needs it.
   grid::pushViewport(grid::viewport(
     x = cx, y = cy, width = ww, height = hh,
-    just = c("center", "center"), clip = "on"
+    just = c("center", "center"), clip = "off"
   ))
   grid::grid.draw(grob)
   grid::popViewport()
@@ -610,6 +613,103 @@ figure_svg_escape_text <- function(x) {
   x
 }
 
+
+# Remove only source-device clips that cover essentially the entire embedded
+# SVG viewport. svglite emits these safety clips around standalone graphs.
+# In a Figure they become huge Illustrator clipping masks and can confuse
+# PowerPoint's SVG-to-shape conversion. Smaller panel clips are retained.
+figure_svg_strip_redundant_device_clips <- function(inner, viewbox, min_fraction = 0.985) {
+  txt <- as.character(inner %||% "")[1]
+  vb <- suppressWarnings(as.numeric(viewbox))
+  if (!nzchar(txt) || length(vb) != 4L || any(!is.finite(vb)) || vb[3] <= 0 || vb[4] <= 0) {
+    return(list(text = txt, removed = 0L))
+  }
+
+  nodes <- regmatches(txt, gregexpr("<clipPath\\b[\\s\\S]*?</clipPath>", txt, perl = TRUE))[[1]]
+  if (!length(nodes) || (length(nodes) == 1L && identical(nodes[[1]], ""))) {
+    return(list(text = txt, removed = 0L))
+  }
+
+  attr_num <- function(node, nm) {
+    pat <- paste0("\\b", nm, "=(['\\\"])([-+0-9.eE]+)\\1")
+    hit <- regmatches(node, regexpr(pat, node, perl = TRUE))
+    if (!length(hit) || !nzchar(hit)) return(NA_real_)
+    suppressWarnings(as.numeric(sub(pat, "\\2", hit, perl = TRUE)))
+  }
+  attr_id <- function(node) {
+    pat <- "\\bid=(['\\\"])([^'\\\"]+)\\1"
+    hit <- regmatches(node, regexpr(pat, node, perl = TRUE))
+    if (!length(hit) || !nzchar(hit)) return("")
+    sub(pat, "\\2", hit, perl = TRUE)
+  }
+
+  vx <- vb[1]; vy <- vb[2]; vw <- vb[3]; vh <- vb[4]
+  tol_x <- max(2, vw * 0.02); tol_y <- max(2, vh * 0.02)
+  removed <- 0L
+  for (node in nodes) {
+    oid <- attr_id(node)
+    rect <- regmatches(node, regexpr("<rect\\b[^>]*/?>", node, perl = TRUE))
+    if (!nzchar(oid) || !length(rect) || !nzchar(rect)) next
+    rx <- attr_num(rect, "x"); ry <- attr_num(rect, "y")
+    rw <- attr_num(rect, "width"); rh <- attr_num(rect, "height")
+    if (any(!is.finite(c(rx, ry, rw, rh))) || rw <= 0 || rh <= 0) next
+
+    covers <- rw >= vw * min_fraction && rh >= vh * min_fraction &&
+      rx <= vx + tol_x && ry <= vy + tol_y &&
+      (rx + rw) >= (vx + vw - tol_x) &&
+      (ry + rh) >= (vy + vh - tol_y)
+    if (!isTRUE(covers)) next
+
+    txt <- gsub(node, "", txt, fixed = TRUE)
+    for (q in c('"', "'")) {
+      txt <- gsub(paste0(" clip-path=", q, "url(#", oid, ")", q), "", txt, fixed = TRUE)
+      txt <- gsub(paste0("clip-path=", q, "url(#", oid, ")", q), "", txt, fixed = TRUE)
+    }
+    removed <- removed + 1L
+  }
+  list(text = txt, removed = as.integer(removed))
+}
+
+figure_svg_panel_label_element <- function(text, x, top_y, font_size) {
+  fs <- suppressWarnings(as.numeric(font_size %||% 18)[1])
+  if (!is.finite(fs) || fs <= 0) fs <- 18
+  xx <- suppressWarnings(as.numeric(x)[1]); yy <- suppressWarnings(as.numeric(top_y)[1])
+  if (!is.finite(xx)) xx <- 0
+  if (!is.finite(yy)) yy <- 0
+  # Use an ordinary alphabetic baseline. dominant-baseline="hanging" near the
+  # top edge is interpreted inconsistently by Office and can clip A/B labels.
+  baseline_y <- yy + fs * 0.82
+  sprintf(
+    '<text x="%.6f" y="%.6f" font-family="sans-serif" font-size="%.6f" font-weight="bold" text-anchor="start">%s</text>',
+    xx, baseline_y, fs, figure_svg_escape_text(text)
+  )
+}
+
+# Render raster exports to a private temp file first, close the graphics device,
+# then copy into Shiny's download path. This avoids Windows sharing violation 32
+# when a graphics device tries to open the downloadHandler destination itself.
+figure_commit_temp_export <- function(source, target, attempts = 8L) {
+  source <- as.character(source %||% "")[1]
+  target <- as.character(target %||% "")[1]
+  if (!nzchar(source) || !file.exists(source) || !nzchar(target)) {
+    stop("Figure export一時ファイルを確定できませんでした。")
+  }
+  attempts <- max(1L, suppressWarnings(as.integer(attempts %||% 8L)))
+  for (i in seq_len(attempts)) {
+    if (file.exists(target)) try(unlink(target), silent = TRUE)
+    ok <- suppressWarnings(tryCatch(
+      isTRUE(file.copy(source, target, overwrite = TRUE)),
+      error = function(e) FALSE
+    ))
+    if (isTRUE(ok) && file.exists(target)) {
+      sz <- suppressWarnings(file.info(target)$size)
+      if (length(sz) && is.finite(sz) && sz > 0) return(invisible(TRUE))
+    }
+    Sys.sleep(min(0.4, 0.04 * i))
+  }
+  stop("Figure exportファイルの確定に失敗しました。Windowsのファイルロックを確認してください。")
+}
+
 figure_svg_fragment_parts <- function(svg_text, prefix = "fig") {
   txt <- as.character(svg_text %||% "")[1]
   if (!nzchar(txt) || !grepl("<svg\\b", txt, perl = TRUE)) return(NULL)
@@ -646,6 +746,9 @@ figure_svg_fragment_parts <- function(svg_text, prefix = "fig") {
   inner <- gsub("\\s+textLength=(\"[^\"]*\"|'[^']*')", "", inner, perl=TRUE)
   inner <- gsub("\\s+lengthAdjust=(\"[^\"]*\"|'[^']*')", "", inner, perl=TRUE)
 
+  clip_clean <- figure_svg_strip_redundant_device_clips(inner, nums)
+  inner <- clip_clean$text
+
   # Multiple svglite fragments often reuse clipPath IDs. Namespace IDs before
   # merging them into one document so references cannot leak across Panels.
   ids_d <- regmatches(inner, gregexpr('\\bid="[^"]+"', inner, perl=TRUE))[[1]]
@@ -666,7 +769,18 @@ figure_svg_fragment_parts <- function(svg_text, prefix = "fig") {
     inner <- gsub(paste0('xlink:href="#', oid, '"'), paste0('xlink:href="#', nid, '"'), inner, fixed=TRUE)
     inner <- gsub(paste0("xlink:href='#", oid, "'"), paste0('xlink:href="#', nid, '"'), inner, fixed=TRUE)
   }
-  list(inner = inner, viewbox = nums, textlength_removed = as.integer(textlength_n))
+  # Preserve the source SVG root class on the fragment wrapper. svglite scopes
+  # its default stroke/fill CSS under `.svglite`; dropping the root class while
+  # embedding only the inner SVG makes polylines/axis strokes/error bars exist
+  # in the file but render with no stroke. This is especially visible in Figure
+  # SVG export even though standalone Graph SVG is correct.
+  root_class <- trimws(attr_value("class"))
+
+  list(
+    inner = inner, viewbox = nums, root_class = root_class,
+    textlength_removed = as.integer(textlength_n),
+    redundant_clips_removed = as.integer(clip_clean$removed %||% 0L)
+  )
 }
 
 figure_svg_place_fragment <- function(svg_text, x, y, width, height, prefix,
@@ -698,6 +812,10 @@ figure_svg_place_fragment <- function(svg_text, x, y, width, height, prefix,
   }
 
   attrs <- c(sprintf('transform="%s"', tr))
+  if (nzchar(z$root_class %||% "")) {
+    safe_class <- gsub('"', '&quot;', as.character(z$root_class)[1], fixed = TRUE)
+    attrs <- c(sprintf('class="%s"', safe_class), attrs)
+  }
   if (is.finite(opacity) && opacity < 1) attrs <- c(attrs, sprintf('opacity="%.6f"', opacity))
   fragment <- paste0("<g ", paste(attrs, collapse=" "), ">", z$inner, "</g>")
 
@@ -710,6 +828,7 @@ figure_svg_place_fragment <- function(svg_text, x, y, width, height, prefix,
     fragment
   }
   attr(out, "textlength_removed") <- as.integer(z$textlength_removed %||% 0L)
+  attr(out, "redundant_clips_removed") <- as.integer(z$redundant_clips_removed %||% 0L)
   out
 }
 
@@ -750,6 +869,7 @@ figure_write_svg_vector <- function(path, layout, canvas_w, canvas_h, overrides,
   legend_jobs <- character(0); label_jobs <- character(0)
   drawn_ids <- character(0); persisted_svg_ids <- character(0); missing_ids <- character(0)
   textlength_removed_n <- 0L
+  redundant_clips_removed_n <- 0L
   clip_n <- 0L; frag_n <- 0L
   next_prefix <- function(tag="f") { frag_n <<- frag_n + 1L; paste0("f15m_", tag, "_", frag_n) }
   make_clip <- function(x, y, w, h) {
@@ -804,6 +924,7 @@ figure_write_svg_vector <- function(path, layout, canvas_w, canvas_h, overrides,
     placed <- figure_svg_place_fragment(body_svg, full_left, full_top, sp$width, sp$height, next_prefix("body"), clip_id=clip_id)
     if (is.null(placed)) { missing_ids <- c(missing_ids,id); next }
     textlength_removed_n <- textlength_removed_n + as.integer(attr(placed, "textlength_removed") %||% 0L)
+    redundant_clips_removed_n <- redundant_clips_removed_n + as.integer(attr(placed, "redundant_clips_removed") %||% 0L)
     body_jobs <- c(body_jobs, placed)
     drawn_ids <- c(drawn_ids,id)
 
@@ -816,6 +937,7 @@ figure_write_svg_vector <- function(path, layout, canvas_w, canvas_h, overrides,
         z <- figure_svg_place_fragment(legend_svg, pos$x, pos$y, leg$width, leg$height, next_prefix("legend"))
         if (!is.null(z)) {
           textlength_removed_n <- textlength_removed_n + as.integer(attr(z, "textlength_removed") %||% 0L)
+          redundant_clips_removed_n <- redundant_clips_removed_n + as.integer(attr(z, "redundant_clips_removed") %||% 0L)
           legend_jobs <- c(legend_jobs,z)
         }
       }
@@ -859,6 +981,7 @@ figure_write_svg_vector <- function(path, layout, canvas_w, canvas_h, overrides,
         )
         if (!is.null(z)) {
           textlength_removed_n <- textlength_removed_n + as.integer(attr(z, "textlength_removed") %||% 0L)
+          redundant_clips_removed_n <- redundant_clips_removed_n + as.integer(attr(z, "redundant_clips_removed") %||% 0L)
           inset_jobs <- c(inset_jobs,z)
         }
         if (isTRUE(inset$border)) {
@@ -873,7 +996,9 @@ figure_write_svg_vector <- function(path, layout, canvas_w, canvas_h, overrides,
 
     if (nzchar(ov$panel_label)) {
       lp <- figure_label_position(rect, sp, ov)
-      label_jobs <- c(label_jobs, sprintf('<text x="%.6f" y="%.6f" font-family="sans-serif" font-size="%.6f" font-weight="bold" text-anchor="start" dominant-baseline="hanging">%s</text>', rect$x+lp$x, rect$y+lp$y, as.numeric(ov$label_size %||% 18), figure_svg_escape_text(ov$panel_label)))
+      label_jobs <- c(label_jobs, figure_svg_panel_label_element(
+        ov$panel_label, rect$x + lp$x, rect$y + lp$y, ov$label_size %||% 18
+      ))
     }
   }
 
@@ -886,5 +1011,61 @@ figure_write_svg_vector <- function(path, layout, canvas_w, canvas_h, overrides,
     body_jobs, inset_jobs, legend_jobs, label_jobs, '</svg>'
   )
   writeLines(doc, path, useBytes=TRUE)
-  list(drawn_ids=unique(drawn_ids), persisted_svg_ids=unique(persisted_svg_ids), missing_ids=character(0), vector_svg=TRUE, textlength_removed=as.integer(textlength_removed_n))
+  list(
+    drawn_ids=unique(drawn_ids), persisted_svg_ids=unique(persisted_svg_ids),
+    missing_ids=character(0), vector_svg=TRUE,
+    textlength_removed=as.integer(textlength_removed_n),
+    redundant_clips_removed=as.integer(redundant_clips_removed_n)
+  )
+}
+
+# PowerPoint/Office compatibility compositor. Rather than embedding each Graph
+# SVG behind per-Graph scale/translate wrappers, draw the completed Figure once
+# on a single svglite device. Grid resolves placement before serialization, so
+# PowerPoint sees a flatter final coordinate system when converting to shapes.
+figure_write_svg_office <- function(path, layout, canvas_w, canvas_h, overrides, plots, exports,
+                                    gap_x = 12, gap_y = 12, rects = NULL,
+                                    external_assets = list(), inset_snapshots = list(),
+                                    persisted_previews = list(), reference_res = 120) {
+  if (!requireNamespace("svglite", quietly = TRUE)) {
+    stop("PowerPoint互換SVGの出力には svglite パッケージが必要です。")
+  }
+  rr <- suppressWarnings(as.numeric(reference_res %||% 120)[1])
+  if (!is.finite(rr) || rr <= 0) rr <- 120
+  tmp <- tempfile("figure_office_", fileext = ".svg")
+  on.exit(try(unlink(tmp), silent = TRUE), add = TRUE)
+
+  svglite::svglite(
+    tmp, width = max(0.1, canvas_w / rr), height = max(0.1, canvas_h / rr),
+    bg = "transparent", standalone = TRUE
+  )
+  dev_id <- grDevices::dev.cur(); closed <- FALSE
+  on.exit({
+    if (!closed && identical(grDevices::dev.cur(), dev_id)) try(grDevices::dev.off(), silent = TRUE)
+  }, add = TRUE)
+  summary <- figure_draw_to_device(
+    layout, canvas_w, canvas_h, overrides, plots, exports, gap_x, gap_y,
+    rects = rects, external_assets = external_assets,
+    inset_snapshots = inset_snapshots, persisted_previews = persisted_previews
+  )
+  grDevices::dev.off(); closed <- TRUE
+
+  txt <- paste(readLines(tmp, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
+  parts <- figure_svg_fragment_parts(txt, prefix = "office")
+  if (is.null(parts)) stop("PowerPoint互換SVGの生成に失敗しました。")
+  vb <- parts$viewbox
+  width_in <- canvas_w / rr; height_in <- canvas_h / rr
+  doc <- c(
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    sprintf(
+      '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="%.6fin" height="%.6fin" viewBox="%.6f %.6f %.6f %.6f">',
+      width_in, height_in, vb[1], vb[2], vb[3], vb[4]
+    ),
+    parts$inner, '</svg>'
+  )
+  writeLines(doc, path, useBytes = TRUE)
+  summary$office_svg <- TRUE
+  summary$textlength_removed <- as.integer(parts$textlength_removed %||% 0L)
+  summary$redundant_clips_removed <- as.integer(parts$redundant_clips_removed %||% 0L)
+  summary
 }

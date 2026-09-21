@@ -124,6 +124,7 @@ graphServer <- function(id, style_clipboard = NULL, diag_log = NULL, ui_preseede
   sys.source(file.path(getwd(), "graph_shared_style_runtime.R"), envir = environment())
   init_timing_emit("PREPARED-DATA-BEGIN")
   sys.source(file.path(getwd(), "graph_prepared_data_runtime.R"), envir = environment())
+  sys.source(file.path(getwd(), "graph_line_connection_runtime.R"), envir = environment())
   init_timing_emit("PLOT-BUILDER-BEGIN")
 
   # ============================================================
@@ -188,6 +189,19 @@ graphServer <- function(id, style_clipboard = NULL, diag_log = NULL, ui_preseede
       )
       on.exit(grDevices::dev.off(), add = TRUE)
       print(panel_sized_plot())
+    }
+  )
+
+  output$download_pptx <- downloadHandler(
+    filename = function() paste0("ggplot_", Sys.Date(), ".pptx"),
+    content = function(file) {
+      dims <- plot_total_dimensions()
+      pptx_write_ggplot_editable(
+        file, panel_sized_plot(),
+        width_px = dims$width, height_px = dims$height,
+        reference_res = export_reference_res,
+        label = "ggplot-editable-graph-module"
+      )
     }
   )
 

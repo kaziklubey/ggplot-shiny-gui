@@ -169,51 +169,64 @@ div(
       )
     ),
 
-    # Export
-    div(
-      class = "top-row",
-      tags$span(class = "top-label", "書き出し"),
+    # Output controls follow the active workspace. Graph export stays compact
+    # on the Graph workspace; Figure export owns the same prominent top slot
+    # while the Figure workspace is active. Export state ownership is unchanged.
+    conditionalPanel(
+      condition = "input.workspace_main_tab == 'graph_workspace'",
       div(
-        class = "inline-select export-target",
-        selectInput(
-          "top_export_target",
-          NULL,
-          choices = c(
-            "現在編集中のGraph" = "current",
-            "選択したGraph" = "selected",
-            "全Graph" = "all"
-          ),
-          selected = "current",
-          width = "155px"
+        class = "top-row top-output-row graph-output-row",
+        tags$span(class = "top-label", "Graph出力"),
+        div(
+          class = "inline-select graph-export-target",
+          selectInput(
+            "top_export_target",
+            NULL,
+            choices = c(
+              "編集中" = "current",
+              "選択" = "selected",
+              "すべて" = "all"
+            ),
+            selected = "current",
+            width = "120px",
+            selectize = FALSE
+          )
+        ),
+        div(
+          class = "inline-select graph-export-format",
+          selectInput(
+            "top_export_format",
+            NULL,
+            choices = c(
+              "SVG" = "svg",
+              "PowerPoint (.pptx)" = "pptx",
+              "PNG" = "png",
+              "PDF" = "pdf"
+            ),
+            selected = "svg",
+            width = "155px",
+            selectize = FALSE
+          )
+        ),
+        downloadButton("download_graphs", "書き出す"),
+        tags$span(
+          class = "export-status",
+          textOutput("bulk_export_status", inline = TRUE)
+        ),
+        tags$small(
+          class = "top-export-note",
+          "PowerPointは線・点・文字を編集可能"
         )
-      ),
-      div(
-        class = "inline-select export-format",
-        selectInput(
-          "top_export_format",
-          NULL,
-          choices = c(
-            "SVG" = "svg",
-            "PNG" = "png",
-            "PDF" = "pdf"
-          ),
-          selected = "svg",
-          width = "90px"
-        )
-      ),
-      downloadButton("download_graphs", "書き出す"),
-      tags$span(
-        class = "export-status",
-        textOutput("bulk_export_status", inline = TRUE)
-      ),
-      tags$small(
-        class = "text-muted",
-        "SVG / PDF: ベクター本番用　｜　PNG: 軽量な確認・共有用　｜　サイズ比率は現在のPlotに連動"
       )
     ),
 
     conditionalPanel(
-      condition = "input.top_export_target == 'selected'",
+      condition = "input.workspace_main_tab == 'figure_workspace'",
+      figureTopExportUI()
+    ),
+
+    conditionalPanel(
+      condition = "input.workspace_main_tab == 'graph_workspace' && input.top_export_target == 'selected'",
       div(
         class = "bulk-choice-box",
         uiOutput("bulk_export_choices")

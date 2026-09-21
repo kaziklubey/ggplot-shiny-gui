@@ -447,6 +447,32 @@
   graph_single_release_live_render <- function(id, generation, completed_path, settle_attempts, mod) {
     id <- as.character(id %||% "")[1]
     generation <- as.integer(generation %||% -1L)
+
+    # v3.74.3: latest-selection-wins without interrupting the transactional
+    # value replay.  A newer Graph click may arrive while this target is still
+    # replaying.  Once canonical acceptance has completed, the current target
+    # is safe to leave, so do not spend another browser image-complete cycle
+    # rendering an intermediate Graph the user no longer selected.  Keep the
+    # render gate closed, release the loading flag, and let the existing
+    # pending-target observer immediately start the latest queued Graph.
+    pending <- isolate(graph_single_pending_target())
+    pending_id <- if (is.list(pending)) as.character(pending$id %||% "")[1] else ""
+    if (nzchar(pending_id) && !identical(pending_id, id)) {
+      graph_single_live_render_wait(NULL)
+      graph_single_editor_loading(FALSE)
+      graph_single_editor_mode("READY")
+      graph_single_mark_editor_visit(id, generation = generation)
+      diag_log(
+        "GRAPH-SINGLE-EDITOR",
+        paste0(
+          "superseded after canonical acceptance; final live render skipped pending=",
+          pending_id, " generation=", generation
+        ),
+        id = id
+      )
+      return(invisible(TRUE))
+    }
+
     tab <- tryCatch(
       if (is.function(mod$main_tab)) as.character(isolate(mod$main_tab()) %||% "Plot")[1] else "Plot",
       error = function(e) "Plot"

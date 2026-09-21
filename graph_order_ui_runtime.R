@@ -93,6 +93,8 @@
     tagList(items)
   })
 
+  # Line-break browser synchronization lives in graph_line_connection_runtime.R.
+
   observeEvent(input$apply_x_order, {
     req(input$xvar)
     observed <- unique(as.character(dat()[[input$xvar]]))
@@ -102,7 +104,14 @@
     if (length(unknown)) {
       showNotification(paste("データにないX水準を無視しました:", paste(unknown, collapse = ", ")), type = "warning")
     }
-    set_saved_order("x", input$xvar, complete_order(requested, observed))
+    final_order <- complete_order(requested, observed)
+    set_saved_order("x", input$xvar, final_order)
+    # An explicit user order change is the one place where a previously saved
+    # boundary is intentionally dropped when its two levels are no longer
+    # adjacent. Replay/choice rebuilding never performs this destructive prune.
+    if (exists("line_break_prune_to_levels", mode = "function")) {
+      line_break_prune_to_levels(final_order, source = "x-category-order")
+    }
   })
 
   observeEvent(input$apply_group_order, {

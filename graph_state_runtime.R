@@ -45,7 +45,8 @@
         external_error_mode = input$external_error_mode %||% "none",
         show_raw = input$show_raw,
         connect_id = input$connect_id,
-        scatter_connect_mode = input$scatter_connect_mode %||% "none"
+        scatter_connect_mode = input$scatter_connect_mode %||% "none",
+        line_breaks = line_break_clean(line_break_state())
       ),
       labels = list(
         xlab = normalize_multiline_label(input$xlab),

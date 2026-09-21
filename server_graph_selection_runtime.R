@@ -43,9 +43,11 @@
         return(invisible(TRUE))
       }
 
-      # Latest-selection-wins queue. Do not interrupt the current Graph replay:
-      # graph_single_load() snapshots the outgoing owner, so switching mid-replay
-      # could otherwise publish a partial state.
+      # Latest-selection-wins queue. Do not interrupt the current Graph value
+      # replay because graph_single_load() snapshots the outgoing owner and a
+      # mid-replay switch could publish a partial state.  v3.74.3 releases a
+      # superseded target immediately after canonical acceptance, before its
+      # final live-render/browser-image-complete cycle.
       graph_single_pending_target(list(
         id = id, source = source, new_graph = isTRUE(new_graph), section_key = section_key
       ))
@@ -69,9 +71,10 @@
     invisible(TRUE)
   }
 
-  # Drain a queued Graph selection only after the previous singleton Editor
-  # transaction has fully released its loading flag. This is event-driven by
-  # the READY/abort state transition; no polling or timer is involved.
+  # Drain a queued Graph selection after the previous singleton Editor has
+  # released its loading flag. For a superseded target v3.74.3 can release at
+  # canonical acceptance (before final live render); otherwise release occurs at
+  # ordinary READY/abort. No polling or timer is involved.
   observe({
     loading <- graph_single_editor_loading()
     pending <- graph_single_pending_target()
