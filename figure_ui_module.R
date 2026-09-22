@@ -82,13 +82,14 @@ figureLayoutPrimaryControlsUI <- function() {
         selected = "row", width = "105px"
       ),
       selectInput(
-        "figure_size_basis", "Panel整列",
+        "figure_size_basis", "整列基準",
         choices = c(
-          "自動整列（推奨）" = "panel_auto",
-          "Plot panelのみ" = "plot",
-          "軸＋凡例（旧方式）" = "axis_legend"
+          "Panel本体（凡例除外）" = "panel",
+          "Panel本体＋外側凡例（推奨）" = "panel_legend",
+          "Panel＋軸（凡例除外）" = "panel_axis",
+          "Panel＋軸＋外側凡例" = "panel_axis_legend"
         ),
-        selected = "panel_auto", width = "165px"
+        selected = "panel_legend", width = "220px"
       ),
       # Backward-compatible input owner. Graph title alignment was an old
       # workaround for panel-label drift and is no longer exposed in the UI.
@@ -99,9 +100,13 @@ figureLayoutPrimaryControlsUI <- function() {
       numericInput("figure_gap_x", "Panel横間隔 (px)", value = 12, min = 0, max = 300, step = 2, width = "100px"),
       numericInput("figure_gap_y", "Panel縦間隔 (px)", value = 12, min = 0, max = 300, step = 2, width = "100px")
     ),
+    conditionalPanel(
+      condition = "input.figure_size_mode == 'fixed' && input.figure_layout_mode == 'row'",
+      div(class = "figure-layout-track-controls", uiOutput("figure_column_ratio_controls"))
+    ),
     tags$p(
       class = "figure-layout-card-help",
-      "通常は『自動整列（推奨）』を使用します。Plot panelを基準にFacet・軸・Plot title/captionの差を周辺余白として吸収します。Panel label (A/B/C…) はGraph titleとは独立して整列し、Free legendはoverlayとして扱います。"
+      "Panel本体を揃える場合はPanel基準を使用します。軸ラベル等は周辺予約として吸収し、外側凡例を共通整列余白へ含めるかを明示できます。Fixedでは列幅比は全Row共通のcolumn track、行高さ比は全Figure共通のrow trackとして扱います。"
     )
   )
 }

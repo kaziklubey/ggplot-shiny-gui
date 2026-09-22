@@ -9,8 +9,8 @@
   # ============================================================
   style_settings <- reactive({
     list(
-      version = "3.80.2",
-      schema_version = 4L,
+      version = "3.81.0",
+      schema_version = 5L,
       color_styles = color_styles(),
       linetype_styles = linetype_styles(),
       shape_styles = shape_styles(),
@@ -55,6 +55,9 @@
         mean_shape = input$mean_shape,
         point_size = input$point_size,
         scatter_point_alpha = input$scatter_point_alpha,
+        scatter_jitter_enabled = input$scatter_jitter_enabled,
+        scatter_jitter_x = input$scatter_jitter_x,
+        scatter_jitter_y = input$scatter_jitter_y,
         line_width = input$line_width,
         line_group_dodge = input$line_group_dodge,
         line_x_spacing = input$line_x_spacing,
@@ -200,7 +203,7 @@
   apply_style_config <- function(cfg, success_message = "書式を適用しました。", release_guard = TRUE, notify = TRUE) {
     target <- isolate(graph_state_replay_target())
     mp <- if (is.list(target)) target$mapping else list(color = isolate(input$colorvar), position = isolate(input$groupvar))
-    cfg <- graph_style_migrate_v4(cfg)
+    cfg <- graph_style_migrate_v5(cfg)
     cfg <- graph_normalize_legend_state(list(mapping = mp, style = cfg))$style
     restoring_style_state(TRUE)
     restore_release_scheduled <- FALSE
@@ -257,14 +260,7 @@
     }
     raw_group_colors(rc)
 
-    os <- list(x = list(), group = list(), display = list(), facet = list())
-    if (!is.null(cfg$orders)) {
-      if (!is.null(cfg$orders$x)) os$x <- cfg$orders$x
-      if (!is.null(cfg$orders$group)) os$group <- cfg$orders$group
-      if (!is.null(cfg$orders$display)) os$display <- cfg$orders$display
-      if (!is.null(cfg$orders$facet)) os$facet <- cfg$orders$facet
-    }
-    order_state(os)
+    order_state(graph_normalize_order_state(cfg$orders %||% list()))
 
     lt <- list()
     if (!is.null(cfg$legend_titles)) {
@@ -335,6 +331,9 @@
       if (!is.null(a$mean_shape)) updateSelectInput(session, "mean_shape", selected = as.character(a$mean_shape))
       if (!is.null(a$point_size)) updateSliderInput(session, "point_size", value = as.numeric(a$point_size))
       updateSliderInput(session, "scatter_point_alpha", value = as.numeric(a$scatter_point_alpha %||% 0.90))
+      updateCheckboxInput(session, "scatter_jitter_enabled", value = isTRUE(a$scatter_jitter_enabled))
+      updateNumericInput(session, "scatter_jitter_x", value = as.numeric(a$scatter_jitter_x %||% 0.10))
+      updateNumericInput(session, "scatter_jitter_y", value = as.numeric(a$scatter_jitter_y %||% 0))
       if (!is.null(a$line_width)) updateSliderInput(session, "line_width", value = as.numeric(a$line_width))
       if (!is.null(a$line_group_dodge)) updateSliderInput(session, "line_group_dodge", value = as.numeric(a$line_group_dodge))
       if (!is.null(a$line_x_spacing)) updateSliderInput(session, "line_x_spacing", value = as.numeric(a$line_x_spacing))

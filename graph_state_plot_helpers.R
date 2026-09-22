@@ -47,7 +47,7 @@ legend_item_label_values <- function(legend_key, levels_now, default_labels = NU
   }
 
 get_saved_order <- function(kind, var_name, observed) {
-    st <- order_state()
+    st <- graph_normalize_order_state(order_state())
     branch <- st[[kind]]
     saved <- if (is.null(branch)) NULL else branch[[var_name]]
     if (is.null(saved)) saved <- character(0)

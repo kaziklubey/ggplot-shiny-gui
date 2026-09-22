@@ -56,6 +56,10 @@ figure_num_or <- function(x, fallback = NA_real_, lo = -Inf, hi = Inf) {
 
 figure_reindex_layout <- function(st) {
   if (is.null(st) || !is.list(st) || !length(st)) return(list())
+  # v3.80.8: Figure-wide column ratios are canonical layout metadata. Cell
+  # `width` values are maintained only as a derived compatibility mirror for
+  # older project/state consumers. Preserve the metadata before list slicing.
+  saved_column_ratios <- attr(st, "column_ratios", exact = TRUE)
   if (length(st) > 12L) st <- st[seq_len(12L)]
   out <- vector("list", length(st))
   for (r in seq_along(st)) {
@@ -67,9 +71,7 @@ figure_reindex_layout <- function(st) {
     if (!is.finite(nc) || nc < 1L) nc <- 1L
     nc <- min(nc, 12L)
     hh <- figure_num_or(row$height, 1, 0.1, 10)
-    basis_override <- as.character(row$size_basis %||% "inherit")[1]
-    if (basis_override %in% c("facet", "axis")) basis_override <- "panel_auto"
-    if (!basis_override %in% c("inherit", "panel_auto", "plot", "axis_legend")) basis_override <- "inherit"
+    basis_override <- figure_normalize_alignment_basis(row$size_basis %||% "inherit", fallback = "panel_legend", allow_inherit = TRUE)
     if (length(cells) < nc) {
       start <- length(cells) + 1L
       if (start <= nc) for (cc in seq.int(start, nc)) cells[[cc]] <- figure_make_cell(r, cc)
@@ -108,6 +110,37 @@ figure_reindex_layout <- function(st) {
       )
     }
     out[[r]] <- list(row = r, height = hh, ncol = nc, size_basis = basis_override, cells = cells)
+  }
+
+  # v3.80.8 Fixed Canvas contract: column ratios are one Figure-wide vector.
+  # New state stores that vector as layout metadata. Legacy Projects that only
+  # have per-cell widths migrate deterministically from the first existing Row.
+  # Cell widths remain a derived mirror so old project payloads can still cross
+  # the load boundary without creating a second runtime layout path.
+  max_col <- max(vapply(out, function(row) length(row$cells %||% list()), integer(1)), 0L)
+  if (max_col > 0L) {
+    raw_shared <- suppressWarnings(as.numeric(saved_column_ratios))
+    shared <- rep(NA_real_, max_col)
+    if (length(raw_shared)) {
+      take <- seq_len(min(length(raw_shared), max_col))
+      ok <- is.finite(raw_shared[take]) & raw_shared[take] > 0
+      shared[take[ok]] <- pmin(pmax(raw_shared[take[ok]], 0.1), 10)
+    }
+    for (cc in seq_len(max_col)) {
+      if (!is.finite(shared[[cc]])) {
+        vals <- vapply(out, function(row) {
+          cells <- row$cells %||% list()
+          if (length(cells) < cc) return(NA_real_)
+          figure_num_or(cells[[cc]]$width, NA_real_, 0.1, 10)
+        }, numeric(1))
+        vals <- vals[is.finite(vals)]
+        shared[[cc]] <- if (length(vals)) vals[[1]] else 1
+      }
+      for (rr in seq_along(out)) {
+        if (length(out[[rr]]$cells %||% list()) >= cc) out[[rr]]$cells[[cc]]$width <- shared[[cc]]
+      }
+    }
+    attr(out, "column_ratios") <- shared
   }
   out
 }
@@ -316,23 +349,26 @@ figure_reset_override_free_positions <- function(ov) {
 }
 
 figure_default_layout_state <- function() {
-  list(
+  out <- list(
     list(
       row = 1L, height = 1, ncol = 2L, size_basis = "inherit",
       cells = list(figure_make_cell(1, 1), figure_make_cell(1, 2))
     )
   )
+  attr(out, "column_ratios") <- c(1, 1)
+  out
 }
 
 figure_default_workspace_state <- function() {
   list(
-    schema_version = "3.4.0-alpha6",
+    schema_version = "3.80.8-global-column-ui1",
     layout_mode = "row",
     autofit_policy = "live",
     title_align = "none",
     free_canvas_padding = 24,
     external_assets = list(),
     layout = figure_default_layout_state(),
+    column_ratios = c(1, 1),
     overrides = list()
   )
 }

@@ -6,12 +6,26 @@ figure_apply_layout_edit_state <- function(st, event, valid_graph_ids = characte
   r <- suppressWarnings(as.integer(event$row %||% NA_integer_))
   c <- suppressWarnings(as.integer(event$col %||% NA_integer_))
   ans <- list(state = st, changed = FALSE, rebuild_ui = FALSE)
+
+  # v3.80.8: column ratios are Figure-wide state, not Row/Panel state. Handle
+  # them before Row validation and update the single shared column contract.
+  if (identical(typ, "column_ratio")) {
+    x <- suppressWarnings(as.numeric(event$value %||% NA_real_))
+    if (!is.finite(c) || c < 1L || !is.finite(x) || x <= 0) return(ans)
+    before <- figure_shared_column_ratios(st)
+    if (c > length(before)) return(ans)
+    x <- min(max(x, 0.1), 10)
+    if (isTRUE(all.equal(before[[c]], x))) return(ans)
+    st <- figure_set_shared_column_ratio(st, c, x)
+    ans$state <- st
+    ans$changed <- TRUE
+    return(ans)
+  }
+
   if (!is.finite(r) || r < 1L || r > length(st)) return(ans)
 
   if (identical(typ, "row_basis")) {
-    x <- as.character(event$value %||% "inherit")[1]
-    if (x %in% c("facet", "axis")) x <- "panel_auto"
-    if (!x %in% c("inherit", "panel_auto", "plot", "axis_legend")) x <- "inherit"
+    x <- figure_normalize_alignment_basis(event$value %||% "inherit", fallback = "panel_legend", allow_inherit = TRUE)
     old <- as.character(st[[r]]$size_basis %||% "inherit")[1]
     if (!identical(old, x)) {
       st[[r]]$size_basis <- x
@@ -32,16 +46,6 @@ figure_apply_layout_edit_state <- function(st, event, valid_graph_ids = characte
   }
 
   if (!is.finite(c) || c < 1L || c > st[[r]]$ncol) return(ans)
-  if (identical(typ, "panel_width")) {
-    x <- suppressWarnings(as.numeric(event$value %||% NA_real_))
-    if (!is.finite(x) || x <= 0) return(ans)
-    x <- min(max(x, 0.1), 10)
-    if (!isTRUE(all.equal(st[[r]]$cells[[c]]$width, x))) {
-      st[[r]]$cells[[c]]$width <- x
-      ans$state <- st; ans$changed <- TRUE
-    }
-    return(ans)
-  }
 
   if (typ %in% c("graph_width", "graph_height")) {
     raw <- as.character(event$value %||% "")[1]

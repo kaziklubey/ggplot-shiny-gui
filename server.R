@@ -340,9 +340,9 @@ shinyServer(function(input, output, session) {
   figure_requested_height <- reactiveVal(1000)
   # v3.3.68: auto-fit derives the effective Figure canvas from occupied Graph content.
   figure_requested_size_mode <- reactiveVal("auto")
-  # Figure alignment policy. panel_auto keeps the data panel authoritative and
-  # treats facet/axis/title/caption geometry as surrounding gutters.
-  figure_requested_size_basis <- reactiveVal("panel_auto")
+  # Figure alignment policy. The explicit contract chooses panel vs panel+axis
+  # as the anchor and whether an attached outer legend participates in spacing.
+  figure_requested_size_basis <- reactiveVal("panel_legend")
   # Compatibility owner for older saved projects. v3.73.2.50 retires Graph-title
   # alignment from the active UI; Figure panel labels have an independent band.
   figure_requested_title_align <- reactiveVal("none")
@@ -780,8 +780,8 @@ shinyServer(function(input, output, session) {
   # distinguish A -> B -> A while a commit is pending, so alpha4 records intent.
   figure_commit_edit_revisions <- reactiveVal(list())
   # Structural UI is regenerated only when rows/panels/graph assignments change.
-  # Numeric edits (row height / panel width) update state without rebuilding their
-  # own inputs, which prevents dynamic-input value bounce loops.
+  # Numeric edits (row height / Figure-wide column ratio) update state without
+  # rebuilding their own inputs, which prevents dynamic-input value bounce loops.
   figure_layout_ui_version <- reactiveVal(0L)
   figure_inspector_ui_revision <- reactiveVal(0L)
 

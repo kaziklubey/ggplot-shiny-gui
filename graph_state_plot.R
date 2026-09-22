@@ -28,6 +28,7 @@ graph_snapshot_input_defaults <- function() {
     theme = "classic", base_size = 13, font_family_mode = "sans", font_family_custom = "",
     mean_color_mode = "#000000", mean_linetype = "solid", mean_shape = 16,
     point_size = 2.8, scatter_point_alpha = 0.90,
+    scatter_jitter_enabled = FALSE, scatter_jitter_x = 0.10, scatter_jitter_y = 0,
     line_width = 0.9, line_group_dodge = 0.10, line_x_spacing = 1,
     bar_width = 0.82, bar_zero_touch = TRUE, group_spacing = 1,
     box_width_scale = 0.72, x_category_spacing = 1, bar_border_mode = "fixed",
@@ -138,7 +139,7 @@ graph_snapshot_context <- function(state) {
                  "regression_styles", "raw_group_colors", "legend_titles", "legend_item_labels", "level_labels")) {
     scope[[name]] <- graph_snapshot_store(style[[name]] %||% list())
   }
-  scope$order_state <- graph_snapshot_store(style$orders %||% list())
+  scope$order_state <- graph_snapshot_store(graph_normalize_order_state(style$orders %||% list()))
   eval(graph_state_plot_definitions, envir = scope)
   eval(graph_plot_data_definitions, envir = scope)
   eval(quote({

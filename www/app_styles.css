@@ -1222,14 +1222,14 @@
 .figure-row-panel-card-compact {
   flex: 0 0 auto;
   display: grid;
-  grid-template-columns: 28px 170px 68px 82px 82px;
+  grid-template-columns: 28px 170px 82px 82px;
   align-items: end;
   gap: 6px;
   padding: 5px 6px;
   border: 1px solid #e2e8ed;
   border-radius: 5px;
   background: #fff;
-  min-width: 470px;
+  min-width: 395px;
 }
 .figure-row-panel-card-compact .form-group {
   margin-bottom: 0;
@@ -1270,10 +1270,52 @@
   width: 100%;
 }
 .figure-row-height-compact input,
-.figure-row-panel-width input,
 .figure-row-graph-size input {
   width: 100%;
 }
+
+.figure-layout-track-controls .figure-shared-column-ratios {
+  margin: 8px 0 0 0;
+}
+
+.figure-shared-column-ratios {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px 12px;
+  padding: 7px 8px;
+  margin: 8px 0 6px 0;
+  border: 1px solid #dfe7ed;
+  border-radius: 6px;
+  background: #f8fbfd;
+}
+.figure-shared-column-ratios-heading {
+  display: flex;
+  flex-direction: column;
+  min-width: 120px;
+  line-height: 1.15;
+}
+.figure-shared-column-ratios-heading .text-muted {
+  font-size: 10px;
+  margin-top: 2px;
+}
+.figure-shared-column-ratio-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.figure-column-ratio-item {
+  width: 72px;
+}
+.figure-column-ratio-item input {
+  width: 100%;
+}
+.figure-shared-column-ratios-help {
+  color: #777;
+  font-size: 11px;
+  padding-bottom: 5px;
+}
+
 .figure-cell-ui-host {
   position: absolute;
   inset: 0;
@@ -1290,9 +1332,6 @@
   color: #8a8a8a;
   font-size: 12px;
   pointer-events: none;
-}
-.figure-row-panel-card-compact .figure-row-panel-width {
-  width: 68px;
 }
 .figure-row-panel-card-compact .figure-row-graph-size {
   width: 82px;
@@ -1776,6 +1815,38 @@
   padding: 8px 10px;
   margin-bottom: 10px;
   background: #fafafa;
+}
+
+.category-order-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+.category-order-row {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 34px 34px;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 3px 5px;
+  border: 1px solid #e7e7e7;
+  border-radius: 4px;
+  background: #fff;
+}
+.category-order-index {
+  color: #777;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.category-order-label {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.category-order-move {
+  min-width: 30px;
+  padding: 2px 6px;
 }
 .help-block {
   color: #666;

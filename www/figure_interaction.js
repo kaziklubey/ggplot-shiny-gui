@@ -180,30 +180,38 @@ function clampFigureNumberInput(el, fallback) {
 
 function sendFigureNumberEdit(el, type, fallback, commit) {
   var row = parseInt($(el).attr('data-row'), 10);
-  var col = parseInt($(el).attr('data-col'), 10);
   var value = commit ? clampFigureNumberInput(el, fallback) : parseFloat(el.value);
   if (!isFinite(row) || !isFinite(value)) return;
   var min = parseFloat(el.getAttribute('min'));
   var max = parseFloat(el.getAttribute('max'));
   if (isFinite(min)) value = Math.max(min, value);
   if (isFinite(max)) value = Math.min(max, value);
-  var msg = {type: type, row: row, value: value, nonce: Date.now()};
-  if (type === 'panel_width') {
-    if (!isFinite(col)) return;
-    msg.col = col;
-  }
-  Shiny.setInputValue('figure_layout_edit', msg, {priority: 'event'});
+  Shiny.setInputValue('figure_layout_edit', {
+    type: type, row: row, value: value, nonce: Date.now()
+  }, {priority: 'event'});
+}
+
+function sendFigureColumnRatioEdit(el, commit) {
+  var col = parseInt($(el).attr('data-col'), 10);
+  var value = commit ? clampFigureNumberInput(el, 1) : parseFloat(el.value);
+  if (!isFinite(col) || !isFinite(value)) return;
+  var min = parseFloat(el.getAttribute('min'));
+  var max = parseFloat(el.getAttribute('max'));
+  if (isFinite(min)) value = Math.max(min, value);
+  if (isFinite(max)) value = Math.min(max, value);
+  Shiny.setInputValue('figure_layout_edit', {
+    type: 'column_ratio', col: col, value: value, nonce: Date.now()
+  }, {priority: 'event'});
 }
 
 // Send a stable value after a short typing pause so Figure state/autosave
 // does not wait for the input to lose focus. The control itself is never
 // rebuilt by this numeric edit, so this cannot create the old value loop.
-$(document).on('input', '.figure-row-height-edit,.figure-panel-width-edit', function() {
+$(document).on('input', '.figure-row-height-edit', function() {
   var el = this;
   if (el._figureEditTimer) clearTimeout(el._figureEditTimer);
   el._figureEditTimer = setTimeout(function() {
-    var typ = el.classList.contains('figure-panel-width-edit') ? 'panel_width' : 'row_height';
-    sendFigureNumberEdit(el, typ, 1, false);
+    sendFigureNumberEdit(el, 'row_height', 1, false);
   }, 250);
 });
 
@@ -212,9 +220,9 @@ $(document).on('change', '.figure-row-height-edit', function() {
   sendFigureNumberEdit(this, 'row_height', 1, true);
 });
 
-$(document).on('change', '.figure-panel-width-edit', function() {
+$(document).on('change', '.figure-column-ratio-edit', function() {
   if (this._figureEditTimer) clearTimeout(this._figureEditTimer);
-  sendFigureNumberEdit(this, 'panel_width', 1, true);
+  sendFigureColumnRatioEdit(this, true);
 });
 
 $(document).on('change', '.figure-panel-graph-edit', function() {

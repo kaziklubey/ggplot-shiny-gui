@@ -13,7 +13,7 @@
     stats_selected_id()
 
     list(
-      version = "3.80.2",
+      version = "3.81.0",
       schema_version = 5L,
       app = "ggplot GUI",
       project_name = input$project_name,

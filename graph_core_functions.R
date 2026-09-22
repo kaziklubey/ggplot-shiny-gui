@@ -37,12 +37,6 @@ graph_saved_plot_size_from_state <- function(cfg) {
   )
 }
 
-graph_parse_order_text <- function(txt) {
-  if (is.null(txt) || !nzchar(trimws(txt))) return(character(0))
-  vals <- trimws(unlist(strsplit(txt, ",", fixed = TRUE)))
-  vals[nzchar(vals)]
-}
-
 graph_complete_order <- function(existing, observed) {
   observed <- as.character(observed)
   existing <- as.character(existing)

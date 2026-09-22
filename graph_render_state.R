@@ -103,8 +103,15 @@ graph_render_state <- function(state) {
       st$raw_group_colors <- NULL
       ap$x_tick_labels_show <- NULL
       if (isTRUE(has_color_mapping)) ap$mean_color_mode <- NULL
+      if (!isTRUE(ap$scatter_jitter_enabled)) {
+        ap$scatter_jitter_x <- NULL
+        ap$scatter_jitter_y <- NULL
+      }
     } else {
       ap$scatter_point_alpha <- NULL
+      ap$scatter_jitter_enabled <- NULL
+      ap$scatter_jitter_x <- NULL
+      ap$scatter_jitter_y <- NULL
     }
     st$appearance <- ap
 

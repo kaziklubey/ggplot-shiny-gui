@@ -10,11 +10,11 @@ graph_style_migration_scalar_chr <- function(x, default = "") {
   as.character(z[[1]])
 }
 
-# v3.80.2 style schema 4. Keep style migration pure so Project load can
+# v3.81.0 style schema 5. Keep style migration pure so Project load can
 # canonicalize every dormant Graph before any Editor replay. This prevents the
 # first visible replay from producing a false live edit solely because current
 # controls materialize newer style metadata/defaults.
-graph_style_migrate_v4 <- function(style) {
+graph_style_migrate_v5 <- function(style) {
   st <- style %||% list()
   if (!is.list(st)) st <- list()
 
@@ -41,9 +41,19 @@ graph_style_migrate_v4 <- function(style) {
   if (!length(text_size) || !is.finite(text_size[[1]])) text_size <- 0
   ap$legend_text_size <- max(0, min(48, as.numeric(text_size[[1]])))
 
+  jitter_enabled <- isTRUE(graph_state_scalar(ap$scatter_jitter_enabled, FALSE))
+  jitter_x <- suppressWarnings(as.numeric(graph_state_scalar(ap$scatter_jitter_x, 0.10)))
+  jitter_y <- suppressWarnings(as.numeric(graph_state_scalar(ap$scatter_jitter_y, 0)))
+  if (!length(jitter_x) || !is.finite(jitter_x[[1]])) jitter_x <- 0.10
+  if (!length(jitter_y) || !is.finite(jitter_y[[1]])) jitter_y <- 0
+  ap$scatter_jitter_enabled <- jitter_enabled
+  ap$scatter_jitter_x <- max(0, as.numeric(jitter_x[[1]]))
+  ap$scatter_jitter_y <- max(0, as.numeric(jitter_y[[1]]))
+
+  st$orders <- graph_normalize_order_state(st$orders %||% list())
   st$appearance <- ap
-  st$version <- "3.80.2"
-  st$schema_version <- 4L
+  st$version <- "3.81.0"
+  st$schema_version <- 5L
   st
 }
 

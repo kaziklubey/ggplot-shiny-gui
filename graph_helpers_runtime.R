@@ -11,7 +11,6 @@
   # replayed. Always normalize to one finite numeric before use.
   safe_num1 <- graph_safe_num1
 
-  parse_order_text <- graph_parse_order_text
 
   complete_order <- graph_complete_order
 
@@ -57,7 +56,7 @@
   raw_group_colors <- reactiveVal(list())
 
   # 変数名ごとのカテゴリ順序を保持
-  order_state <- reactiveVal(list(x = list(), group = list(), display = list(), facet = list()))
+  order_state <- reactiveVal(graph_normalize_order_state())
 
   # グラフ表示専用の名称。元データの列名・水準値は変更しない。
   # legend_titles: legend key -> displayed title
@@ -122,7 +121,7 @@
   }
 
   get_saved_order <- function(kind, var_name, observed) {
-    st <- order_state()
+    st <- graph_normalize_order_state(order_state())
     branch <- st[[kind]]
     saved <- if (is.null(branch)) NULL else branch[[var_name]]
     if (is.null(saved)) saved <- character(0)
@@ -130,7 +129,7 @@
   }
 
   set_saved_order <- function(kind, var_name, values) {
-    st <- isolate(order_state())
+    st <- graph_normalize_order_state(isolate(order_state()))
     if (is.null(st[[kind]])) st[[kind]] <- list()
     st[[kind]][[var_name]] <- values
     order_state(st)

@@ -3,6 +3,8 @@ source("graph_state.R", local = TRUE)
 source("graph_legend_policy.R", local = TRUE)
 source("app_state_diff.R", local = TRUE)
 source("graph_core_functions.R", local = TRUE)
+source("graph_category_order.R", local = TRUE)
+source("graph_scatter_position.R", local = TRUE)
 source("graph_snapshot_value_helpers.R", local = TRUE)
 source("graph_render_state.R", local = TRUE)
 source("graph_data_transform.R", local = TRUE)
@@ -44,12 +46,22 @@ if (inherits(.graph_server_compiled, "error")) {
 }
 rm(.graph_server_compile_t0, .graph_server_compiled)
 
-# v3.3.56 Figure responsibilities are split before ui/server are constructed.
+# Figure responsibilities are split before ui/server are constructed.
+# v3.80.7 centralizes Figure layout semantics before state/geometry modules.
+source("figure_layout_contract.R", local = TRUE)
 source("figure_state.R", local = TRUE)
 source("figure_sync_contract.R", local = TRUE)
 source("figure_interaction.R", local = TRUE)
 source("figure_layers.R", local = TRUE)
-source("figure_layout.R", local = TRUE)
+source("figure_layout_tracks.R", local = TRUE)
+source("figure_layout_track_controls.R", local = TRUE)
+source("figure_layout_core.R", local = TRUE)
+source("figure_layout_plot.R", local = TRUE)
+source("figure_layout_alignment_plan.R", local = TRUE)
+source("figure_layout_auto.R", local = TRUE)
+source("figure_layout_free.R", local = TRUE)
+source("figure_layout_fixed_alignment.R", local = TRUE)
+source("figure_layout_fixed.R", local = TRUE)
 source("figure_asset.R", local = TRUE)
 source("figure_renderer.R", local = TRUE)
 source("figure_export.R", local = TRUE)

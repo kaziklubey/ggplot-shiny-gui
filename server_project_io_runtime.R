@@ -105,11 +105,11 @@
     edit_states_now <- edit_states_now[intersect(names(edit_states_now), layout_internal_ids)]
 
     list(
-      version = 10L,
+      version = 12L,
       renderer_schema = "asset-layer-v7-editable-graph-snapshot",
       autofit_policy = as.character(isolate(figure_requested_autofit_policy()) %||% "live"),
       size_mode = as.character(isolate(figure_requested_size_mode()) %||% "fixed"),
-      size_basis = as.character(isolate(figure_requested_size_basis()) %||% "panel_auto"),
+      size_basis = figure_normalize_alignment_basis(isolate(figure_requested_size_basis()) %||% "panel_legend"),
       title_align = as.character(isolate(figure_requested_title_align()) %||% "none"),
       layout_mode = as.character(isolate(figure_requested_layout_mode()) %||% "row"),
       free_canvas_padding = as.numeric(isolate(figure_requested_free_padding()) %||% 24),
@@ -118,6 +118,7 @@
       canvas_height = min(max(ch, 300), 6000),
       gap_x = min(max(gx, 0), 300),
       gap_y = min(max(gy, 0), 300),
+      column_ratios = figure_shared_column_ratios(layout_now),
       layout = figure_reindex_layout(layout_now),
       overrides = overrides_now,
       editable_graph_states = edit_states_now
@@ -145,7 +146,7 @@
     figure_plot_overrides(list())
     figure_control_restore_seed(NULL)
     figure_requested_size_mode("auto")
-    figure_requested_size_basis("panel_auto")
+    figure_requested_size_basis("panel_legend")
     figure_requested_title_align("none")
     figure_requested_layout_mode("row")
     figure_requested_autofit_policy("live")
@@ -221,7 +222,7 @@
       figure_requested_gap_x(12)
       figure_requested_gap_y(12)
       figure_requested_size_mode("auto")
-      figure_requested_size_basis("panel_auto")
+      figure_requested_size_basis("panel_legend")
       figure_requested_title_align("none")
       figure_requested_layout_mode("row")
       figure_requested_autofit_policy("live")
@@ -229,9 +230,9 @@
       figure_geometry_revision(0L)
       figure_reorder_undo(NULL)
       figure_requested_free_padding(24)
-      figure_control_restore_seed(list(width = 1600, height = 1000, gap_x = 12, gap_y = 12, mode = "auto", basis = "panel_auto", title_align = "none", layout_mode = "row", autofit_policy = "live"))
+      figure_control_restore_seed(list(width = 1600, height = 1000, gap_x = 12, gap_y = 12, mode = "auto", basis = "panel_legend", title_align = "none", layout_mode = "row", autofit_policy = "live"))
       updateSelectInput(session, "figure_size_mode", selected = "auto")
-      updateSelectInput(session, "figure_size_basis", selected = "panel_auto")
+      updateSelectInput(session, "figure_size_basis", selected = "panel_legend")
       updateSelectInput(session, "figure_title_align", selected = "none")
       updateSelectInput(session, "figure_layout_mode", selected = "row")
       updateSelectInput(session, "figure_autofit_policy", selected = "live")
@@ -264,11 +265,9 @@
       size_mode <- as.character(saved$size_mode)[1]
     }
     if (!size_mode %in% c("auto", "fixed")) size_mode <- "fixed"
-    size_basis <- as.character(saved$size_basis %||% "panel_auto")[1]
-    # v3.73.2.50 migration: Facet/Axis were alternative alignment bases.
-    # They now map to the practical data-panel + automatic-gutter model.
-    if (size_basis %in% c("facet", "axis")) size_basis <- "panel_auto"
-    if (!size_basis %in% c("panel_auto", "plot", "axis_legend")) size_basis <- "panel_auto"
+    # v3.80.7 migration: old panel_auto/plot/facet/axis/axis_legend values are
+    # normalized once at the Project boundary into the explicit contract.
+    size_basis <- figure_normalize_alignment_basis(saved$size_basis %||% "panel_legend")
     # Graph-title alignment was a workaround for label drift. Panel labels now
     # have their own Figure-owned band/anchor, so old title alignment is retired.
     title_align <- "none"
@@ -291,6 +290,10 @@
     gy <- min(max(gy, 0), 300)
 
     layout <- saved$layout %||% figure_default_layout_state()
+    # v3.80.8: Project payload stores the Figure-wide column vector explicitly.
+    # Older Projects migrate from their per-cell width values at this boundary.
+    saved_column_ratios <- saved$column_ratios %||% attr(layout, "column_ratios", exact = TRUE)
+    if (length(saved_column_ratios)) layout <- figure_set_shared_column_ratios(layout, saved_column_ratios)
     saved_diag <- figure_layout_diag(layout)
     diag_log(
       "FIGURE-RESTORE",

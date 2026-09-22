@@ -16,8 +16,10 @@ app_function_catalog <- function() {
       graph_has_selection = list(kind = "pure", input = "value", output = "logical"),
       graph_safe_num1 = list(kind = "pure", input = "value + default", output = "scalar numeric"),
       graph_saved_plot_size_from_state = list(kind = "pure", input = "GraphState", output = "width/height list"),
-      graph_parse_order_text = list(kind = "pure", input = "text", output = "character vector"),
       graph_complete_order = list(kind = "pure", input = "saved + observed order", output = "character vector"),
+      graph_normalize_order_state = list(kind = "pure category-order canonicalizer", input = "saved order tree", output = "structured x/group/display/facet vectors"),
+      graph_category_order_move = list(kind = "pure category-order transition", input = "order + index + direction", output = "reordered character vector"),
+      graph_scatter_jitter_spec = list(kind = "pure scatter-position contract", input = "enabled + X/Y widths", output = "canonical jitter spec"),
       graph_normalise_colour = list(kind = "pure", input = "colour + fallback", output = "hex colour"),
       graph_default_palette = list(kind = "pure", input = "n + preset", output = "colour vector"),
       graph_mapping_is_x_determined = list(kind = "pure Mapping semantics", input = "data + X + variable + facet", output = "logical"),
@@ -54,9 +56,9 @@ app_function_catalog <- function() {
       graph_default_mapping_for_data = list(kind = "pure UI/data default", input = "data.frame", output = "default Mapping"),
       graph_data_column_name_status = list(kind = "pure data validation", input = "data.frame", output = "column-name validity/status"),
       graph_usable_column_names = list(kind = "pure data validation", input = "data.frame", output = "safe unique nonblank column names"),
-      graph_style_migrate_v4 = list(kind = "pure Style migration", input = "saved Style", output = "style schema 4 with canonical legend layout/defaults"),
+      graph_style_migrate_v5 = list(kind = "pure Style migration", input = "saved Style", output = "style schema 5 with structured orders and scatter jitter defaults"),
       graph_state_materialize_dynamic_style_defaults = list(kind = "pure GraphState style migration", input = "GraphState + prepared data", output = "GraphState with deterministic Style defaults"),
-      graph_state_migrate_v5 = list(kind = "pure GraphState migration", input = "GraphState", output = "schema-5 GraphState with v3.80 Mapping/Appearance defaults"),
+      graph_state_migrate_v5 = list(kind = "pure GraphState migration", input = "GraphState", output = "schema-5 GraphState with current Mapping/Appearance defaults"),
       graph_state_prepare_replay_snapshot = list(kind = "pure GraphState migration", input = "GraphState", output = "schema-5 GraphState with replayable UI snapshot + current style schema")
     ),
     statistics = list(

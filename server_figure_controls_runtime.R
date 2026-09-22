@@ -103,6 +103,12 @@
     }
   })
 
+  output$figure_column_ratio_controls <- renderUI({
+    st <- figure_layout_state()
+    if (!length(st)) return(NULL)
+    figure_shared_column_ratio_controls(st)
+  })
+
   output$figure_layout_editor <- renderUI({
     diag_log("FIGURE-LAYOUT-UI", paste0("render begin version=", isolate(figure_layout_ui_version())))
     # v3.3.48: Figure layout controls are intentionally NOT Shiny input widgets.
@@ -202,19 +208,6 @@
             )
           ),
           div(
-            class = "figure-row-panel-width",
-            tags$label(class = "figure-mini-label", "列幅比 (Fixed Canvas)"),
-            tags$input(
-              type = "number",
-              class = "form-control input-sm figure-panel-width-edit",
-              `data-row` = r,
-              `data-col` = c,
-              value = format(cell$width %||% 1, trim = TRUE, scientific = FALSE),
-              min = "0.1", max = "10", step = "0.1",
-              title = "Fixed Canvas時の列スロット配分比。Graph表示幅とは別です。Autoでは使用しません。"
-            )
-          ),
-          div(
             class = "figure-row-graph-size",
             tags$label(class = "figure-mini-label", "Graph表示幅"),
             tags$input(
@@ -262,14 +255,15 @@
           ),
           div(
             class = "figure-row-basis-compact",
-            tags$label(class = "figure-mini-label", "サイズ基準"),
+            tags$label(class = "figure-mini-label", "整列基準"),
             tags$select(
               class = "form-control input-sm figure-row-basis-edit",
               `data-row` = r,
               option_tag("inherit", "Figure設定を継承", identical(as.character(row$size_basis %||% "inherit"), "inherit")),
-              option_tag("panel_auto", "自動整列（推奨）", identical(as.character(row$size_basis %||% "inherit"), "panel_auto")),
-              option_tag("plot", "Plot panelのみ", identical(as.character(row$size_basis %||% "inherit"), "plot")),
-              option_tag("axis_legend", "軸＋凡例（旧方式）", identical(as.character(row$size_basis %||% "inherit"), "axis_legend"))
+              option_tag("panel", "Panel本体（凡例除外）", identical(as.character(row$size_basis %||% "inherit"), "panel")),
+              option_tag("panel_legend", "Panel本体＋外側凡例", identical(as.character(row$size_basis %||% "inherit"), "panel_legend")),
+              option_tag("panel_axis", "Panel＋軸（凡例除外）", identical(as.character(row$size_basis %||% "inherit"), "panel_axis")),
+              option_tag("panel_axis_legend", "Panel＋軸＋外側凡例", identical(as.character(row$size_basis %||% "inherit"), "panel_axis_legend"))
             )
           ),
           tags$button(type = "button", class = "btn btn-default btn-sm figure-layout-structure-action",
@@ -409,55 +403,12 @@
     }
   }, ignoreInit = TRUE)
 
-  observeEvent(input$figure_add_row, {
-    if (project_load_action_blocked("figure-add-row")) return()
-    st <- isolate(figure_layout_state())
-    if (length(st) >= 6L) return()
-    r <- length(st) + 1L
-    st[[r]] <- list(row = r, height = 1, ncol = 2L, size_basis = "inherit",
-                    cells = list(figure_make_cell(r, 1), figure_make_cell(r, 2)))
-    figure_layout_state(figure_reindex_layout(st))
-    figure_selected_row(r)
-    bump_figure_layout_ui()
-  }, ignoreInit = TRUE)
+  # Row/Panel structure is owned exclusively by the figure_layout_edit event
+  # channel below. Legacy dynamic actionButton observers were removed in
+  # v3.80.7 so structural edits have one state transition path.
 
-  observeEvent(input$figure_remove_row, {
-    if (project_load_action_blocked("figure-remove-row")) return()
-    st <- isolate(figure_layout_state())
-    if (length(st) <= 1L) return()
-    r <- min(max(1L, isolate(figure_selected_row())), length(st))
-    st <- st[-r]
-    figure_layout_state(figure_reindex_layout(st))
-    figure_selected_row(min(r, length(st)))
-    bump_figure_layout_ui()
-  }, ignoreInit = TRUE)
-
-  observeEvent(input$figure_add_panel, {
-    if (project_load_action_blocked("figure-add-panel")) return()
-    st <- isolate(figure_layout_state())
-    if (!length(st)) return()
-    r <- min(max(1L, isolate(figure_selected_row())), length(st))
-    if (st[[r]]$ncol >= 6L) return()
-    st[[r]]$ncol <- st[[r]]$ncol + 1L
-    st[[r]]$cells[[st[[r]]$ncol]] <- figure_make_cell(r, st[[r]]$ncol)
-    figure_layout_state(figure_reindex_layout(st))
-    bump_figure_layout_ui()
-  }, ignoreInit = TRUE)
-
-  observeEvent(input$figure_remove_panel, {
-    if (project_load_action_blocked("figure-remove-panel")) return()
-    st <- isolate(figure_layout_state())
-    if (!length(st)) return()
-    r <- min(max(1L, isolate(figure_selected_row())), length(st))
-    if (st[[r]]$ncol <= 1L) return()
-    st[[r]]$ncol <- st[[r]]$ncol - 1L
-    st[[r]]$cells <- st[[r]]$cells[seq_len(st[[r]]$ncol)]
-    figure_layout_state(figure_reindex_layout(st))
-    bump_figure_layout_ui()
-  }, ignoreInit = TRUE)
-
-  # All Row/Panel edits arrive through a single explicit event. Numeric edits do
-  # not rebuild the layout editor; graph assignment does, because the choices in
+  # All Row/Panel plus Figure-wide column-track edits arrive through a single
+  # explicit event. Numeric edits do not rebuild the layout editor; graph assignment does, because the choices in
   # sibling selectors depend on which Graphs are already used.
   observeEvent(input$figure_layout_edit, {
     if (project_load_action_blocked("figure-layout-edit")) return()
@@ -494,8 +445,11 @@
         r0 <- suppressWarnings(as.integer(e$row %||% isolate(figure_selected_row())))
         if (!is.finite(r0) || r0 < 1L || r0 > length(st)) r0 <- min(max(1L, isolate(figure_selected_row())), length(st))
         if (identical(typ0, "add_panel") && st[[r0]]$ncol < 6L) {
-          st[[r0]]$ncol <- st[[r0]]$ncol + 1L
-          st[[r0]]$cells[[st[[r0]]$ncol]] <- figure_make_cell(r0, st[[r0]]$ncol)
+          new_col <- st[[r0]]$ncol + 1L
+          existing_ratios <- figure_shared_column_ratios(st)
+          new_ratio <- if (length(existing_ratios) >= new_col && is.finite(existing_ratios[[new_col]])) existing_ratios[[new_col]] else 1
+          st[[r0]]$ncol <- new_col
+          st[[r0]]$cells[[new_col]] <- figure_make_cell(r0, new_col, width = new_ratio)
           figure_layout_state(figure_reindex_layout(st))
           figure_selected_row(r0)
           changed0 <- TRUE

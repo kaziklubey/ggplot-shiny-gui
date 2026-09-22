@@ -22,6 +22,25 @@
     }
   }, {once: true});
 })();
+
+// v3.81 structured category ordering. Buttons publish only a role/variable/index
+// transition; category labels themselves never travel through delimited text.
+document.addEventListener('click', function(ev) {
+  var btn = ev.target && ev.target.closest ? ev.target.closest('.category-order-move') : null;
+  if (!btn || btn.disabled) return;
+  var control = btn.closest('.graph-category-order-control');
+  if (!control || !window.Shiny) return;
+  var inputId = String(control.getAttribute('data-input-id') || '');
+  if (!inputId) return;
+  Shiny.setInputValue(inputId, {
+    kind: String(control.getAttribute('data-kind') || ''),
+    variable: String(control.getAttribute('data-variable') || ''),
+    index: Number(btn.getAttribute('data-index') || 0),
+    direction: Number(btn.getAttribute('data-direction') || 0),
+    nonce: Date.now()
+  }, {priority: 'event'});
+});
+
 function figureViewZoomFactor() {
   var el = document.getElementById('figure_view_zoom');
   var z = el ? parseFloat(el.value) : 1;
@@ -1778,19 +1797,28 @@ function clampFigureNumberInput(el, fallback) {
 
 function sendFigureNumberEdit(el, type, fallback, commit) {
   var row = parseInt($(el).attr('data-row'), 10);
-  var col = parseInt($(el).attr('data-col'), 10);
   var value = commit ? clampFigureNumberInput(el, fallback) : parseFloat(el.value);
   if (!isFinite(row) || !isFinite(value)) return;
   var min = parseFloat(el.getAttribute('min'));
   var max = parseFloat(el.getAttribute('max'));
   if (isFinite(min)) value = Math.max(min, value);
   if (isFinite(max)) value = Math.min(max, value);
-  var msg = {type: type, row: row, value: value, nonce: Date.now()};
-  if (type === 'panel_width') {
-    if (!isFinite(col)) return;
-    msg.col = col;
-  }
-  Shiny.setInputValue('figure_layout_edit', msg, {priority: 'event'});
+  Shiny.setInputValue('figure_layout_edit', {
+    type: type, row: row, value: value, nonce: Date.now()
+  }, {priority: 'event'});
+}
+
+function sendFigureColumnRatioEdit(el, commit) {
+  var col = parseInt($(el).attr('data-col'), 10);
+  var value = commit ? clampFigureNumberInput(el, 1) : parseFloat(el.value);
+  if (!isFinite(col) || !isFinite(value)) return;
+  var min = parseFloat(el.getAttribute('min'));
+  var max = parseFloat(el.getAttribute('max'));
+  if (isFinite(min)) value = Math.max(min, value);
+  if (isFinite(max)) value = Math.min(max, value);
+  Shiny.setInputValue('figure_layout_edit', {
+    type: 'column_ratio', col: col, value: value, nonce: Date.now()
+  }, {priority: 'event'});
 }
 
 function sendFigureGraphSizeEdit(el, type) {
@@ -1823,8 +1851,8 @@ $(document).on('change', '.figure-row-height-edit', function() {
   sendFigureNumberEdit(this, 'row_height', 1, true);
 });
 
-$(document).on('change', '.figure-panel-width-edit', function() {
-  sendFigureNumberEdit(this, 'panel_width', 1, true);
+$(document).on('change', '.figure-column-ratio-edit', function() {
+  sendFigureColumnRatioEdit(this, true);
 });
 
 // v3.3.69: native number-input spinners use min=80 when the value is

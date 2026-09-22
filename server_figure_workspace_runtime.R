@@ -96,9 +96,8 @@
     gy <- if (!is.null(restore_seed)) restore_seed$gap_y else suppressWarnings(as.numeric(input$figure_gap_y %||% 12))
     size_mode <- if (!is.null(restore_seed)) as.character(restore_seed$mode %||% "fixed") else as.character(input$figure_size_mode %||% "auto")
     if (!size_mode %in% c("auto", "fixed")) size_mode <- "auto"
-    size_basis <- if (!is.null(restore_seed)) as.character(restore_seed$basis %||% "panel_auto") else as.character(input$figure_size_basis %||% "panel_auto")
-    if (size_basis %in% c("facet", "axis")) size_basis <- "panel_auto"
-    if (!size_basis %in% c("panel_auto", "plot", "axis_legend")) size_basis <- "panel_auto"
+    size_basis <- if (!is.null(restore_seed)) restore_seed$basis %||% "panel_legend" else input$figure_size_basis %||% "panel_legend"
+    size_basis <- figure_normalize_alignment_basis(size_basis)
     title_align <- "none"
     layout_mode <- if (!is.null(restore_seed)) as.character(restore_seed$layout_mode %||% "row") else as.character(input$figure_layout_mode %||% "row")
     if (!layout_mode %in% c("row", "free")) layout_mode <- "row"
@@ -174,7 +173,7 @@
       figure_selected_panel_key("")
     }
 
-    # Phase 8: Row height and per-panel width ratio are Fixed-canvas-only
+    # Phase 8: Row height and Figure-wide column ratios are Fixed-canvas-only
     # inputs.  In Auto fit they do not participate in geometry, so strip them
     # from the *derived geometry request* while keeping the authored values in
     # figure_layout_state().  This prevents a Fixed-only edit from invalidating
@@ -656,9 +655,7 @@
     layout <- figure_requested_layout()
     geo_ovs <- isolate(figure_requested_overrides())
     mode <- figure_requested_size_mode()
-    basis <- figure_requested_size_basis()
-    if (basis %in% c("facet", "axis")) basis <- "panel_auto"
-    if (!basis %in% c("panel_auto", "plot", "axis_legend")) basis <- "panel_auto"
+    basis <- figure_normalize_alignment_basis(figure_requested_size_basis())
     title_align <- "none"
     gx <- figure_requested_gap_x()
     gy <- figure_requested_gap_y()
@@ -726,9 +723,9 @@
               " basis=", if (is.finite(bw)) round(bw, 1) else "NA", "x", if (is.finite(bh)) round(bh, 1) else "NA",
               " scale=", if (is.finite(sc)) round(sc, 4) else "NA",
               " visual=", if (is.finite(vw)) round(vw, 1) else "NA", "x", if (is.finite(vh)) round(vh, 1) else "NA",
-              if (identical(rect_basis, "panel_auto") && all(is.finite(c(pgl, pgt, pgr, pgb)))) {
+              if (rect_basis %in% c("panel", "panel_legend") && all(is.finite(c(pgl, pgt, pgr, pgb)))) {
                 paste0(" panel_gutter=", round(pgl, 1), ",", round(pgt, 1), ",", round(pgr, 1), ",", round(pgb, 1))
-              } else if (identical(rect_basis, "axis") && all(is.finite(c(agl, agt, agr, agb)))) {
+              } else if (rect_basis %in% c("panel_axis", "panel_axis_legend") && all(is.finite(c(agl, agt, agr, agb)))) {
                 paste0(" shared_gutter=", round(agl, 1), ",", round(agt, 1), ",", round(agr, 1), ",", round(agb, 1))
               } else ""
             ), id = id
@@ -871,9 +868,7 @@
         round(figure_geometry()$canvas_width), " × ", round(figure_geometry()$canvas_height), " px ",
         "[", if (identical(figure_requested_layout_mode(), "free")) "Free" else "Row", "] ",
         if (identical(figure_requested_size_mode(), "auto")) paste0("[Canvas Auto: ", switch(figure_requested_autofit_policy(), live="常時追従", manual="手動更新", lock="固定", "常時追従"), "]") else "[Canvas Fixed]",
-        if (identical(figure_requested_size_mode(), "auto")) paste0(
-          " [基準: ", switch(figure_requested_size_basis(), panel_auto = "Plot panel自動整列", plot = "Plot panelのみ", axis_legend = "軸＋凡例（旧方式）", "Plot panel自動整列"), "]"
-        ) else "",
+        paste0(" [基準: ", figure_alignment_basis_label(figure_requested_size_basis()), "]"),
         ""
       )
     } else {

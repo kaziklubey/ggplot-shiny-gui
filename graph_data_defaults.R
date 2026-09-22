@@ -205,7 +205,7 @@ graph_default_mapping_for_data <- function(data) {
 # appearance/style shell. Data and Mapping are deterministic and therefore do
 # not depend on whether browser selectInput values have round-tripped yet.
 
-# v3.80 canonical schema migration.  Runtime only consumes schema 5 fields;
+# Current canonical GraphState schema 5 migration. Runtime only consumes schema 5 fields;
 # compatibility is resolved once at the replay/load boundary.
 graph_state_migrate_v5 <- function(state) {
   if (!is.list(state)) return(state)
@@ -223,7 +223,7 @@ graph_state_migrate_v5 <- function(state) {
   mp$line_series_var <- series_var
   state$mapping <- mp
 
-  st <- graph_style_migrate_v4(state$style %||% list())
+  st <- graph_style_migrate_v5(state$style %||% list())
   ap <- st$appearance %||% list()
   if (!is.list(ap)) ap <- list()
   alpha <- suppressWarnings(as.numeric(graph_state_scalar(ap$scatter_point_alpha, 0.90)))
@@ -232,7 +232,7 @@ graph_state_migrate_v5 <- function(state) {
   st$appearance <- ap
   state$style <- st
 
-  state$version <- "3.80.2"
+  state$version <- "3.81.0"
   state$schema_version <- max(5L, old_schema)
   state
 }

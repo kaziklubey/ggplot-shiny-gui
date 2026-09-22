@@ -1036,6 +1036,12 @@
       )
       if (!has_color) point_args$colour <- input$mean_color_mode
       if (!effective_has_shape) point_args$shape <- as.numeric(input$mean_shape)
+      scatter_point_position <- graph_scatter_point_position(
+        enabled = isTRUE(input$scatter_jitter_enabled),
+        x_width = input$scatter_jitter_x %||% 0,
+        y_width = input$scatter_jitter_y %||% 0
+      )
+      if (!is.null(scatter_point_position)) point_args$position <- scatter_point_position
 
       p <- ggplot() + do.call(geom_point, point_args)
 

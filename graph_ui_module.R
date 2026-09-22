@@ -854,6 +854,38 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
               ),
 
               conditionalPanel(
+                condition = "input.plot_type == 'scatter'",
+                tags$details(
+                  class = "control-subsection",
+                  open = TRUE,
+                  tags$summary("点の配置"),
+                  div(
+                    class = "subsection-body scatter-jitter-controls",
+                    p(
+                      class = "help-block",
+                      "Scatterの点の位置だけを調整します。Color・ShapeなどのMappingや固定スタイルとは独立した設定です。"
+                    ),
+                    checkboxInput("scatter_jitter_enabled", "Jitterで点の重なりを散らす", FALSE),
+                    conditionalPanel(
+                      condition = "input.scatter_jitter_enabled == true",
+                      numericInput(
+                        "scatter_jitter_x", "X方向 jitter幅（X軸単位）",
+                        value = 0.10, min = 0, step = 0.01
+                      ),
+                      numericInput(
+                        "scatter_jitter_y", "Y方向 jitter幅（Y軸単位）",
+                        value = 0, min = 0, step = 0.01
+                      ),
+                      p(
+                        class = "help-block",
+                        "Scatterの点だけを決定論的に散らします。個体接続線と回帰直線は元のX/Y座標を使用します。"
+                      )
+                    )
+                  )
+                )
+              ),
+
+              conditionalPanel(
                 condition = "input.plot_type == 'line' || input.plot_type == 'bar' || input.plot_type == 'box'",
                 tags$details(
                   class = "control-subsection",
