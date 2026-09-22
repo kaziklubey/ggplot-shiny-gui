@@ -20,6 +20,11 @@ app_function_catalog <- function() {
       graph_complete_order = list(kind = "pure", input = "saved + observed order", output = "character vector"),
       graph_normalise_colour = list(kind = "pure", input = "colour + fallback", output = "hex colour"),
       graph_default_palette = list(kind = "pure", input = "n + preset", output = "colour vector"),
+      graph_mapping_is_x_determined = list(kind = "pure Mapping semantics", input = "data + X + variable + facet", output = "logical"),
+      graph_effective_slot_vars = list(kind = "pure Mapping semantics", input = "data + X + Bar/Box slot candidates + facet", output = "effective stable-track variables"),
+      graph_stable_track_order = list(kind = "pure Mapping semantics", input = "data + effective Bar/Box track variables", output = "observed global track order"),
+      graph_line_series_vars = list(kind = "pure Mapping semantics", input = "data + X + visual Mapping candidates + series mode", output = "line-series identity variables"),
+      graph_mapping_diagnostics = list(kind = "pure visual diagnostic", input = "data + Mapping + plot type", output = "non-canonical diagnostic messages"),
       graph_style_input_id = list(kind = "pure", input = "style identity", output = "stable input id"),
       graph_parse_pasted_data = list(kind = "pure parser", input = "pasted text", output = "data.frame or NULL"),
       graph_line_break_choices = list(kind = "pure line-connection helper", input = "ordered X levels + display labels", output = "adjacent X-boundary choices"),
@@ -36,7 +41,8 @@ app_function_catalog <- function() {
       graph_build_legend_policy = list(kind = "pure Legend Policy", input = "effective Mapping + appearance + plot/layer context", output = "aesthetic guide policy"),
       graph_legend_merge_plan = list(kind = "pure Legend Policy", input = "legend policy", output = "aesthetic merge components"),
       graph_legend_layer_flags = list(kind = "pure Legend Policy", input = "legend policy + layer role", output = "named show.legend flags"),
-      graph_apply_legend_guides = list(kind = "plot guide adapter", input = "ggplot + legend policy + titles", output = "ggplot with guide policy")
+      graph_legend_layout_args = list(kind = "pure Legend Policy", input = "legend wrap mode + count", output = "guide_legend layout args"),
+      graph_apply_legend_guides = list(kind = "plot guide adapter", input = "ggplot + legend policy + titles + layout", output = "ggplot with guide policy")
     ),
     graph_data = list(
       graph_normalize_data_transform_recipe = list(kind = "pure transform contract", input = "transform recipe", output = "canonical recipe"),
@@ -48,8 +54,10 @@ app_function_catalog <- function() {
       graph_default_mapping_for_data = list(kind = "pure UI/data default", input = "data.frame", output = "default Mapping"),
       graph_data_column_name_status = list(kind = "pure data validation", input = "data.frame", output = "column-name validity/status"),
       graph_usable_column_names = list(kind = "pure data validation", input = "data.frame", output = "safe unique nonblank column names"),
-      graph_state_materialize_dynamic_style_defaults = list(kind = "pure GraphState style migration", input = "GraphState + prepared data", output = "schema-4 GraphState with deterministic Style defaults"),
-      graph_state_prepare_replay_snapshot = list(kind = "pure GraphState migration", input = "GraphState", output = "GraphState with replayable UI snapshot + current style schema")
+      graph_style_migrate_v4 = list(kind = "pure Style migration", input = "saved Style", output = "style schema 4 with canonical legend layout/defaults"),
+      graph_state_materialize_dynamic_style_defaults = list(kind = "pure GraphState style migration", input = "GraphState + prepared data", output = "GraphState with deterministic Style defaults"),
+      graph_state_migrate_v5 = list(kind = "pure GraphState migration", input = "GraphState", output = "schema-5 GraphState with v3.80 Mapping/Appearance defaults"),
+      graph_state_prepare_replay_snapshot = list(kind = "pure GraphState migration", input = "GraphState", output = "schema-5 GraphState with replayable UI snapshot + current style schema")
     ),
     statistics = list(
       normalize_stats_recipe = list(kind = "analysis-state canonicalizer", input = "saved Analysis recipe", output = "canonical recipe"),

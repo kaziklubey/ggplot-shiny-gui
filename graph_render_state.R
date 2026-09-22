@@ -34,6 +34,19 @@ graph_render_state_apply_semantics <- function(state) {
     pl$line_breaks <- NULL
   }
 
+
+  # Line-series identity is Mapping semantics only for line plots.  The
+  # explicit column is dormant unless column mode is selected.
+  if (!identical(plot_type, "line")) {
+    mp$line_series_mode <- NULL
+    mp$line_series_var <- NULL
+  } else {
+    mode <- as.character(mp$line_series_mode %||% "auto")[[1]]
+    if (!mode %in% c("auto", "mapped", "single", "column")) mode <- "auto"
+    mp$line_series_mode <- mode
+    if (!identical(mode, "column")) mp$line_series_var <- NULL
+  }
+
   # External error-column selectors affect rendering only for direct-value
   # Line/Bar plots. Their selectInputs remain populated while hidden, so the
   # browser may hold a column name even when GraphState stores an empty value.
@@ -69,6 +82,11 @@ graph_render_state <- function(state) {
 
   st <- out$style
   if (is.list(st)) {
+    # Style format metadata is persistence-only. It must never trigger a plot
+    # rebuild when a Project is migrated to the current style schema.
+    st$version <- NULL
+    st$schema_version <- NULL
+
     pl0 <- out$plot %||% list()
     mp0 <- out$mapping %||% list()
     plot_type0 <- as.character(pl0$type %||% "line")[[1]]
@@ -85,6 +103,8 @@ graph_render_state <- function(state) {
       st$raw_group_colors <- NULL
       ap$x_tick_labels_show <- NULL
       if (isTRUE(has_color_mapping)) ap$mean_color_mode <- NULL
+    } else {
+      ap$scatter_point_alpha <- NULL
     }
     st$appearance <- ap
 
@@ -106,6 +126,21 @@ graph_render_state <- function(state) {
       st$legend_titles <- NULL # legacy title tree is migration-only
       if (!isTRUE(ap$legend_title_show)) ap$legend_group_title <- NULL
       if (!isTRUE(ap$legend_individual_title_show)) ap$legend_individual_title <- NULL
+      for (aes in graph_legend_aesthetics()) {
+        if (!isTRUE(ap[[paste0("legend_", aes, "_title_show")]])) {
+          ap[[paste0("legend_", aes, "_title")]] <- NULL
+        }
+      }
+
+      wrap_mode <- as.character(ap$legend_wrap_mode %||% "auto")[[1]]
+      if (!wrap_mode %in% c("ncol", "nrow")) {
+        ap$legend_wrap_mode <- "auto"
+        ap$legend_wrap_count <- NULL
+      }
+      spacing <- suppressWarnings(as.numeric(ap$legend_item_spacing %||% -1))
+      if (!is.finite(spacing) || spacing < 0) ap$legend_item_spacing <- NULL
+      text_size <- suppressWarnings(as.numeric(ap$legend_text_size %||% 0))
+      if (!is.finite(text_size) || text_size <= 0) ap$legend_text_size <- NULL
 
       # Sticky preview is editor UI state, not plot appearance.
       ap$sticky_plot <- NULL

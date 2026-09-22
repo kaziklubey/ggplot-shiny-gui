@@ -124,6 +124,7 @@ graphServer <- function(id, style_clipboard = NULL, diag_log = NULL, ui_preseede
   sys.source(file.path(getwd(), "graph_shared_style_runtime.R"), envir = environment())
   init_timing_emit("PREPARED-DATA-BEGIN")
   sys.source(file.path(getwd(), "graph_prepared_data_runtime.R"), envir = environment())
+  sys.source(file.path(getwd(), "graph_mapping_diagnostics_runtime.R"), envir = environment())
   sys.source(file.path(getwd(), "graph_line_connection_runtime.R"), envir = environment())
   init_timing_emit("PLOT-BUILDER-BEGIN")
 

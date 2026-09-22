@@ -42,6 +42,8 @@ graph_ui_seed_from_state <- function(cfg) {
     # groupvar is dynamic and is still finalized by the server after data choices
     # exist, but storing the seed here documents the authoritative saved value.
     put("groupvar", cfg$mapping$position)
+    put("line_series_mode", cfg$mapping$line_series_mode %||% "auto")
+    put("line_series_var", cfg$mapping$line_series_var %||% "")
     put("external_error_col", cfg$mapping$external_error)
     put("external_ymin_col", cfg$mapping$external_ymin)
     put("external_ymax_col", cfg$mapping$external_ymax)

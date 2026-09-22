@@ -13,8 +13,8 @@
     stats_selected_id()
 
     list(
-      version = "3.3.42",
-      schema_version = 4L,
+      version = "3.80.2",
+      schema_version = 5L,
       app = "ggplot GUI",
       project_name = input$project_name,
       data_text = input$text,
@@ -32,6 +32,8 @@
         color = input$colorvar,
         linetype = input$linetypevar %||% "__color__",
         shape = input$shapevar %||% "__color__",
+        line_series_mode = input$line_series_mode %||% "auto",
+        line_series_var = input$line_series_var %||% "",
         id = input$idvar,
         facet = input$facetvar,
         external_error = input$external_error_col %||% "",

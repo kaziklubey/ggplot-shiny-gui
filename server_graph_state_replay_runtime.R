@@ -54,6 +54,8 @@
       updateSelectInput(session, "idvar", choices = c("なし" = "", plan$cols), selected = plan$id)
       updateSelectInput(session, "facetvar", choices = c("なし" = "", plan$cols), selected = plan$facet)
       updateSelectInput(session, "groupvar", choices = c("なし" = "", plan$cols), selected = plan$position)
+      updateSelectInput(session, "line_series_mode", selected = plan$line_series_mode)
+      updateSelectInput(session, "line_series_var", choices = c("なし" = "", plan$cols), selected = plan$line_series_var)
       updateSelectInput(
         session, "linetypevar",
         choices = c("色で分ける要因と同じ" = "__color__", "使わない（固定）" = "", plan$cols),
@@ -75,6 +77,8 @@
     updateSelectInput(session, "idvar", selected = json_chr(mp$id, ""))
     updateSelectInput(session, "facetvar", selected = json_chr(mp$facet, ""))
     updateSelectInput(session, "groupvar", selected = json_chr(mp$position, json_chr(mp$series, "")))
+    updateSelectInput(session, "line_series_mode", selected = json_chr(mp$line_series_mode, "auto"))
+    updateSelectInput(session, "line_series_var", selected = json_chr(mp$line_series_var, ""))
     updateSelectInput(session, "linetypevar", selected = json_chr(mp$linetype, "__color__"))
     updateSelectInput(session, "external_error_col", selected = json_chr(mp$external_error, ""))
     updateSelectInput(session, "external_ymin_col", selected = json_chr(mp$external_ymin, ""))
@@ -244,6 +248,7 @@
           requiredInputs = session$ns(c("text", "reshape_wide", "reshape_row_id",
             "reshape_columns", "reshape_x_name", "reshape_y_name", "xvar", "yvar",
             "colorvar", "shapevar", "idvar", "facetvar", "groupvar", "linetypevar",
+            "line_series_mode", "line_series_var",
             "external_error_col", "external_ymin_col", "external_ymax_col", "line_breaks"))
         )
       )

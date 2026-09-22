@@ -61,62 +61,54 @@
       z
     }
 
-    # Bar/Box: X×Facet内に実在する条件だけで横位置を中央揃えする。
+    # Bar/Box: stable observed tracks shared across X.
+    # Xに完全従属する冗長Mappingはslotを増やさず、残る実在系列は
+    # missing cellがあっても全Xで同じ左右位置を保つ。
     make_slot_layout <- function(raw, xcol, slot_vars, facetcol = "",
                                  x_positions, total_width = 0.80,
                                  spacing = 1.0, slot_name = ".slot__") {
+      slot_vars <- graph_effective_slot_vars(raw, xcol, slot_vars, facetcol)
       z <- add_interaction_key(raw, slot_vars, slot_name)
       z[[slot_name]] <- as.character(z[[slot_name]])
 
-      # Derive slot order from factor / Mapping order instead of raw row order.
-      # slot_vars is built as horizontal-position factor first, Color/Fill next,
-      # so the horizontal factor is the primary left-to-right grouping.
-      if (length(slot_vars)) {
-        combo_cols <- unique(c(slot_vars, slot_name))
-        slot_table <- z[, combo_cols, drop = FALSE]
-        slot_table <- slot_table[!duplicated(slot_table[[slot_name]]), , drop = FALSE]
-        rank_cols <- character(0)
-        for (i in seq_along(slot_vars)) {
-          v <- slot_vars[[i]]
-          lv <- levels(raw[[v]])
-          if (is.null(lv) || !length(lv)) lv <- unique(as.character(raw[[v]]))
-          lv <- lv[!is.na(lv)]
-          rn <- paste0(".slot_rank__", i)
-          slot_table[[rn]] <- match(as.character(slot_table[[v]]), lv)
-          slot_table[[rn]][is.na(slot_table[[rn]])] <- length(lv) + seq_len(sum(is.na(slot_table[[rn]])))
-          rank_cols <- c(rank_cols, rn)
-        }
-        global_slots <- slot_table[[slot_name]][do.call(order, lapply(rank_cols, function(nm) slot_table[[nm]]))]
-      } else {
-        global_slots <- unique(z[[slot_name]])
-      }
-      global_slots <- global_slots[!is.na(global_slots)]
+      # Stable tracks are panel-local: every facet keeps one fixed track lattice
+      # across all of its X levels, but a track that never exists in this facet
+      # must not reserve an empty slot and push the visible Bar/Box group away
+      # from the canonical X tick.  Width stays common across facets, based on
+      # the densest facet, so Bar/Box thickness does not change panel-to-panel.
+      track_plan <- graph_stable_track_plan(raw, slot_vars, facetcol)
+      n_slots_max <- max(track_plan$max_slots, 1L)
+      slot_width <- total_width / n_slots_max
 
       key_vars <- unique(c(xcol, if (nzchar(facetcol)) facetcol else "", slot_name))
       key_vars <- key_vars[nzchar(key_vars)]
-      grp <- unique(c(xcol, if (nzchar(facetcol)) facetcol else ""))
-      grp <- grp[nzchar(grp)]
-
       lay <- z %>% distinct(across(all_of(key_vars)))
-      lay$.global_order__ <- match(lay[[slot_name]], global_slots)
 
-      lay <- lay %>%
-        group_by(across(all_of(grp))) %>%
-        arrange(.global_order__, .by_group = TRUE) %>%
-        mutate(
-          .slot_n__ = n(),
-          .slot_i__ = row_number(),
-          # slot幅は条件数だけで決める。spacingは中心距離だけに作用させる。
-          .slot_width__ = total_width / pmax(.slot_n__, 1),
-          .slot_step__ = .slot_width__ * spacing,
-          .x_group__ = unname(x_positions[as.character(.data[[xcol]])]) +
-            (.slot_i__ - (.slot_n__ + 1) / 2) * .slot_step__
-        ) %>%
-        ungroup()
+      facet_key <- if (nzchar(facetcol) && facetcol %in% names(lay)) {
+        as.character(lay[[facetcol]])
+      } else {
+        rep("__all__", nrow(lay))
+      }
+      facet_key[is.na(facet_key)] <- "__NA__"
 
-      list(data=z, layout=lay, key_vars=key_vars,
-           global_slots=global_slots, slot_vars=slot_vars,
-           slot_name=slot_name)
+      plan_key <- paste(track_plan$table$.facet_key__, track_plan$table$.track_key__, sep = "\r")
+      lay_key <- paste(facet_key, as.character(lay[[slot_name]]), sep = "\r")
+      plan_i <- match(lay_key, plan_key)
+
+      lay$.slot_i__ <- track_plan$table$.slot_i__[plan_i]
+      lay$.slot_n__ <- track_plan$table$.slot_n__[plan_i]
+      lay$.slot_width__ <- slot_width
+      lay$.slot_step__ <- slot_width * spacing
+      lay$.x_group__ <- unname(x_positions[as.character(lay[[xcol]])]) +
+        graph_centered_slot_offset(
+          lay$.slot_i__, lay$.slot_n__, slot_width, spacing
+        )
+
+      list(
+        data = z, layout = lay, key_vars = key_vars,
+        track_plan = track_plan, slot_vars = slot_vars,
+        slot_name = slot_name, slot_width = slot_width
+      )
     }
 
     apply_slot_layout <- function(z, obj) {
@@ -227,10 +219,24 @@
       ),
       appearance = list(
         legend_colour_show = input$legend_colour_show,
+        legend_fill_show = input$legend_fill_show,
         legend_linetype_show = input$legend_linetype_show,
         legend_shape_show = input$legend_shape_show,
         legend_merge_linetype_shape = input$legend_merge_linetype_shape,
-        legend_merge_colour_shape = input$legend_merge_colour_shape
+        legend_merge_colour_shape = input$legend_merge_colour_shape,
+        legend_merge_mode = input$legend_merge_mode,
+        legend_colour_title_show = input$legend_colour_title_show,
+        legend_fill_title_show = input$legend_fill_title_show,
+        legend_linetype_title_show = input$legend_linetype_title_show,
+        legend_shape_title_show = input$legend_shape_title_show,
+        legend_colour_title = input$legend_colour_title,
+        legend_fill_title = input$legend_fill_title,
+        legend_linetype_title = input$legend_linetype_title,
+        legend_shape_title = input$legend_shape_title,
+        legend_colour_order = input$legend_colour_order,
+        legend_fill_order = input$legend_fill_order,
+        legend_linetype_order = input$legend_linetype_order,
+        legend_shape_order = input$legend_shape_order
       ),
       plot_type = input$plot_type,
       layer_context = list(
@@ -573,9 +579,18 @@
         d$.x_raw <- d$.x_base + d$.spread__
       }
 
-      # Every mapped overlay factor contributes to the actual mean/raw
-      # trajectory grouping.
-      overlay_vars_d <- unique(c(g, color_map_var, linetype_map_var, shape_map_var))
+      # v3.80: visual aesthetics and line-series identity are separate.
+      # Auto uses only mappings that distinguish multiple observations at the
+      # same X; an aesthetic that changes only along X can therefore change
+      # Color/Shape/Linetype without cutting the trajectory.
+      line_series_mode <- input$line_series_mode %||% "auto"
+      line_series_var <- input$line_series_var %||% ""
+      line_series_candidates <- unique(c(g, cvar, linetype_map_var, shape_map_var))
+      line_series_vars <- graph_line_series_vars(
+        d, x, line_series_candidates, facet,
+        mode = line_series_mode, explicit_var = line_series_var
+      )
+      overlay_vars_d <- line_series_vars
       if (has_id && use_value) overlay_vars_d <- unique(c(id, overlay_vars_d))
       d <- add_interaction_key(d, overlay_vars_d, ".line_group__")
       d <- graph_line_break_apply_group(
@@ -587,9 +602,7 @@
       # conditions of the same ID. Example:
       # ID5 × Route a and ID5 × Route b are two independent trajectories.
       if (has_id) {
-        id_overlay_vars <- unique(c(
-          id, g, color_map_var, linetype_map_var, shape_map_var
-        ))
+        id_overlay_vars <- unique(c(id, line_series_vars))
         d <- add_interaction_key(d, id_overlay_vars, ".id_group__")
         d <- graph_line_break_apply_group(
           d, x, xl, line_breaks_now,
@@ -683,7 +696,7 @@
 
         s <- add_interaction_key(
           s,
-          unique(c(g, color_map_var, linetype_map_var, shape_map_var)),
+          line_series_vars,
           ".line_group__"
         )
         s <- graph_line_break_apply_group(
@@ -881,7 +894,7 @@
       d <- left_join(d, slot_obj$layout[, keep, drop=FALSE], by=slot_obj$key_vars)
       sbar <- apply_slot_layout(sbar, slot_obj)
 
-      slot_width <- 0.80 / max(length(slot_obj$global_slots), 1L)
+      slot_width <- slot_obj$slot_width
 
       d <- add_stable_spread(
         d, x_col=x, group_col=".bar_slot__", facet_col=if (nzchar(facet)) facet else NULL,
@@ -1014,7 +1027,11 @@
         mapping = scatter_map,
         data = d,
         size = input$point_size,
-        alpha = 0.90,
+        alpha = {
+          a <- suppressWarnings(as.numeric(input$scatter_point_alpha %||% 0.90))
+          if (!is.finite(a)) a <- 0.90
+          max(0, min(1, a))
+        },
         show.legend = graph_legend_layer_flags(legend_policy, "scatter_point")
       )
       if (!has_color) point_args$colour <- input$mean_color_mode
@@ -1172,7 +1189,7 @@
       # 各X×Facet内のslot幅に対する割合として決める。
       box_width_scale <- suppressWarnings(as.numeric(input$box_width_scale %||% 0.72))
       if (!is.finite(box_width_scale)) box_width_scale <- 0.72
-      box_width_scale <- max(0, min(0.95, box_width_scale))
+      box_width_scale <- max(0, min(3.00, box_width_scale))
       d$.box_width__ <- d$.slot_width__ * box_width_scale
 
       # x is now an explicit numeric position, so geom_boxplot must be
@@ -1384,19 +1401,18 @@
     )
     p <- p + do.call(labs, label_args) + theme_object()
 
-    colour_title <- if (isTRUE(input$legend_title_show)) {
-      input$legend_group_title %||% ""
-    } else NULL
-    individual_title <- if (isTRUE(input$legend_individual_title_show)) {
-      input$legend_individual_title %||% ""
-    } else NULL
-
     p <- graph_apply_legend_guides(
       p,
       legend_policy,
       titles = list(
-        colour = colour_title,
-        individual = individual_title
+        colour = if (isTRUE(input$legend_colour_title_show)) input$legend_colour_title else NULL,
+        fill = if (isTRUE(input$legend_fill_title_show)) input$legend_fill_title else NULL,
+        linetype = if (isTRUE(input$legend_linetype_title_show)) input$legend_linetype_title else NULL,
+        shape = if (isTRUE(input$legend_shape_title_show)) input$legend_shape_title else NULL
+      ),
+      layout = list(
+        wrap_mode = input$legend_wrap_mode %||% "auto",
+        wrap_count = input$legend_wrap_count %||% 2L
       )
     )
 
@@ -1528,4 +1544,3 @@
           )
       }
     }
-

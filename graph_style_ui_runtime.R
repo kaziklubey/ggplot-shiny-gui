@@ -114,6 +114,19 @@
     if (changed) series_styles(ss)
   })
 
+
+  observeEvent(input$apply_series_palette, {
+    if (isTRUE(restoring_style_state())) return()
+    keys <- series_combo_levels()
+    if (!length(keys)) return()
+    ensure_series_styles(keys)
+    pal <- default_palette(length(keys), input$series_palette_preset %||% "okabe_ito")
+    ss <- isolate(series_styles())
+    for (i in seq_along(keys)) ss[[keys[[i]]]]$color <- pal[[i]]
+    series_styles(ss)
+    style_restore_epoch(isolate(style_restore_epoch()) + 1L)
+  })
+
   # ============================================================
   # Scatter regression styles
 

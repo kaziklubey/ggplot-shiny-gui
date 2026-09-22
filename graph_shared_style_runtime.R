@@ -217,9 +217,11 @@
         if (!identical(lt[[legend_key]], item$display)) { lt[[legend_key]] <- item$display; changed <- TRUE }
         key <- graph_group_legend_key(list(mapping = list(color = input$colorvar,
           position = input$groupvar), style = list(appearance = list(series_style_override = input$series_style_override))))
-        if (identical(legend_key, key) && !identical(input$legend_group_title, item$display)) {
+        title_input <- if ((input$plot_type %||% "line") %in% c("bar", "box")) "legend_fill_title" else "legend_colour_title"
+        if (identical(legend_key, key) && !identical(input[[title_input]], item$display)) {
           shared_style_pending_group_title(item$display)
           updateTextInput(session, "legend_group_title", value = item$display)
+          updateTextInput(session, title_input, value = item$display)
         }
       }
     }
@@ -251,10 +253,11 @@
 
     # Dependencies that can represent linked user edits.
     level_labels(); color_styles(); shape_styles(); linetype_styles(); legend_titles()
-    input$xlab; input$ylab; input$legend_group_title
+    input$xlab; input$ylab; input$legend_colour_title; input$legend_fill_title
+    current_title <- if ((input$plot_type %||% "line") %in% c("bar", "box")) input$legend_fill_title else input$legend_colour_title
     pending_title <- shared_style_pending_group_title()
     if (!is.null(pending_title)) {
-      if (!identical(input$legend_group_title, pending_title)) return()
+      if (!identical(current_title, pending_title)) return()
       shared_style_pending_group_title(NULL)
     }
 
@@ -271,7 +274,7 @@
       mapping = list(color = input$colorvar, position = input$groupvar),
       labels = list(xlab = input$xlab %||% "", ylab = input$ylab %||% ""),
       style = list(
-        appearance = list(legend_group_title = input$legend_group_title,
+        appearance = list(legend_group_title = current_title,
                           series_style_override = input$series_style_override),
         color_styles = isolate(color_styles()),
         shape_styles = isolate(shape_styles()),

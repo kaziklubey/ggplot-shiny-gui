@@ -417,7 +417,9 @@
         if (!nzchar(new_id) || !new_id %in% valid_layout_internal) next
         st_edit <- saved_edit_states[[old_id]]
         if (is.list(st_edit)) {
-          mapped_edit_states[[new_id]] <- shared_style_normalize_graph_state(st_edit)
+          mapped_edit_states[[new_id]] <- graph_state_prepare_replay_snapshot(
+            shared_style_normalize_graph_state(st_edit)
+          )
         }
       }
     }
@@ -1504,13 +1506,24 @@
       st <- shared_style_normalize_graph_state(st)
       old_graph_schema <- suppressWarnings(as.integer(graph_state_scalar(st$schema_version, 0L)))
       if (!is.finite(old_graph_schema)) old_graph_schema <- 0L
+      old_style_schema <- suppressWarnings(as.integer(graph_state_scalar((st$style %||% list())$schema_version, 0L)))
+      if (!is.finite(old_style_schema)) old_style_schema <- 0L
       st <- graph_state_prepare_replay_snapshot(st)
       new_graph_schema <- suppressWarnings(as.integer(graph_state_scalar(st$schema_version, 0L)))
       if (!is.finite(new_graph_schema)) new_graph_schema <- 0L
+      new_style_schema <- suppressWarnings(as.integer(graph_state_scalar((st$style %||% list())$schema_version, 0L)))
+      if (!is.finite(new_style_schema)) new_style_schema <- 0L
       if (old_graph_schema < 4L && is.list(st) && new_graph_schema >= 4L) {
         diag_log(
           "PROJECT-STYLE-MIGRATION",
           "dynamic style defaults canonicalized from data/mapping; no Editor reconcile required",
+          id = source_ids[[i]]
+        )
+      }
+      if (old_style_schema < 4L && is.list(st) && new_style_schema >= 4L) {
+        diag_log(
+          "PROJECT-STYLE-SCHEMA-MIGRATION",
+          "style schema canonicalized at Project load boundary; first Editor replay should remain clean",
           id = source_ids[[i]]
         )
       }

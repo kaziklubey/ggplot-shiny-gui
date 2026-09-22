@@ -66,7 +66,12 @@ graph_normalise_colour <- function(colour, fallback = "#000000") {
 }
 
 graph_default_palette <- function(n, preset = "okabe_ito") {
-  vals <- switch(
+  n <- suppressWarnings(as.integer(n)[1])
+  if (!is.finite(n) || n <= 0L) return(character(0))
+
+  if (identical(preset, "hue")) return(scales::hue_pal()(n))
+
+  base <- switch(
     preset,
     okabe_ito = c("#E69F00", "#56B4E9", "#009E73", "#F0E442",
                   "#0072B2", "#D55E00", "#CC79A7", "#000000"),
@@ -74,9 +79,19 @@ graph_default_palette <- function(n, preset = "okabe_ito") {
              "#A6D854", "#FFD92F", "#E5C494", "#B3B3B3"),
     dark2 = c("#1B9E77", "#D95F02", "#7570B3", "#E7298A",
               "#66A61E", "#E6AB02", "#A6761D", "#666666"),
-    scales::hue_pal()(max(n, 1))
+    c("#E69F00", "#56B4E9", "#009E73", "#F0E442",
+      "#0072B2", "#D55E00", "#CC79A7", "#000000")
   )
-  rep(vals, length.out = n)
+  if (n <= length(base)) return(base[seq_len(n)])
+
+  # Fixed publication palettes contain eight canonical colours.  Repeating the
+  # first colours for level 9+ makes categories genuinely indistinguishable, so
+  # v3.80 keeps the canonical eight and extends with non-identical hue colours.
+  pool <- scales::hue_pal()(max(24L, n * 3L))
+  pool <- pool[!toupper(pool) %in% toupper(base)]
+  out <- c(base, pool)
+  if (length(out) < n) out <- c(out, scales::hue_pal()(n + length(base)))
+  out[seq_len(n)]
 }
 
 graph_default_linetypes <- function() {

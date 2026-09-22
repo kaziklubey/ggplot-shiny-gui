@@ -258,9 +258,13 @@
     g0 <- effective_position_var(d)
     cvar0 <- resolve_color_var(d)
     if (!nzchar(cvar0) || !nzchar(g0) || identical(cvar0, g0)) return(character(0))
+    observed <- graph_series_combo_key(as.character(d[[cvar0]]), as.character(d[[g0]]))
+    observed <- unique(observed[!is.na(observed)])
+    if (!length(observed)) return(character(0))
     sl0 <- ordered_levels_for_var(d, cvar0)
     gl0 <- ordered_levels_for_var(d, g0)
-    as.vector(outer(sl0, gl0, series_combo_key))
+    preferred <- as.vector(outer(sl0, gl0, series_combo_key))
+    c(preferred[preferred %in% observed], setdiff(observed, preferred))
   })
 
   ensure_series_styles <- function(keys_now) {

@@ -461,8 +461,35 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                   p(
                     class = "help-block",
                     "Lineでは系列を左右へずらす要因、Bar/Boxでは追加の横並び要因として使います。"
+                  ),
+                  uiOutput("position_mapping_notice_ui"),
+                  conditionalPanel(
+                    condition = "input.plot_type == 'line'",
+                    selectInput(
+                      "line_series_mode", "線をつなぐ単位",
+                      choices = c(
+                        "自動（推奨）" = "auto",
+                        "Mappingで系列を分ける" = "mapped",
+                        "1本としてつなぐ" = "single",
+                        "列を指定" = "column"
+                      ),
+                      selected = "auto"
+                    ),
+                    conditionalPanel(
+                      condition = "input.line_series_mode == 'column'",
+                      selectInput(
+                        "line_series_var", "系列を識別する列",
+                        choices = c("なし" = ""),
+                        selected = ""
+                      )
+                    ),
+                    p(
+                      class = "help-block",
+                      "自動では、同じX位置に複数水準が共存する要因だけを別系列として扱います。色や点形状がXに沿って変わるだけなら線を分断しません。"
+                    )
                   )
                 ),
+                uiOutput("mapping_diagnostics_ui"),
                 selectInput(
                   "idvar", "個体ID",
                   choices = c("なし" = "")
@@ -724,7 +751,17 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                         choices=c("自動 (hue)"="hue","Okabe-Ito (色覚多様性対応)"="okabe_ito","Set2"="set2","Dark2"="dark2"), selected="okabe_ito"),
                       actionButton("apply_palette", "色 / 塗りへパレットを適用"),
                       checkboxInput("series_style_override", "色 / 塗り × 横位置要因ごとに色を上書きする", FALSE),
-                      conditionalPanel(condition="input.series_style_override == true", uiOutput("series_style_ui"))
+                      conditionalPanel(
+                        condition="input.series_style_override == true",
+                        selectInput(
+                          "series_palette_preset", "組み合わせ色へパレットを一括適用",
+                          choices=c("自動 (hue)"="hue","Okabe-Ito (色覚多様性対応)"="okabe_ito","Set2"="set2","Dark2"="dark2"),
+                          selected="okabe_ito"
+                        ),
+                        actionButton("apply_series_palette", "組み合わせ色へパレットを適用"),
+                        p(class="help-block", "一括適用後も、下の各組み合わせ色を個別に変更できます。"),
+                        uiOutput("series_style_ui")
+                      )
                     )
                   ),
                   tags$details(
@@ -804,6 +841,13 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                     sliderInput(
                       "point_size", "平均マーカーサイズ",
                       min = 0, max = 8, value = 2.8, step = 0.1
+                    ),
+                    conditionalPanel(
+                      condition = "input.plot_type == 'scatter'",
+                      sliderInput(
+                        "scatter_point_alpha", "点の透明度",
+                        min = 0, max = 1, value = 0.90, step = 0.05
+                      )
                     )
                   )
                 )
@@ -840,11 +884,11 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                       condition = "input.plot_type == 'box'",
                       sliderInput(
                         "box_width_scale", "箱の太さ",
-                        min = 0, max = 0.95, value = 0.72, step = 0.05
+                        min = 0, max = 3.00, value = 0.72, step = 0.05
                       ),
                       p(
                         class = "help-block",
-                        "横並び条件の中心間隔とは独立して、箱そのものの太さだけを調整します。"
+                        "横並び条件の中心間隔とは独立して、箱そのものの太さだけを調整します。1を超える値では意図的に重ねることもできます。"
                       )
                     )
                   )
@@ -863,7 +907,11 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                     condition = "input.plot_type == 'bar'",
                     sliderInput(
                       "bar_width", "バーの太さ",
-                      min = 0, max = 1.00, value = 0.82, step = 0.02
+                      min = 0, max = 3.00, value = 0.82, step = 0.02
+                    ),
+                    p(
+                      class = "help-block",
+                      "1を超える値では横slot幅より太くでき、必要なら意図的に隣のバーへ重ねられます。多数条件ではPlot横幅も併用してください。"
                     ),
                     sliderInput(
                       "x_category_spacing", "Xカテゴリ（バーの塊）間隔",
@@ -960,7 +1008,7 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                   selectInput(
                     "error_color_mode", "Error bar の色",
                     choices = c(
-                      "Group色" = "group",
+                      "Color / Fill と同じ色" = "group",
                       "固定色" = "fixed"
                     ),
                     selected = "fixed"
@@ -1346,7 +1394,12 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                 tags$b("表示する凡例"),
                 checkboxInput(
                   "legend_colour_show",
-                  "色 / 塗り",
+                  "色",
+                  TRUE
+                ),
+                checkboxInput(
+                  "legend_fill_show",
+                  "塗り",
                   TRUE
                 ),
                 checkboxInput(
@@ -1364,6 +1417,7 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                   "同じ変数の線種 + 点の形を1つにまとめる",
                   TRUE
                 ),
+                selectInput("legend_merge_mode", "同じ変数の凡例", choices = c("自動で統合" = "auto", "別々に表示" = "separate"), selected = "auto"),
                 # Hidden compatibility input: preserves the old Color+Shape
                 # merge/split preference when loading pre-v3.73.2.40 projects.
                 tags$div(
@@ -1388,23 +1442,54 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                 tags$summary("凡例タイトル"),
                 div(
                   class = "subsection-body",
-                  checkboxInput(
-                    "legend_title_show",
-                    "色 / 塗り凡例タイトルを表示",
-                    FALSE
+                  lapply(c("colour", "fill", "linetype", "shape"), function(aes) {
+                    label <- c(colour = "色", fill = "塗り", linetype = "線種", shape = "点の形")[[aes]]
+                    tags$div(
+                      class = "legend-control-card",
+                      tags$b(label),
+                      checkboxInput(paste0("legend_", aes, "_title_show"), "タイトルを表示", FALSE),
+                      textInput(paste0("legend_", aes, "_title"), "タイトル", ""),
+                      selectInput(paste0("legend_", aes, "_order"), "表示順", choices = as.character(1:4), selected = as.character(match(aes, c("colour", "fill", "linetype", "shape"))))
+                    )
+                  }),
+                  tags$div(style = "display:none;",
+                    checkboxInput("legend_title_show", "legacy", FALSE),
+                    textInput("legend_group_title", "legacy", ""),
+                    checkboxInput("legend_individual_title_show", "legacy", FALSE),
+                    textInput("legend_individual_title", "legacy", "")
                   ),
-                  textInput("legend_group_title", "色 / 塗り凡例タイトル", ""),
-                  checkboxInput(
-                    "legend_individual_title_show",
-                    "線種 / 点形状凡例タイトルを表示",
-                    FALSE
+                  tags$hr(),
+                  selectInput(
+                    "legend_wrap_mode", "凡例項目の折り返し",
+                    choices = c(
+                      "自動" = "auto",
+                      "列数を指定" = "ncol",
+                      "行数を指定" = "nrow"
+                    ),
+                    selected = "auto"
                   ),
-                  textInput("legend_individual_title", "線種 / 点形状凡例タイトル", "")
+                  conditionalPanel(
+                    condition = "input.legend_wrap_mode != 'auto'",
+                    sliderInput(
+                      "legend_wrap_count", "列 / 行数",
+                      min = 1, max = 12, value = 2, step = 1
+                    )
+                  ),
+                  numericInput(
+                    "legend_item_spacing",
+                    "凡例項目の間隔（-1 = Theme自動）",
+                    value = -1, min = -1, max = 2, step = 0.05
+                  ),
+                  numericInput(
+                    "legend_text_size",
+                    "凡例文字サイズ（0 = Theme自動）",
+                    value = 0, min = 0, max = 48, step = 0.5
+                  )
                 )
               ),
               p(
                 class = "help-block",
-                "凡例の表示/非表示はPlot本体のMappingを変更しません。凡例項目の順序は Mapping → Category order の条件順に連動します。同じ変数が横並び / 横ずらし要因なら、左右順と凡例順を共通化します。線種と点形状が同じ変数を表す場合だけ、統合設定で1つの凡例にまとめます。"
+                "各凡例の表示、タイトル、並び順を個別に設定できます。表示/非表示はPlot本体のMappingを変更しません。凡例内の条件順は Mapping → Category order に連動します。同じ変数の凡例は、タイトルが一致すれば自動で統合されます。別々に表示することもできます。"
               ),
               sliderInput(
                 "legend_key_width",

@@ -52,6 +52,9 @@ graph_replay_mapping_plan <- function(cfg) {
     facet <- choose(mp$facet, cols, "", allow_empty = TRUE)
     position <- choose(mp$position %||% mp$series, cols, "", allow_empty = TRUE)
     linetype <- choose(mp$linetype, cols, "__color__", specials = c("", "__color__"))
+    line_series_mode <- json_chr(mp$line_series_mode, "auto")
+    if (!line_series_mode %in% c("auto", "mapped", "single", "column")) line_series_mode <- "auto"
+    line_series_var <- choose(mp$line_series_var, cols, "", allow_empty = TRUE)
 
     list(
       raw = raw,
@@ -69,6 +72,8 @@ graph_replay_mapping_plan <- function(cfg) {
       facet = facet,
       position = position,
       linetype = linetype,
+      line_series_mode = line_series_mode,
+      line_series_var = line_series_var,
       external_error = choose(mp$external_error, numeric_cols, "", allow_empty = TRUE),
       external_ymin = choose(mp$external_ymin, numeric_cols, "", allow_empty = TRUE),
       external_ymax = choose(mp$external_ymax, numeric_cols, "", allow_empty = TRUE)

@@ -10,6 +10,24 @@ graph_legend_bool <- function(value, default = TRUE) {
   isTRUE(value)
 }
 
+graph_legend_aesthetics <- function() c("colour", "fill", "linetype", "shape")
+
+graph_legend_order <- function(value, default) {
+  z <- suppressWarnings(as.integer(graph_state_scalar(value, default)))
+  if (!length(z) || !is.finite(z[[1]])) return(as.integer(default))
+  max(1L, min(4L, z[[1]]))
+}
+
+graph_legend_saved_title <- function(appearance, aesthetic) {
+  show <- appearance[[paste0("legend_", aesthetic, "_title_show")]]
+  value <- appearance[[paste0("legend_", aesthetic, "_title")]]
+  if (is.null(show)) {
+    show <- if (aesthetic %in% c("colour", "fill")) appearance$legend_title_show else appearance$legend_individual_title_show
+    value <- if (aesthetic %in% c("colour", "fill")) appearance$legend_group_title else appearance$legend_individual_title
+  }
+  if (isTRUE(show)) graph_legend_title_text(value) else NULL
+}
+
 # Group title's legacy/shared-library key remains compatible with older projects.
 graph_group_legend_key <- function(state) {
   ap <- state$style$appearance %||% list()
@@ -45,9 +63,20 @@ graph_normalize_legend_state <- function(state) {
   legacy_merge <- graph_legend_bool(ap$legend_merge_group_individual, TRUE)
 
   if (is.null(ap$legend_colour_show)) ap$legend_colour_show <- legacy_group
+  if (is.null(ap$legend_fill_show)) ap$legend_fill_show <- ap$legend_colour_show
   if (is.null(ap$legend_linetype_show)) ap$legend_linetype_show <- legacy_group
   if (is.null(ap$legend_shape_show)) ap$legend_shape_show <- legacy_shape
   if (is.null(ap$legend_merge_linetype_shape)) ap$legend_merge_linetype_shape <- TRUE
+  if (is.null(ap$legend_merge_mode)) ap$legend_merge_mode <- "auto"
+  if (!ap$legend_merge_mode %in% c("auto", "separate")) ap$legend_merge_mode <- "auto"
+  for (aes in graph_legend_aesthetics()) {
+    title_show <- paste0("legend_", aes, "_title_show")
+    title <- paste0("legend_", aes, "_title")
+    if (is.null(ap[[title_show]])) ap[[title_show]] <- if (aes %in% c("colour", "fill")) isTRUE(ap$legend_title_show) else isTRUE(ap$legend_individual_title_show)
+    if (is.null(ap[[title]])) ap[[title]] <- if (aes %in% c("colour", "fill")) ap$legend_group_title else ap$legend_individual_title
+    order <- paste0("legend_", aes, "_order")
+    ap[[order]] <- graph_legend_order(ap[[order]], match(aes, graph_legend_aesthetics()))
+  }
 
   # Compatibility-only state.  There is intentionally no visible control for
   # this in the new UI; it preserves the old Color+Shape merge/split choice.
@@ -103,6 +132,7 @@ graph_build_legend_policy <- function(mapping, appearance, plot_type,
 
   colour_show <- graph_legend_bool(appearance$legend_colour_show,
                                    graph_legend_bool(appearance$legend_group_show, TRUE))
+  fill_show <- graph_legend_bool(appearance$legend_fill_show, colour_show)
   linetype_show <- graph_legend_bool(appearance$legend_linetype_show,
                                      graph_legend_bool(appearance$legend_group_show, TRUE))
   shape_show <- graph_legend_bool(appearance$legend_shape_show,
@@ -112,7 +142,7 @@ graph_build_legend_policy <- function(mapping, appearance, plot_type,
     colour = list(active = colour_active, variable = colour_var,
                   show = colour_active && colour_show),
     fill = list(active = fill_active, variable = fill_var,
-                show = fill_active && colour_show),
+                show = fill_active && fill_show),
     linetype = list(active = linetype_active, variable = linetype_var,
                     show = linetype_active && linetype_show),
     shape = list(active = shape_active, variable = shape_var,
@@ -121,7 +151,9 @@ graph_build_legend_policy <- function(mapping, appearance, plot_type,
 
   same <- function(a, b) {
     isTRUE(items[[a]]$show) && isTRUE(items[[b]]$show) &&
-      nzchar(items[[a]]$variable) && identical(items[[a]]$variable, items[[b]]$variable)
+      nzchar(items[[a]]$variable) && identical(items[[a]]$variable, items[[b]]$variable) &&
+      identical(graph_legend_saved_title(appearance, a), graph_legend_saved_title(appearance, b)) &&
+      !identical(appearance$legend_merge_mode, "separate")
   }
 
   merge_linetype_shape <- same("linetype", "shape") &&
@@ -148,7 +180,10 @@ graph_build_legend_policy <- function(mapping, appearance, plot_type,
 
   # Stable ordering is part of the policy.  In current ggplot2, distinct order
   # values also keep same-title/same-break guides separate when merge is OFF.
-  preferred <- c("fill", "colour", "linetype", "shape")
+  preferred <- graph_legend_aesthetics()
+  preferred <- preferred[order(vapply(preferred, function(aes) graph_legend_order(
+    appearance[[paste0("legend_", aes, "_order")]], match(aes, preferred)
+  ), integer(1)), seq_along(preferred))]
   component_order <- list()
   next_order <- 1L
   orders <- setNames(rep(NA_integer_, length(items)), names(items))
@@ -231,15 +266,21 @@ graph_legend_component_title <- function(policy, aesthetic, titles) {
   comp <- components[[aesthetic]]
   members <- names(components)[components == comp]
 
-  # Visible title precedence follows semantic ownership: Color/Fill title for
-  # a component containing those aesthetics, otherwise Line/Shape title.
-  if (any(members %in% c("colour", "fill"))) {
-    return(graph_legend_title_text(titles$colour))
-  }
-  if (any(members %in% c("linetype", "shape"))) {
-    return(graph_legend_title_text(titles$individual))
+  for (candidate in c("colour", "fill", "linetype", "shape")) {
+    if (candidate %in% members) return(graph_legend_title_text(titles[[candidate]]))
   }
   NULL
+}
+
+graph_legend_layout_args <- function(layout = list()) {
+  wrap_mode <- as.character(layout$wrap_mode %||% "auto")[[1]]
+  wrap_count <- suppressWarnings(as.integer(layout$wrap_count %||% 2L))
+  if (!is.finite(wrap_count) || wrap_count < 1L) wrap_count <- 2L
+  wrap_count <- max(1L, min(12L, wrap_count))
+
+  if (identical(wrap_mode, "ncol")) return(list(ncol = wrap_count, byrow = TRUE))
+  if (identical(wrap_mode, "nrow")) return(list(nrow = wrap_count, byrow = TRUE))
+  list()
 }
 
 graph_legend_guide_override <- function(policy, aesthetic) {
@@ -292,7 +333,7 @@ graph_legend_guide_override <- function(policy, aesthetic) {
 
 # Apply title + guide visibility/order/key overrides to an already-built plot.
 # Plot data/layers are intentionally outside this function.
-graph_apply_legend_guides <- function(plot, policy, titles = list()) {
+graph_apply_legend_guides <- function(plot, policy, titles = list(), layout = list()) {
   items <- policy$items %||% list()
   guide_args <- list()
   lab_args <- list()
@@ -312,6 +353,10 @@ graph_apply_legend_guides <- function(plot, policy, titles = list()) {
 
     override <- graph_legend_guide_override(policy, aes)
     gargs <- list(order = as.integer(policy$orders[[aes]] %||% 1L))
+
+    layout_args <- graph_legend_layout_args(layout)
+    if (length(layout_args)) gargs <- utils::modifyList(gargs, layout_args)
+
     if (!is.null(override) && length(override)) gargs$override.aes <- override
     guide_args[[aes]] <- do.call(ggplot2::guide_legend, gargs)
   }

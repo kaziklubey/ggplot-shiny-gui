@@ -9,8 +9,8 @@
   # ============================================================
   style_settings <- reactive({
     list(
-      version = "3.3.42",
-      schema_version = 2L,
+      version = "3.80.2",
+      schema_version = 4L,
       color_styles = color_styles(),
       linetype_styles = linetype_styles(),
       shape_styles = shape_styles(),
@@ -54,6 +54,7 @@
         mean_linetype = input$mean_linetype,
         mean_shape = input$mean_shape,
         point_size = input$point_size,
+        scatter_point_alpha = input$scatter_point_alpha,
         line_width = input$line_width,
         line_group_dodge = input$line_group_dodge,
         line_x_spacing = input$line_x_spacing,
@@ -96,14 +97,32 @@
         x_tick_labels_show = input$x_tick_labels_show,
         legend_pos = input$legend_pos,
         legend_colour_show = input$legend_colour_show,
+        legend_fill_show = input$legend_fill_show,
         legend_linetype_show = input$legend_linetype_show,
         legend_shape_show = input$legend_shape_show,
+        legend_merge_mode = input$legend_merge_mode,
         legend_merge_linetype_shape = input$legend_merge_linetype_shape,
         legend_merge_colour_shape = input$legend_merge_colour_shape,
         legend_title_show = input$legend_title_show,
         legend_group_title = input$legend_group_title,
         legend_individual_title_show = input$legend_individual_title_show,
         legend_individual_title = input$legend_individual_title,
+        legend_colour_title_show = input$legend_colour_title_show,
+        legend_fill_title_show = input$legend_fill_title_show,
+        legend_linetype_title_show = input$legend_linetype_title_show,
+        legend_shape_title_show = input$legend_shape_title_show,
+        legend_colour_title = input$legend_colour_title,
+        legend_fill_title = input$legend_fill_title,
+        legend_linetype_title = input$legend_linetype_title,
+        legend_shape_title = input$legend_shape_title,
+        legend_colour_order = graph_legend_order(input$legend_colour_order, 1L),
+        legend_fill_order = graph_legend_order(input$legend_fill_order, 2L),
+        legend_linetype_order = graph_legend_order(input$legend_linetype_order, 3L),
+        legend_shape_order = graph_legend_order(input$legend_shape_order, 4L),
+        legend_wrap_mode = input$legend_wrap_mode %||% "auto",
+        legend_wrap_count = as.integer(input$legend_wrap_count %||% 2L),
+        legend_item_spacing = input$legend_item_spacing %||% -1,
+        legend_text_size = input$legend_text_size %||% 0,
         legend_key_width = input$legend_key_width,
         facet_spacing_x = input$facet_spacing_x
       )
@@ -179,11 +198,10 @@
   )
 
   apply_style_config <- function(cfg, success_message = "書式を適用しました。", release_guard = TRUE, notify = TRUE) {
-    if (is.null(cfg$appearance$legend_group_title)) {
-      target <- isolate(graph_state_replay_target())
-      mp <- if (is.list(target)) target$mapping else list(color = isolate(input$colorvar), position = isolate(input$groupvar))
-      cfg <- graph_normalize_legend_state(list(mapping = mp, style = cfg))$style
-    }
+    target <- isolate(graph_state_replay_target())
+    mp <- if (is.list(target)) target$mapping else list(color = isolate(input$colorvar), position = isolate(input$groupvar))
+    cfg <- graph_style_migrate_v4(cfg)
+    cfg <- graph_normalize_legend_state(list(mapping = mp, style = cfg))$style
     restoring_style_state(TRUE)
     restore_release_scheduled <- FALSE
     on.exit({
@@ -316,6 +334,7 @@
       if (!is.null(a$mean_linetype)) updateSelectInput(session, "mean_linetype", selected = a$mean_linetype)
       if (!is.null(a$mean_shape)) updateSelectInput(session, "mean_shape", selected = as.character(a$mean_shape))
       if (!is.null(a$point_size)) updateSliderInput(session, "point_size", value = as.numeric(a$point_size))
+      updateSliderInput(session, "scatter_point_alpha", value = as.numeric(a$scatter_point_alpha %||% 0.90))
       if (!is.null(a$line_width)) updateSliderInput(session, "line_width", value = as.numeric(a$line_width))
       if (!is.null(a$line_group_dodge)) updateSliderInput(session, "line_group_dodge", value = as.numeric(a$line_group_dodge))
       if (!is.null(a$line_x_spacing)) updateSliderInput(session, "line_x_spacing", value = as.numeric(a$line_x_spacing))
@@ -392,6 +411,18 @@
           if (is.null(a$legend_group_show)) TRUE else isTRUE(a$legend_group_show)
         } else isTRUE(a$legend_colour_show)
       )
+      updateCheckboxInput(session, "legend_fill_show", value = if (is.null(a$legend_fill_show)) {
+        if (is.null(a$legend_colour_show)) TRUE else isTRUE(a$legend_colour_show)
+      } else isTRUE(a$legend_fill_show))
+      updateSelectInput(session, "legend_merge_mode", selected = a$legend_merge_mode %||% "auto")
+      for (aes in graph_legend_aesthetics()) {
+        key <- paste0("legend_", aes)
+        legacy_show <- if (aes %in% c("colour", "fill")) a$legend_title_show else a$legend_individual_title_show
+        legacy_title <- if (aes %in% c("colour", "fill")) a$legend_group_title else a$legend_individual_title
+        updateCheckboxInput(session, paste0(key, "_title_show"), value = isTRUE(a[[paste0(key, "_title_show")]] %||% legacy_show))
+        updateTextInput(session, paste0(key, "_title"), value = a[[paste0(key, "_title")]] %||% legacy_title %||% "")
+        updateSelectInput(session, paste0(key, "_order"), selected = as.character(graph_legend_order(a[[paste0(key, "_order")]], match(aes, graph_legend_aesthetics()))))
+      }
       updateCheckboxInput(
         session, "legend_linetype_show",
         value = if (is.null(a$legend_linetype_show)) {
@@ -421,6 +452,10 @@
       updateTextInput(session, "legend_group_title", value = a$legend_group_title %||% "")
       updateCheckboxInput(session, "legend_individual_title_show", value = isTRUE(a$legend_individual_title_show))
       updateTextInput(session, "legend_individual_title", value = a$legend_individual_title %||% "")
+      updateSelectInput(session, "legend_wrap_mode", selected = a$legend_wrap_mode %||% "auto")
+      updateSliderInput(session, "legend_wrap_count", value = as.numeric(a$legend_wrap_count %||% 2L))
+      updateNumericInput(session, "legend_item_spacing", value = as.numeric(a$legend_item_spacing %||% -1))
+      updateNumericInput(session, "legend_text_size", value = as.numeric(a$legend_text_size %||% 0))
       if (!is.null(a$legend_key_width)) {
         updateSliderInput(
           session, "legend_key_width",
@@ -437,6 +472,14 @@
       # the previously visited Graph.
       updateCheckboxInput(session, "x_tick_labels_show", value = TRUE)
       updateCheckboxInput(session, "legend_colour_show", value = TRUE)
+      updateCheckboxInput(session, "legend_fill_show", value = TRUE)
+      updateSelectInput(session, "legend_merge_mode", selected = "auto")
+      for (aes in graph_legend_aesthetics()) {
+        key <- paste0("legend_", aes)
+        updateCheckboxInput(session, paste0(key, "_title_show"), value = FALSE)
+        updateTextInput(session, paste0(key, "_title"), value = "")
+        updateSelectInput(session, paste0(key, "_order"), selected = as.character(match(aes, graph_legend_aesthetics())))
+      }
       updateCheckboxInput(session, "legend_linetype_show", value = TRUE)
       updateCheckboxInput(session, "legend_shape_show", value = TRUE)
       updateCheckboxInput(session, "legend_merge_linetype_shape", value = TRUE)
@@ -445,6 +488,10 @@
       updateTextInput(session, "legend_group_title", value = "")
       updateCheckboxInput(session, "legend_individual_title_show", value = FALSE)
       updateTextInput(session, "legend_individual_title", value = "")
+      updateSelectInput(session, "legend_wrap_mode", selected = "auto")
+      updateSliderInput(session, "legend_wrap_count", value = 2)
+      updateNumericInput(session, "legend_item_spacing", value = -1)
+      updateNumericInput(session, "legend_text_size", value = 0)
     }
 
     style_restore_epoch(isolate(style_restore_epoch()) + 1L)

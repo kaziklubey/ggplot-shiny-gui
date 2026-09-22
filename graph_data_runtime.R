@@ -318,6 +318,17 @@
       choices = c("なし" = "", cols),
       selected = current_group
     )
+
+    current_series_var <- isolate(input$line_series_var %||% "")
+    if (!nzchar(current_series_var) || !current_series_var %in% cols) current_series_var <- ""
+    cfg_series <- isolate(graph_state_replay_target())
+    saved_series_var <- if (is.list(cfg_series)) json_chr((cfg_series$mapping %||% list())$line_series_var, "") else ""
+    if (saved_series_var %in% c("", cols)) current_series_var <- saved_series_var
+    updateSelectInput(
+      session, "line_series_var",
+      choices = c("なし" = "", cols),
+      selected = current_series_var
+    )
   }, priority = 109)
 
   # v3.73.2.18: Mapping controls are all permanently mounted in

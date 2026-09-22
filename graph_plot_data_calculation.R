@@ -27,11 +27,18 @@ compute_plot_data <- function() {
     lvar_guard <- resolve_linetype_var(d)
     svar_guard <- resolve_shape_var(d)
 
+    line_series_guard <- if (
+      identical(input$plot_type %||% "line", "line") &&
+      identical(input$line_series_mode %||% "auto", "column") &&
+      has_selection(input$line_series_var)
+    ) input$line_series_var else ""
+
     categorical_map <- c(
       effective_position_var(d),
       cvar_guard,
       lvar_guard,
       svar_guard,
+      line_series_guard,
       if (has_selection(input$idvar)) input$idvar else "",
       if (has_selection(input$facetvar)) input$facetvar else ""
     )
@@ -188,6 +195,10 @@ compute_summary_grouping_vars <- function() {
       svar_sum <- resolve_shape_var(d)
       if (nzchar(lvar_sum)) grouping <- c(grouping, lvar_sum)
       if (nzchar(svar_sum)) grouping <- c(grouping, svar_sum)
+      if (identical(input$line_series_mode %||% "auto", "column")) {
+        series_var_sum <- input$line_series_var %||% ""
+        if (nzchar(series_var_sum) && series_var_sum %in% names(d)) grouping <- c(grouping, series_var_sum)
+      }
     }
 
     if (has_selection(input$facetvar)) grouping <- c(grouping, input$facetvar)
@@ -284,6 +295,10 @@ compute_theme_object <- function() {
     if (!is.finite(legend_key_width) || legend_key_width < 0) {
       legend_key_width <- 1.8
     }
+    legend_text_size <- suppressWarnings(as.numeric(input$legend_text_size %||% 0))
+    if (!is.finite(legend_text_size) || legend_text_size < 0) legend_text_size <- 0
+    legend_item_spacing <- suppressWarnings(as.numeric(input$legend_item_spacing %||% -1))
+    if (!is.finite(legend_item_spacing)) legend_item_spacing <- -1
 
     th <- switch(
       input$theme,
@@ -293,7 +308,12 @@ compute_theme_object <- function() {
       gray = theme_gray(base_size = input$base_size, base_family = fam)
     )
     legend_title_element <- element_text(family = fam)
-    th + theme(
+    legend_text_element <- if (legend_text_size > 0) {
+      element_text(family = fam, size = legend_text_size)
+    } else {
+      element_text(family = fam)
+    }
+    theme_bits <- list(
       legend.position = input$legend_pos,
       legend.key.width = grid::unit(legend_key_width, "cm"),
       panel.spacing.x = grid::unit(
@@ -304,9 +324,26 @@ compute_theme_object <- function() {
       axis.title = element_text(family = fam),
       axis.text = element_text(family = fam),
       legend.title = legend_title_element,
-      legend.text = element_text(family = fam),
+      legend.text = legend_text_element,
       strip.text = element_text(family = fam)
     )
+    # -1 keeps ggplot2's theme-native spacing exactly unchanged. Non-negative
+    # values explicitly control the gap between legend keys/items.
+    if (legend_item_spacing >= 0) {
+      theme_names <- names(ggplot2::theme_get())
+      if (all(c("legend.key.spacing.x", "legend.key.spacing.y") %in% theme_names)) {
+        theme_bits$legend.key.spacing.x <- grid::unit(legend_item_spacing, "cm")
+        theme_bits$legend.key.spacing.y <- grid::unit(legend_item_spacing, "cm")
+      } else if (all(c("legend.spacing.x", "legend.spacing.y") %in% theme_names)) {
+        # Compatibility fallback for older ggplot2 builds. These elements are
+        # broader than key spacing but preserve a usable spacing control.
+        theme_bits$legend.spacing.x <- grid::unit(legend_item_spacing, "cm")
+        theme_bits$legend.spacing.y <- grid::unit(legend_item_spacing, "cm")
+      } else {
+        theme_bits$legend.spacing <- grid::unit(legend_item_spacing, "cm")
+      }
+    }
+    th + do.call(theme, theme_bits)
   }
 
 external_error_bounds <- function(z, ycol) {

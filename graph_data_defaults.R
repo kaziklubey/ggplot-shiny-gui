@@ -191,6 +191,8 @@ graph_default_mapping_for_data <- function(data) {
     color = default_series,
     linetype = "__color__",
     shape = "__color__",
+    line_series_mode = "auto",
+    line_series_var = "",
     id = default_id,
     facet = "",
     position = "",
@@ -202,6 +204,38 @@ graph_default_mapping_for_data <- function(data) {
 # Build the canonical built-in sample GraphState from the Editor's static
 # appearance/style shell. Data and Mapping are deterministic and therefore do
 # not depend on whether browser selectInput values have round-tripped yet.
+
+# v3.80 canonical schema migration.  Runtime only consumes schema 5 fields;
+# compatibility is resolved once at the replay/load boundary.
+graph_state_migrate_v5 <- function(state) {
+  if (!is.list(state)) return(state)
+  old_schema <- suppressWarnings(as.integer(graph_state_scalar(state$schema_version, 0L)))
+  if (!is.finite(old_schema)) old_schema <- 0L
+
+  mp <- state$mapping %||% list()
+  if (!is.list(mp)) mp <- list()
+  mode <- graph_state_scalar(mp$line_series_mode, "auto")
+  mode <- as.character(mode %||% "auto")[1]
+  if (!mode %in% c("auto", "mapped", "single", "column")) mode <- "auto"
+  mp$line_series_mode <- mode
+  series_var <- as.character(graph_state_scalar(mp$line_series_var, "") %||% "")[1]
+  if (is.na(series_var)) series_var <- ""
+  mp$line_series_var <- series_var
+  state$mapping <- mp
+
+  st <- graph_style_migrate_v4(state$style %||% list())
+  ap <- st$appearance %||% list()
+  if (!is.list(ap)) ap <- list()
+  alpha <- suppressWarnings(as.numeric(graph_state_scalar(ap$scatter_point_alpha, 0.90)))
+  if (!is.finite(alpha)) alpha <- 0.90
+  ap$scatter_point_alpha <- max(0, min(1, alpha))
+  st$appearance <- ap
+  state$style <- st
+
+  state$version <- "3.80.2"
+  state$schema_version <- max(5L, old_schema)
+  state
+}
 
 # Normalize loaded GraphState before replay into the persistent Editor.
 # Mapping choice vectors are never persisted. Replay derives target choices
@@ -218,7 +252,7 @@ graph_state_prepare_replay_snapshot <- function(state) {
   state$ui_snapshot <- graph_ui_snapshot_normalize(state$ui_snapshot)
   old_schema <- suppressWarnings(as.integer(graph_state_scalar(state$schema_version, 0L)))
   if (!is.finite(old_schema)) old_schema <- 0L
-  if (old_schema >= 4L) return(state)
+  if (old_schema >= 4L) return(graph_state_migrate_v5(state))
 
   raw <- tryCatch(
     graph_parse_pasted_data(as.character(state$data_text %||% "")[1]),
@@ -226,7 +260,7 @@ graph_state_prepare_replay_snapshot <- function(state) {
   )
   if (!is.data.frame(raw) || !ncol(raw)) {
     state$schema_version <- max(4L, old_schema)
-    return(state)
+    return(graph_state_migrate_v5(state))
   }
 
   scalar_chr <- function(x, default = "") {
@@ -248,7 +282,9 @@ graph_state_prepare_replay_snapshot <- function(state) {
     error = function(e) NULL
   )
   prepared <- if (is.list(transformed) && is.data.frame(transformed$data)) transformed$data else raw
-  graph_state_materialize_dynamic_style_defaults(state, prepared_data = prepared)
+  graph_state_migrate_v5(
+    graph_state_materialize_dynamic_style_defaults(state, prepared_data = prepared)
+  )
 }
 
 graph_sample_graph_state <- function(base_state) {

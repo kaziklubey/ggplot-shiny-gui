@@ -10,6 +10,43 @@ graph_style_migration_scalar_chr <- function(x, default = "") {
   as.character(z[[1]])
 }
 
+# v3.80.2 style schema 4. Keep style migration pure so Project load can
+# canonicalize every dormant Graph before any Editor replay. This prevents the
+# first visible replay from producing a false live edit solely because current
+# controls materialize newer style metadata/defaults.
+graph_style_migrate_v4 <- function(style) {
+  st <- style %||% list()
+  if (!is.list(st)) st <- list()
+
+  ap <- st$appearance %||% list()
+  if (!is.list(ap)) ap <- list()
+
+  base_size <- suppressWarnings(as.numeric(graph_state_scalar(ap$base_size, 13)))
+  if (!length(base_size) || !is.finite(base_size[[1]])) base_size <- 13
+  ap$base_size <- as.numeric(base_size[[1]])
+
+  wrap_mode <- graph_style_migration_scalar_chr(ap$legend_wrap_mode, "auto")
+  if (!wrap_mode %in% c("auto", "ncol", "nrow")) wrap_mode <- "auto"
+  ap$legend_wrap_mode <- wrap_mode
+
+  wrap_count <- suppressWarnings(as.integer(graph_state_scalar(ap$legend_wrap_count, 2L)))
+  if (!length(wrap_count) || !is.finite(wrap_count[[1]])) wrap_count <- 2L
+  ap$legend_wrap_count <- max(1L, min(12L, as.integer(wrap_count[[1]])))
+
+  item_spacing <- suppressWarnings(as.numeric(graph_state_scalar(ap$legend_item_spacing, -1)))
+  if (!length(item_spacing) || !is.finite(item_spacing[[1]])) item_spacing <- -1
+  ap$legend_item_spacing <- max(-1, min(2, as.numeric(item_spacing[[1]])))
+
+  text_size <- suppressWarnings(as.numeric(graph_state_scalar(ap$legend_text_size, 0)))
+  if (!length(text_size) || !is.finite(text_size[[1]])) text_size <- 0
+  ap$legend_text_size <- max(0, min(48, as.numeric(text_size[[1]])))
+
+  st$appearance <- ap
+  st$version <- "3.80.2"
+  st$schema_version <- 4L
+  st
+}
+
 graph_style_migration_prepared_data <- function(state) {
   if (!is.list(state)) return(NULL)
   raw <- tryCatch(
