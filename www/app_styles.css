@@ -1414,12 +1414,6 @@
 #graph_panels {
   position: relative;
 }
-.graph-global-preview-home {
-  position: absolute;
-  inset: 0;
-  z-index: 20;
-  pointer-events: none;
-}
 /* The compact Editor shell is always visible. Graph selection targets the
    one persistent Editor and value replay does not mask the control surface. */
 #graph_editor_shell_bar {
@@ -1431,341 +1425,19 @@
 #graph_editor_shell_name { font-weight: 600; white-space: nowrap; }
 #graph_editor_shell_state { color: #777; font-size: 12px; flex: 1 1 auto; min-width: 0; }
 #graph_editor_shell_edit { flex: 0 0 auto; }
-#graph_client_browser {
-  display: none;
-  margin: 0 0 12px 0;
-  padding: 10px 12px 14px 12px;
-  border: 1px solid #d8d8d8;
-  border-radius: 6px;
-  background: #fff;
-}
-#graph_client_browser.client-browse-active { display: block; }
-
-/* v3.65.2: browse preview and dormant Editor affordances share one row.
-   The browser lives in column 2; the persistent Editor shell stays in
-   column 1 with only collapsed section summaries exposed.  Editing
-   removes this class and returns graph_panels to its normal full-width
-   two-column module layout. */
-#graph_workspace_body.client-browse-layout {
-  display: grid;
-  grid-template-columns: minmax(260px, 32%) minmax(0, 1fr);
-  gap: 12px;
-  align-items: start;
-}
-#graph_workspace_body.client-browse-layout > #graph_panels {
-  grid-column: 1;
-  grid-row: 1;
-  min-width: 0;
-}
-#graph_workspace_body.client-browse-layout > #graph_client_browser {
-  grid-column: 2;
-  grid-row: 1;
-  min-width: 0;
-  margin-bottom: 0;
-}
-@media (max-width: 900px) {
-  #graph_workspace_body.client-browse-layout {
-    grid-template-columns: 1fr;
-  }
-  #graph_workspace_body.client-browse-layout > #graph_panels,
-  #graph_workspace_body.client-browse-layout > #graph_client_browser {
-    grid-column: 1;
-  }
-  #graph_workspace_body.client-browse-layout > #graph_panels { grid-row: 1; }
-  #graph_workspace_body.client-browse-layout > #graph_client_browser { grid-row: 2; }
-}
-#graph_client_browser_header {
-  display: flex; align-items: center; gap: 10px; margin-bottom: 8px;
-}
-#graph_client_browser_title { font-weight: 600; flex: 1 1 auto; }
-#graph_client_browser_status { color: #777; font-size: 12px; }
-#graph_client_preview_viewport {
-  width: 100%; min-height: 320px; max-height: 72vh; overflow: auto;
-  display: flex; justify-content: center; align-items: flex-start;
-}
-@media (max-width: 760px) {
-  #graph_editor_shell_bar { align-items: flex-start; flex-wrap: wrap; }
-  #graph_editor_shell_state { flex-basis: 100%; order: 3; }
-}
-#graph_client_preview_canvas { transform-origin: top center; margin: 0 auto; }
-#graph_client_preview_canvas svg { display: block; max-width: none; max-height: none; }
-/* v3.64.0-lazyui1 / v3.65.2: browse keeps the persistent Editor DOM
-   mounted.  Only collapsed control summaries are exposed; the stale live
-   plot column is hidden.  graph_workspace_body places these summaries
-   beside (not below) the cached preview. */
-#graph_panels.client-browse-hidden > .graph-global-preview-home {
-  display: none !important;
-}
-#graph_panels.client-browse-hidden > .graph-single-editor-panel {
-  display: block !important;
-}
-#graph_panels.client-browse-hidden .graph-single-editor-panel .graph-module > .row > .col-sm-8 {
-  display: none !important;
-}
-#graph_panels.client-browse-hidden .graph-single-editor-panel .graph-module > .row > .col-sm-4 {
-  width: 100% !important; float: none !important;
-}
-#graph_panels.client-browse-hidden .graph-single-editor-panel .section-toolbar {
-  opacity: 0.55; pointer-events: none;
-}
-/* v3.65.0: while a selected Graph has not yet been attached to the
-   singleton Editor, only top-level section summaries may act as
-   activation affordances.  Stale controls from the previous owner must
-   never be interactive during browse/replay transitions. */
-#graph_panels.client-browse-hidden .graph-single-editor-panel details.control-section > :not(summary) {
-  display: none !important;
-}
-#graph_panels.client-browse-hidden .graph-single-editor-panel details.control-section > summary {
-  cursor: pointer;
-  pointer-events: auto;
-}
-/* Fresh startup Graphs have no persisted preview and no Editor owner yet.
-   Hide the dormant parameter shell entirely instead of exposing controls
-   that have no canonical GraphState owner.  The compact Editor bar stays
-   available as the explicit activation fallback. */
-#graph_panels.client-browse-hidden.client-pristine-no-preview > .graph-single-editor-panel {
-  display: none !important;
-}
 .graph-tab-btn.client-selected {
   box-shadow: inset 0 -3px 0 rgba(0,0,0,0.45);
   font-weight: 600;
 }
-.graph-global-preview-anchor {
+.graph-live-plot-anchor {
   position: relative;
   width: 100%;
   min-height: 700px;
 }
 
-/* v3.73.2.18: state replay keeps the one live plot DOM mounted in the
-   persistent Editor. Hide only its visual output while the next Graph is being
-   applied/rendered; layout remains measurable and no cached SVG is substituted. */
-#graph_editor_single-preview_anchor.graph-live-replay-pending #graph_editor_single-plot_container {
-  visibility: hidden !important;
-}
-.graph-preview-stage {
-  position: absolute;
-  left: 0;
-  top: 0;
-  box-sizing: border-box;
-  width: 100%;
-  min-height: 320px;
-  background: #fff;
-  pointer-events: auto;
-  visibility: hidden;
-}
-.graph-preview-stage.graph-preview-positioned {
-  visibility: visible;
-}
-/* v3.58.3.6: tab-hidden must suppress the entire Plot-side singleton,
-   including descendants that explicitly set visibility:visible (live/cached layers).
-   display:none on the stage is the authoritative visibility boundary; the DOM
-   remains mounted and is reused when returning to Plot. */
-.graph-preview-stage.graph-preview-tab-hidden {
-  display: none !important;
-  visibility: hidden !important;
-  pointer-events: none !important;
-}
-.graph-preview-live-layer {
-  position: relative;
-  z-index: 1;
-  width: 100%;
-  min-height: 320px;
-}
-/* v3.58: Graph Preview always receives the native R device image.
-   Auto/manual zoom is presentation-only and is applied in the browser. */
-#graph_global_preview_live_layer > .shiny-html-output {
-  box-sizing: border-box;
-  width: 100%;
-  max-width: none;
-  margin-left: auto;
-  margin-right: auto;
-}
-.graph-preview-scale-control {
-  position: absolute;
-  right: 12px;
-  top: 6px;
-  z-index: 6;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 4px 8px;
-  border: 1px solid #d8dde3;
-  border-radius: 5px;
-  background: rgba(255,255,255,.94);
-  font-size: 12px;
-  line-height: 1.2;
-}
-.graph-preview-scale-control label { margin: 0; font-weight: 400; }
-.graph-preview-scale-control input[type=range] { width: 120px; margin: 0; }
-.graph-preview-scale-value { min-width: 42px; text-align: right; font-variant-numeric: tabular-nums; }
-/* v3.58.1: the stage itself never scrolls. Only the graph viewport
-   owns overflow, so Graph書式 stays directly below the Preview. */
-.graph-preview-stage.graph-preview-manual-scale {
-  overflow: visible;
-}
-#graph_global_preview_stage .graph-preview-viewport {
-  box-sizing: border-box;
-  position: relative;
-  width: 100%;
-  margin: 0 auto;
-  overflow: hidden;
-  overscroll-behavior: contain;
-}
-#graph_global_preview_stage.graph-preview-manual-scale .graph-preview-viewport {
-  overflow: auto;
-}
-#graph_global_preview_stage .graph-preview-scale-spacer,
-#graph_global_preview_stage .graph-cached-preview-scale-spacer {
-  position: relative;
-  margin-left: auto;
-  margin-right: auto;
-}
-#graph_global_preview_stage .graph-preview-scale-canvas,
-#graph_global_preview_stage .graph-cached-preview-scale-canvas {
-  position: absolute;
-  left: 0;
-  top: 0;
-  transform-origin: top left;
-}
-#graph_global_preview_stage .graph-preview-viewport .plot-panel {
-  background: transparent;
-  border-color: transparent;
-  border-radius: 0;
-}
-.graph-preview-cached-layer {
-  position: absolute;
-  z-index: 2;
-  inset: 0;
-  width: 100%;
-  min-height: 320px;
-  overflow: hidden;
-  pointer-events: none;
-}
-.graph-preview-mode-cached .graph-preview-live-layer {
-  visibility: hidden;
-}
-.graph-preview-mode-cached .graph-preview-cached-layer {
-  visibility: visible;
-}
-.graph-preview-mode-live .graph-preview-live-layer {
-  visibility: visible;
-}
-/* v3.58: READY remounts briefly recreate the plot at its native
-   600x600 browser size before set-plot-dimensions reapplies the fitted
-   viewport. Keep only that transient live generation hidden until the
-   remount dimension message has been applied. */
-.graph-preview-stage.graph-preview-live-pending .graph-preview-live-layer {
-  visibility: hidden !important;
-}
-.graph-preview-mode-live .graph-preview-cached-layer {
-  visibility: hidden;
-}
-.graph-cached-preview-layer {
-  box-sizing: border-box;
-  width: 100%;
-  min-height: 320px;
-  padding: 0 0 14px 0;
-  background: #fff;
-}
-
-.graph-cached-preview-shell {
-  box-sizing: border-box;
-  width: 100%;
-  min-height: 320px;
-  padding: 10px 12px 16px 12px;
-  background: #fff;
-}
-.graph-cached-preview-note {
-  display: flex;
-  gap: 10px;
-  align-items: baseline;
-  flex-wrap: wrap;
-  padding: 4px 2px 9px 2px;
-  color: #5f6873;
-  font-size: 12px;
-}
-.graph-cached-preview-note strong { color: #303841; font-size: 13px; }
-.graph-cached-preview-svg {
-  min-width: 0;
-  min-height: 1px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  margin: 0 auto;
-  flex: 0 0 auto;
-}
-.graph-cached-preview-svg > svg {
-  display: block;
-  width: 100% !important;
-  height: 100% !important;
-  max-width: 100% !important;
-  max-height: 100% !important;
-  overflow: hidden !important;
-}
 .svg-preview-viewport {
   box-sizing: border-box;
   overflow: hidden;
-}
-.graph-cached-workspace {
-  display: grid;
-  grid-template-columns: minmax(210px, 28%) minmax(0, 1fr);
-  gap: 0;
-  width: 100%;
-  min-height: 420px;
-  background: #fff;
-}
-.graph-cached-sidebar {
-  box-sizing: border-box;
-  padding: 16px 14px;
-  background: #f5f5f5;
-  border-right: 1px solid #ddd;
-}
-.graph-cached-sidebar-title {
-  margin-bottom: 7px;
-  font-size: 14px;
-}
-.graph-cached-sidebar-help,
-.graph-cached-hydrating {
-  margin-bottom: 12px;
-  color: #606870;
-  font-size: 12px;
-  line-height: 1.45;
-}
-.graph-cached-section-list {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-}
-.graph-cached-section-button {
-  width: 100%;
-  text-align: left;
-  white-space: normal;
-}
-.graph-cached-section-button.disabled {
-  pointer-events: none;
-  opacity: .58;
-}
-.graph-cached-spin {
-  display: inline-block;
-  animation: graphCachedSpin .9s linear infinite;
-}
-@keyframes graphCachedSpin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-@media (max-width: 900px) {
-  .graph-cached-workspace {
-    grid-template-columns: 1fr;
-  }
-  .graph-cached-sidebar {
-    border-right: 0;
-    border-bottom: 1px solid #ddd;
-  }
-  .graph-cached-section-list {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 .graph-module-panel {
   width: 100%;
@@ -2684,4 +2356,58 @@
 }
 .shared-label-style-section > summary {
   background: #f7f7f7;
+}
+
+/* v4.0 RC6 browser-local Graph selection. The selected Graph's preview is
+   browser-owned display cache while the persistent Editor remains attached to
+   its previous READY owner. Selecting a Graph never exposes stale controls. */
+.graph-browser-local-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.graph-browser-local-svg,
+.graph-browser-local-svg > svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.graph-browser-local-loading {
+  min-height: 320px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #777;
+  font-size: 13px;
+  padding: 20px;
+}
+
+/* v4.0 RC8 persistent level-control slot pools. Slots are ordinary browser
+   controls (not Shiny input bindings), allocated in chunks and reused. */
+.graph-slot-pool-empty {
+  font-style: italic;
+  opacity: 0.78;
+  margin: 4px 0 8px 0;
+}
+.graph-slot-pool-slot {
+  margin-bottom: 8px;
+}
+.graph-slot-pool-slot > .graph-slot-pool-label {
+  display: block;
+  margin-bottom: 6px;
+  overflow-wrap: anywhere;
+}
+.graph-slot-pool-control-wrap {
+  margin-bottom: 6px;
+}
+.graph-slot-pool-color {
+  width: 100%;
+  min-height: 34px;
+  padding: 2px 4px;
+  cursor: pointer;
+}
+.graph-slot-pool-fill-wrap {
+  margin-top: 4px;
+  font-weight: normal;
 }

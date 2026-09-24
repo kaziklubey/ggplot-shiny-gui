@@ -103,7 +103,7 @@ shinyServer(function(input, output, session) {
     id = "g001", name = "Graph 1", stringsAsFactors = FALSE
   ))
   active_graph <- reactiveVal("g001")
-  # v3.73.1 Editor-first workspace: active_graph is the selected target while
+  # v4 RC6: active_graph is an R-side semantic mirror of browser selection while
   # editing_graph_id is the Graph currently owned by the singleton Editor. They
   # may differ only transiently during an ACK-gated switch or failure fallback.
   editing_graph_id <- reactiveVal("")
@@ -393,7 +393,6 @@ shinyServer(function(input, output, session) {
   figure_edit_states <- reactiveVal(list())
   figure_editor_modules <- new.env(parent = emptyenv())
   figure_editor_mounted <- new.env(parent = emptyenv())
-  figure_editor_activated <- new.env(parent = emptyenv())
   # Epoch prevents callbacks from editor modules belonging to an older Project
   # from touching a newly restored Figure after workspace reset.
   figure_editor_epoch <- reactiveVal(1L)
@@ -410,6 +409,11 @@ shinyServer(function(input, output, session) {
   # temporary source GraphState (Inset/refresh) that must never be committed to
   # Figure-owned editable state.
   figure_single_editor_target_state <- reactiveVal(NULL)
+  # At most one deferred Figure-editor request is retained while the single
+  # editor is mounting/replaying. Latest request wins; it is started only after
+  # the current transaction reaches READY. This is lifecycle ownership, not a
+  # retry/reconcile path.
+  figure_single_editor_pending_request <- reactiveVal(NULL)
   figure_single_editor_generation <- reactiveVal(0L)
   # Figure editor load completion is owned by the value-replay browser barrier.
   figure_single_editor_mode <- reactiveVal("IDLE")
@@ -434,6 +438,12 @@ shinyServer(function(input, output, session) {
     cur <- suppressWarnings(as.integer(isolate(graph_render_state_revisions[[id]] %||% 0L)))
     graph_render_state_revisions[[id]] <- cur + 1L
     invisible(TRUE)
+  }
+
+  graph_render_state_revision_value <- function(id) {
+    id <- as.character(id %||% "")[1]
+    if (!nzchar(id)) return(0L)
+    suppressWarnings(as.integer(isolate(graph_render_state_revisions[[id]] %||% 0L)))
   }
 
   # v3.72 Figure source lifecycle -------------------------------------------
@@ -551,24 +561,21 @@ shinyServer(function(input, output, session) {
     invisible(TRUE)
   }
 
-  # v3.73.2.18: the client catalog is metadata-only. Graph SVG is not a
-  # workspace authority and is never regenerated merely to populate tabs.
-  publish_client_preview_catalog <- function(reason = "update", selected = NULL, enter_browse = FALSE) {
+  # v4 RC7: Graph catalog publication is metadata-only. Graph switching never
+  # transports or caches SVG/PNG preview bytes; the persistent live plot output
+  # is the only Graph display surface.
+  publish_client_graph_catalog <- function(reason = "update", selected = NULL) {
     meta <- isolate(graph_meta())
     if (!nrow(meta)) return(invisible(FALSE))
-    entries <- lapply(seq_len(nrow(meta)), function(i) {
-      list(
-        id = as.character(meta$id[[i]]),
-        name = as.character(meta$name[[i]]),
-        svg = "",
-        width = 600,
-        height = 600
-      )
-    })
+
     selected_id <- as.character(selected %||% "")[1]
     if (!nzchar(selected_id)) selected_id <- as.character(isolate(input$graph_client_selected %||% ""))[1]
     if (!nzchar(selected_id) || !selected_id %in% meta$id) selected_id <- as.character(isolate(active_graph()) %||% "")[1]
     if (!nzchar(selected_id) || !selected_id %in% meta$id) selected_id <- as.character(meta$id[[1]])
+
+    entries <- lapply(seq_len(nrow(meta)), function(i) {
+      list(id = as.character(meta$id[[i]]), name = as.character(meta$name[[i]]))
+    })
 
     editing_id <- as.character(isolate(editing_graph_id()) %||% "")[1]
     editing_valid <- nzchar(editing_id) && editing_id %in% meta$id
@@ -583,13 +590,10 @@ shinyServer(function(input, output, session) {
       editing = if (isTRUE(editing_valid)) editing_id else "",
       editingName = editing_name,
       editingReady = isTRUE(editing_ready),
-      # Browse-only preview mode is retired. Keep the field for protocol
-      # compatibility but never request entry into it.
-      enterBrowse = FALSE,
       entries = entries
     )
     session$onFlushed(function() {
-      session$sendCustomMessage("graph-client-preview-catalog", payload)
+      session$sendCustomMessage("graph-client-catalog", payload)
     }, once = TRUE)
     invisible(TRUE)
   }
@@ -603,9 +607,14 @@ shinyServer(function(input, output, session) {
 
   observe({
     graph_meta()
-    active_graph()
     editing_graph_id()
-    publish_client_preview_catalog(reason = "registry-metadata-change")
+    # active_graph is an R-side semantic mirror only and is intentionally
+    # isolated here. Metadata invalidation must never turn a browser selection
+    # into an R-driven selection change or catalog loop.
+    publish_client_graph_catalog(
+      reason = "registry-metadata-change",
+      selected = isolate(active_graph())
+    )
   })
 
 
@@ -934,9 +943,11 @@ shinyServer(function(input, output, session) {
 
   cache_set <- function(id, state, source = "cache-set") {
     ca <- isolate(graph_state_cache())
-    if (!identical(ca[[id]]$state, state)) {
-      graph_state_revision[[id]] <- graph_state_revision_value(id) + 1L
+    previous <- ca[[id]]$state
+    if (!is.null(previous) && app_state_semantically_equal(previous, state)) {
+      return(invisible(FALSE))
     }
+    graph_state_revision[[id]] <- graph_state_revision_value(id) + 1L
     ca[[id]] <- list(state = state)
     graph_state_cache(ca)
     invisible(TRUE)
@@ -986,7 +997,7 @@ shinyServer(function(input, output, session) {
     # exporters consume values from this Registry without creating Graph modules.
     previous <- if (cache_has(id)) cache_get(id) else NULL
     canonical <- registry_merge_nonnull(previous, state)
-    if (!is.null(previous) && identical(previous, canonical)) return(invisible(FALSE))
+    if (!is.null(previous) && app_state_semantically_equal(previous, canonical)) return(invisible(FALSE))
 
     render_changed <- is.null(previous) || isTRUE(graph_render_state_changed(previous, canonical))
     render_paths <- if (is.null(previous)) character(0) else graph_render_diff_paths(previous, canonical)
@@ -1017,8 +1028,8 @@ shinyServer(function(input, output, session) {
   }
 
   # v3.70.0 source split: server_figure_controls_runtime
-  sys.source(file.path(getwd(), "server_figure_lifecycle_runtime.R"), envir = environment())
-  sys.source(file.path(getwd(), "server_figure_controls_runtime.R"), envir = environment())
+  sys.source(file.path(getwd(), "R/server/figure/server_figure_lifecycle_runtime.R"), envir = environment())
+  sys.source(file.path(getwd(), "R/server/figure/server_figure_controls_runtime.R"), envir = environment())
 
   # ------------------------------------------------------------------
   # Graph-owned SVG preview lifecycle
@@ -1083,11 +1094,11 @@ shinyServer(function(input, output, session) {
   # Lazy module creation
   # ------------------------------------------------------------------
   # v3.67.0 source split: server_graph_editor_runtime
-  sys.source(file.path(getwd(), "server_graph_editor_runtime.R"), envir = environment())
+  sys.source(file.path(getwd(), "R/server/graph/server_graph_editor_runtime.R"), envir = environment())
 
-  # v3.73.1: selection targets the Graph immediately and then auto-requests the
-  # singleton Editor; hydration itself remains owned by the editor runtime.
-  sys.source(file.path(getwd(), "server_graph_selection_runtime.R"), envir = environment())
+  # v4 RC7: every Graph selection retargets the one persistent live Editor.
+  # There is no browser-local/cached Graph preview selection mode.
+  sys.source(file.path(getwd(), "R/server/graph/server_graph_selection_runtime.R"), envir = environment())
 
   figure_editor_module_id <- function(id = NULL) {
     paste0("figure_editor_e", isolate(figure_editor_epoch()), "_single")
@@ -1278,272 +1289,24 @@ shinyServer(function(input, output, session) {
     reload_visible_figure_editor_after_snapshot(ids, reason)
   }
 
-  show_figure_editor_wrapper <- function(id = "") {
-    id <- as.character(id %||% "")[1]
-    wrapper <- if (nzchar(id)) figure_editor_wrapper_id() else ""
-    session$sendCustomMessage("figure-editor-select", list(wrapperId = wrapper))
-    invisible(NULL)
-  }
-
-  reset_figure_editors <- function(clear_states = TRUE) {
-    show_figure_editor_wrapper("")
-    try(removeUI(selector = "#figure_graph_editor_host .figure-graph-editor-instance", multiple = TRUE, immediate = TRUE), silent = TRUE)
-    if (length(ls(envir = figure_editor_modules, all.names = TRUE))) {
-      rm(list = ls(envir = figure_editor_modules, all.names = TRUE), envir = figure_editor_modules)
-    }
-    if (length(ls(envir = figure_editor_mounted, all.names = TRUE))) {
-      rm(list = ls(envir = figure_editor_mounted, all.names = TRUE), envir = figure_editor_mounted)
-    }
-    if (length(ls(envir = figure_editor_activated, all.names = TRUE))) {
-      rm(list = ls(envir = figure_editor_activated, all.names = TRUE), envir = figure_editor_activated)
-    }
-    figure_editor_epoch(as.integer(isolate(figure_editor_epoch()) %||% 0L) + 1L)
-    figure_editor_mount_pending(list(id="", editor_id="", wrapper_id="", generation=isolate(figure_editor_mount_generation())))
-    figure_editing_graph("")
-    figure_single_editor_loading(FALSE)
-    figure_single_editor_show_when_ready(TRUE)
-    figure_single_editor_target_state(NULL)
-    figure_single_editor_mode("IDLE")
-    figure_single_editor_generation(as.integer(isolate(figure_single_editor_generation()) %||% 0L) + 1L)
-    if (isTRUE(clear_states)) figure_edit_states(list())
-    invisible(NULL)
-  }
-
-  request_figure_editor_mount_ack <- function(id, editor_id, wrapper_id) {
-    gen <- as.integer(isolate(figure_editor_mount_generation()) %||% 0L) + 1L
-    figure_editor_mount_generation(gen)
-    figure_editor_mount_pending(list(id=id, editor_id=editor_id, wrapper_id=wrapper_id, generation=gen))
-    session$onFlushed(function() {
-      pending <- isolate(figure_editor_mount_pending())
-      if (!identical(as.integer(pending$generation %||% 0L), gen) || !identical(as.character(pending$id %||% ""), id)) return()
-      st <- isolate(figure_edit_states())[[id]]
-      rs <- if (is.list(st)) st$reshape %||% list() else list()
-      fields <- list(
-        list(field = "plot_type", id = shiny::NS(editor_id, "plot_type")),
-        list(field = "reshape_wide", id = shiny::NS(editor_id, "reshape_wide")),
-        list(field = "graph_main_tab", id = shiny::NS(editor_id, "graph_main_tab"))
-      )
-      if (isTRUE(rs$enabled)) {
-        fields <- c(fields, list(
-          list(field = "reshape_row_id", id = shiny::NS(editor_id, "reshape_row_id")),
-          list(field = "reshape_x_name", id = shiny::NS(editor_id, "reshape_x_name")),
-          list(field = "reshape_y_name", id = shiny::NS(editor_id, "reshape_y_name"))
-        ))
-      }
-      session$sendCustomMessage(
-        "graph-ui-mount-check",
-        list(
-          generation = gen,
-          graphId = editor_id,
-          panelId = wrapper_id,
-          fields = fields,
-          ackId = "figure_graph_editor_mount_ack"
-        )
-      )
-      diag_log("FIGURE-EDIT-MOUNT", paste0("request generation=", gen), id = id)
-    }, once = TRUE)
-    invisible(TRUE)
-  }
-
-  ensure_figure_editor <- function(id, force_reload = FALSE, preserve_current = TRUE,
-                                   show_when_ready = TRUE, state_override = NULL) {
-    id <- as.character(id %||% "")[1]
-    if (!nzchar(id)) { show_figure_editor_wrapper(""); return(FALSE) }
-
-    loading_owner <- as.character(isolate(figure_editing_graph()) %||% "")[1]
-    if (isTRUE(isolate(figure_single_editor_loading())) && nzchar(loading_owner) && !identical(loading_owner, id)) {
-      diag_log("FIGURE-SINGLE-EDITOR", paste0("load-rejected busy=", loading_owner), id = id)
-      return(FALSE)
-    }
-
-    states <- isolate(figure_edit_states())
-    state <- if (is.list(state_override)) state_override else states[[id]]
-    if (!is.list(state)) {
-      if (isTRUE(show_when_ready)) {
-        showNotification("Figure側に編集可能なGraph snapshotがありません。先に『Graphから再読込』してください。", type="warning", duration=4)
-      }
-      return(FALSE)
-    }
-
-    editor_id <- figure_editor_module_id()
-    wrapper_id <- figure_editor_wrapper_id()
-    mounted <- exists("single", envir = figure_editor_mounted, inherits = FALSE) &&
-      isTRUE(get("single", envir = figure_editor_mounted, inherits = FALSE))
-
-    old_id <- as.character(isolate(figure_editing_graph()) %||% "")[1]
-    old_mod <- if (nzchar(old_id)) figure_editor_module(old_id) else NULL
-    if (!isTRUE(force_reload) && identical(old_id, id) && !is.null(old_mod) &&
-        isTRUE(tryCatch(isolate(old_mod$ready()), error = function(e) FALSE)) &&
-        !isTRUE(isolate(figure_single_editor_loading()))) {
-      figure_single_editor_show_when_ready(isTRUE(show_when_ready))
-      if (isTRUE(show_when_ready)) show_figure_editor_wrapper(id) else show_figure_editor_wrapper("")
-      diag_log("FIGURE-SINGLE-EDITOR", "reuse-hit", id = id)
-      return(TRUE)
-    }
-
-    if (isTRUE(preserve_current) && nzchar(old_id) && !identical(old_id, id) && !is.null(old_mod) &&
-        isTRUE(tryCatch(isolate(old_mod$ready()), error = function(e) FALSE)) &&
-        isTRUE(isolate(figure_single_editor_show_when_ready()))) {
-      old_state <- tryCatch(if (is.function(old_mod$state)) isolate(old_mod$state()) else NULL, error = function(e) NULL)
-      if (is.list(old_state)) {
-        store_figure_edit_state(old_id, old_state, reason = "single-editor-switch")
-        snapshot_ready_figure_editor(old_id, old_state)
-      }
-    }
-
-    figure_editing_graph(id)
-    figure_single_editor_loading(TRUE)
-    figure_single_editor_show_when_ready(isTRUE(show_when_ready))
-    figure_single_editor_target_state(state)
-    figure_single_editor_mode("REPLAY")
-    next_generation <- as.integer(isolate(figure_single_editor_generation()) %||% 0L) + 1L
-    figure_single_editor_generation(next_generation)
-    show_figure_editor_wrapper("")
-    diag_log(
-      "FIGURE-SINGLE-EDITOR",
-      paste0("load-request previous=", if (nzchar(old_id)) old_id else "<none>", " mode=REPLAY visible=", isTRUE(show_when_ready)),
-      id = id
-    )
-
-    if (!mounted) {
-      insertUI(
-        selector = "#figure_graph_editor_host", where = "beforeEnd",
-        ui = div(
-          id = wrapper_id,
-          class = "figure-graph-editor-instance",
-          style = "display:none;",
-          graphUI(editor_id, initial_state = state, mode = "controls")
-        ),
-        immediate = TRUE
-      )
-      assign("single", TRUE, envir = figure_editor_mounted)
-      diag_log("FIGURE-SINGLE-EDITOR", paste0("UI inserted editor_id=", editor_id), id = id)
-    }
-
-    mod <- if (exists("single", envir = figure_editor_modules, inherits = FALSE))
-      get("single", envir = figure_editor_modules, inherits = FALSE) else NULL
-    if (is.null(mod)) {
-      epoch0 <- isolate(figure_editor_epoch())
-      diag_log("FIGURE-EDIT-INIT-TIMING", "mark=CALLSITE-BEFORE-GRAPHSERVER source=figure-single-editor", id = id)
-      mod <- graph_server_runtime(
-        editor_id,
-        style_clipboard = style_clipboard,
-        diag_log = function(tag, ..., id = NULL) {
-          owner <- as.character(isolate(figure_editing_graph()) %||% "")[1]
-          diag_log(paste0("FIGURE-EDIT-", tag), ..., id = if (nzchar(owner)) owner else NULL)
-        },
-        ui_preseeded = TRUE,
-        controls_only = TRUE,
-        on_state_change = function(state_now) {
-          if (!identical(as.integer(isolate(figure_editor_epoch())), as.integer(epoch0))) return(invisible(NULL))
-          if (isTRUE(isolate(figure_single_editor_loading()))) return(invisible(NULL))
-          if (!isTRUE(isolate(figure_single_editor_show_when_ready()))) return(invisible(NULL))
-          owner <- as.character(isolate(figure_editing_graph()) %||% "")[1]
-          if (!nzchar(owner)) return(invisible(NULL))
-          prev_state <- isolate(figure_edit_states())[[owner]]
-          unchanged <- is.list(prev_state) && identical(prev_state, state_now)
-          if (isTRUE(unchanged) && isTRUE(figure_editor_snapshot_available(owner))) return(invisible(NULL))
-          if (!isTRUE(unchanged)) store_figure_edit_state(owner, state_now, reason = "figure-single-editor")
-          snapshot_ready_figure_editor(owner, state_now)
-        }
-      )
-      diag_log("FIGURE-EDIT-INIT-TIMING", "mark=CALLSITE-AFTER-GRAPHSERVER source=figure-single-editor", id = id)
-      assign("single", mod, envir = figure_editor_modules)
-      request_figure_editor_mount_ack(id, editor_id, wrapper_id)
-    } else if (is.function(mod$replay_state)) {
-      mod$replay_state(state, transaction = list(id = id, generation = next_generation, figure = TRUE))
-    }
-
-    TRUE
-  }
-
-  observeEvent(input$figure_graph_editor_mount_ack, {
-    ack <- input$figure_graph_editor_mount_ack
-    pending <- isolate(figure_editor_mount_pending())
-    if (!is.list(ack) || !is.list(pending)) return()
-    gen <- suppressWarnings(as.integer(ack$generation %||% NA_integer_))
-    if (!is.finite(gen) || !identical(gen, as.integer(pending$generation %||% 0L))) return()
-    id <- as.character(pending$id %||% "")[1]
-    status <- as.character(ack$status %||% "")[1]
-    diag_log(
-      "FIGURE-EDIT-MOUNT",
-      paste0("ack generation=", gen, " status=", status, " missing=", paste(as.character(unlist(ack$missing %||% character(0), use.names=FALSE)), collapse=",")),
-      id = id
-    )
-    figure_editor_mount_pending(list(id="", editor_id="", wrapper_id="", generation=gen))
-    if (!identical(status, "ready")) {
-      figure_single_editor_loading(FALSE)
-      figure_single_editor_mode("IDLE")
-      showNotification("Figure Graph EditorのUI bindingを確認できませんでした。", type="warning", duration=4)
-      return()
-    }
-
-    mod <- figure_editor_module(id)
-    latest_state <- isolate(figure_single_editor_target_state())
-    if (!is.list(latest_state)) latest_state <- isolate(figure_edit_states())[[id]]
-    if (!is.null(mod) && is.list(latest_state) && is.function(mod$replay_state)) {
-      replay_generation <- as.integer(isolate(figure_single_editor_generation()) %||% 0L)
-      mod$replay_state(latest_state, transaction = list(id = id, generation = replay_generation, figure = TRUE))
-      assign("single", TRUE, envir = figure_editor_activated)
-    }
-  }, ignoreInit = TRUE)
-
-  # Figure owns one persistent controls-only editor. A load is complete when its
-  # value replay has crossed the same single browser completion barrier used by
-  # the main Graph Editor. No semantic readback/settle loop is required.
-  observe({
-    gen <- figure_single_editor_generation()
-    loading <- figure_single_editor_loading()
-    id <- as.character(figure_editing_graph() %||% "")[1]
-    if (!isTRUE(loading) || !nzchar(id)) return()
-    if (!exists("single", envir = figure_editor_modules, inherits = FALSE)) return()
-    mod <- get("single", envir = figure_editor_modules, inherits = FALSE)
-    pending_mount <- figure_editor_mount_pending()
-    if (identical(as.character(pending_mount$id %||% "")[1], id)) return()
-    if (is.function(mod$replay_active) && isTRUE(tryCatch(mod$replay_active(), error = function(e) FALSE))) return()
-    if (!isTRUE(tryCatch(mod$ready(), error = function(e) FALSE))) return()
-
-    # Value replay is complete in the browser. Release the requested Figure
-    # GraphState as one final semantic render target now, rather than leaving
-    # any intermediate controls-only render produced while inputs were being
-    # replayed. This is a single post-barrier release, not a compare/retry loop.
-    target_state <- isolate(figure_single_editor_target_state())
-    render_release <- FALSE
-    if (is.list(target_state) && is.function(mod$release_render_state)) {
-      render_release <- isTRUE(tryCatch(
-        mod$release_render_state(target_state, reason = "figure-replay-ready"),
-        error = function(e) {
-          diag_log("FIGURE-SINGLE-EDITOR", paste0("final render release ERROR: ", conditionMessage(e)), id = id)
-          FALSE
-        }
-      ))
-    }
-
-    figure_single_editor_loading(FALSE)
-    figure_single_editor_mode("READY")
-    if (isTRUE(figure_single_editor_show_when_ready())) {
-      show_figure_editor_wrapper(id)
-    } else {
-      show_figure_editor_wrapper("")
-    }
-    diag_log(
-      "FIGURE-SINGLE-EDITOR",
-      paste0("load-ready generation=", as.integer(gen), " mode=value-replay visible=", isTRUE(figure_single_editor_show_when_ready()),
-             " final_render_release=", render_release),
-      id = id
-    )
-  })
+  # v4.0 RC3: Figure controls-only single Editor lifecycle is isolated here so
+  # server.R does not own mount/replay/queue orchestration inline.
+  sys.source(file.path(getwd(), "R/server/figure/server_figure_editor_lifecycle_runtime.R"), envir = environment())
 
   # v3.67.0 source split: server_graph_workspace_runtime
-  sys.source(file.path(getwd(), "server_graph_workspace_runtime.R"), envir = environment())
+  sys.source(file.path(getwd(), "R/server/graph/server_graph_workspace_runtime.R"), envir = environment())
 
   # v3.73.0: central semantic style Library. Kept outside graphServer so Graphs
   # never synchronize directly with each other.
-  sys.source(file.path(getwd(), "server_shared_style_runtime.R"), envir = environment())
+  sys.source(file.path(getwd(), "R/server/style/server_shared_style_runtime.R"), envir = environment())
   # v3.73.2.29: cross-Graph/Figure settings browser plus focused canonical
   # Graph batch helpers. Figure writes are sourced later after Figure services.
-  sys.source(file.path(getwd(), "server_graph_settings_manager_runtime.R"), envir = environment())
-  sys.source(file.path(getwd(), "server_graph_settings_batch_runtime.R"), envir = environment())
+  sys.source(file.path(getwd(), "R/server/graph/settings/server_graph_settings_manager_runtime.R"), envir = environment())
+  sys.source(file.path(getwd(), "R/server/graph/settings/server_graph_settings_batch_runtime.R"), envir = environment())
+  # v4.0 RC5 PoC retained: browser-owned working values for three style controls
+  # use a single patch channel into canonical GraphState. RC7 deliberately does
+  # not return a separate preview; the persistent live plot reacts normally.
+  sys.source(file.path(getwd(), "R/server/graph/server_graph_browser_patch_poc_runtime.R"), envir = environment())
 
   pending_new_graph_default <- reactiveVal(NULL)
 
@@ -1648,13 +1411,14 @@ shinyServer(function(input, output, session) {
     meta <- isolate(graph_meta())
     nm <- meta$name[match(id, meta$id)]
 
-    # Duplicate only the canonical GraphState. The destination will replay
-    # that state into the persistent Editor and render once when selected.
+    # Duplicate only the canonical GraphState. RC6 builds the destination
+    # preview directly from that state; selecting it does not attach the Editor.
     new_id <- create_graph(
       paste0(nm, " copy"),
       initial_state = state,
       select = TRUE
     )
+    if (is.null(new_id) || !nzchar(as.character(new_id %||% "")[1])) return()
     diag_log(
       "DUPLICATE",
       paste0("source=", id, " new=", new_id, " state_only=TRUE"),
@@ -1717,7 +1481,7 @@ shinyServer(function(input, output, session) {
     meta$name[match(id, meta$id)] <- nm
     graph_meta(meta)
     refresh_export_choices()
-    publish_client_preview_catalog(reason = "graph-renamed", selected = id)
+    publish_client_graph_catalog(reason = "graph-renamed", selected = id)
     rename_target_graph(NULL)
     removeModal()
     invisible(TRUE)
@@ -1884,35 +1648,40 @@ shinyServer(function(input, output, session) {
     }
     delete_target_graph(NULL)
     if (nzchar(new_id)) {
-      select_graph_preview(new_id, source = "graph-deleted", publish = TRUE)
+      active_graph(new_id)
+      publish_client_graph_catalog(
+        reason = "graph-deleted-live",
+        selected = new_id
+      )
+      request_graph_editor(new_id, source = "graph-delete-select", new_graph = FALSE)
     } else {
-      publish_client_preview_catalog(reason = "graph-deleted-empty", selected = NULL, enter_browse = FALSE)
+      publish_client_graph_catalog(reason = "graph-deleted-empty", selected = NULL)
     }
     removeModal()
   })
 
   # v3.70.0 source split: server_project_io_runtime
-  sys.source(file.path(getwd(), "server_figure_inset_persistence_runtime.R"), envir = environment())
-  sys.source(file.path(getwd(), "server_project_io_runtime.R"), envir = environment())
+  sys.source(file.path(getwd(), "R/server/figure/server_figure_inset_persistence_runtime.R"), envir = environment())
+  sys.source(file.path(getwd(), "R/server/project/server_project_io_runtime.R"), envir = environment())
 
   # v3.70.0 source split: server_export_prepare_runtime
-  sys.source(file.path(getwd(), "server_export_prepare_runtime.R"), envir = environment())
+  sys.source(file.path(getwd(), "R/server/export/server_export_prepare_runtime.R"), envir = environment())
 
   # v3.73.2.22: direct GraphState-to-snapshot service; no Figure editor replay.
-  sys.source(file.path(getwd(), "server_figure_source_snapshot_runtime.R"), envir = environment())
+  sys.source(file.path(getwd(), "R/server/figure/server_figure_source_snapshot_runtime.R"), envir = environment())
 
   # v3.70.0 source split: server_figure_workspace_runtime
-  sys.source(file.path(getwd(), "server_figure_workspace_runtime.R"), envir = environment())
+  sys.source(file.path(getwd(), "R/server/figure/server_figure_workspace_runtime.R"), envir = environment())
 
   # v3.73.2.29: typed external Settings Manager edits and explicit direct-state
   # Figure refresh. Sourced after Figure snapshot/workspace services exist.
-  sys.source(file.path(getwd(), "server_graph_settings_value_runtime.R"), envir = environment())
+  sys.source(file.path(getwd(), "R/server/graph/settings/server_graph_settings_value_runtime.R"), envir = environment())
 
   # v3.73.2.21: legacy/persisted Figure legend regeneration is an adapter
   # over the same single Figure value-replay renderer used by Main/Inset.
-  sys.source(file.path(getwd(), "server_figure_legend_reactivity_runtime.R"), envir = environment())
+  sys.source(file.path(getwd(), "R/server/figure/server_figure_legend_reactivity_runtime.R"), envir = environment())
 
   # v3.70.0 source split: server_graph_export_runtime
-  sys.source(file.path(getwd(), "server_graph_export_runtime.R"), envir = environment())
+  sys.source(file.path(getwd(), "R/server/export/server_graph_export_runtime.R"), envir = environment())
 
 })

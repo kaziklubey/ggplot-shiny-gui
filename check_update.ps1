@@ -1,6 +1,6 @@
 ﻿param(
     [string]$Repository = "kaziklubey/ggplot-shiny-gui",
-    [string]$AppConfigPath = (Join-Path $PSScriptRoot "app_config.R")
+    [string]$AppConfigPath = (Join-Path $PSScriptRoot "R/bootstrap/app_config.R")
 )
 
 $ErrorActionPreference = "Stop"
