@@ -1,6 +1,6 @@
 # ggplot-shiny-gui
 
-**Current release: v3.73.2.39**
+**Current release: v4.0**
 
 R / Shiny と ggplot2 を使ったグラフ作成・Figure編集GUIです。コードを書かずに、複数Graphの作成・設定変更・比較、Figureへの配置、統計解析、Project保存/読込などを行えます。
 
