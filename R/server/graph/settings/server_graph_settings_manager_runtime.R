@@ -112,7 +112,7 @@
       list(group="書式", label="Palette", path="style.appearance.palette_preset", section="appearance", input="palette_preset", apply=FALSE),
       list(group="書式", label="Point size", path="style.appearance.point_size", section="appearance", input="point_size", apply=TRUE, editor=editor_number(0, 8, 0.1)),
       list(group="書式", label="Line width", path="style.appearance.line_width", section="appearance", input="line_width", apply=TRUE, editor=editor_number(0, 3, 0.1)),
-      list(group="書式", label="Bar width", path="style.appearance.bar_width", section="appearance", input="bar_width", apply=TRUE, editor=editor_number(0, 1, 0.02)),
+      list(group="書式", label="Bar width", path="style.appearance.bar_width", section="appearance", input="bar_width", apply=TRUE, editor=editor_number(0, 3, 0.02)),
       list(group="Error bar", label="Error bar幅", path="style.appearance.error_width", section="error-bars", input="error_width", apply=TRUE, editor=editor_number(0, 0.8, 0.05)),
       list(group="Error bar", label="Error bar線幅", path="style.appearance.error_line_width", section="error-bars", input="error_line_width", apply=TRUE, editor=editor_number(0, 2, 0.05))
     )

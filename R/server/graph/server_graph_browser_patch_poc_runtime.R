@@ -102,19 +102,12 @@
     }
     current <- graph_settings_manager_get_result(state, path)
     old <- if (is.list(current) && isTRUE(current$found)) current$value else NULL
-    if (is.null(old)) old <- graph_snapshot_input_defaults()[[key]]
-    if (is.logical(old)) return(list(ok = TRUE, value = isTRUE(value)))
-    if (is.integer(old)) {
-      z <- suppressWarnings(as.integer(value %||% NA_integer_)[1])
-      if (!is.finite(z)) return(list(ok = FALSE, message = paste0(key, " must be an integer")))
-      return(list(ok = TRUE, value = z))
+    normalized <- graph_normalize_browser_input_value(key, value, previous = old)
+    if (!isTRUE(normalized$ok)) {
+      kind <- as.character(normalized$kind %||% "value")[[1]]
+      return(list(ok = FALSE, message = paste0(key, " must be ", kind)))
     }
-    if (is.numeric(old)) {
-      z <- suppressWarnings(as.numeric(value %||% NA_real_)[1])
-      if (!is.finite(z)) return(list(ok = FALSE, message = paste0(key, " must be numeric")))
-      return(list(ok = TRUE, value = z))
-    }
-    list(ok = TRUE, value = as.character(value %||% "")[1])
+    list(ok = TRUE, value = normalized$value)
   }
 
   graph_browser_patch_result <- function(id, seq, accepted, path = "", key = "",

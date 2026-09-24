@@ -1352,6 +1352,11 @@ Shiny.addCustomMessageHandler('graph-state-browser-hydrate', function(msg) {
     if (el) ggplotGuiBrowserDirectReplaceChoices(el, choices[key]);
   });
   Object.keys(values).forEach(function(key) {
+    // RC13.10: graph_main_tab is owned by Shiny's tabset input binding.
+    // Browser-direct scalar hydration must never write it; R restores it after
+    // the direct value batch with updateTabsetPanel(), which changes the pane
+    // and the Shiny input as one atomic tabset operation.
+    if (!figureMode && key === 'graph_main_tab') return;
     st.hydrationExpected[key] = values[key];
     st.values[key] = values[key];
     var el = document.getElementById(prefix + String(key || ''));

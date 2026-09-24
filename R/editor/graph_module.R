@@ -143,15 +143,9 @@ graphServer <- function(id, style_clipboard = NULL, diag_log = NULL, ui_preseede
         value <- as.character(unlist(value %||% character(0), use.names = FALSE))
       } else {
         previous <- values[[key]]
-        if (is.logical(previous)) {
-          value <- isTRUE(value)
-        } else if (is.integer(previous)) {
-          value <- suppressWarnings(as.integer(value %||% previous)[[1]])
-        } else if (is.numeric(previous)) {
-          value <- suppressWarnings(as.numeric(value %||% previous)[[1]])
-        } else {
-          value <- as.character(value %||% "")[[1]]
-        }
+        normalized <- graph_normalize_browser_input_value(key, value, previous = previous)
+        if (!isTRUE(normalized$ok)) return()
+        value <- normalized$value
       }
       values[key] <- list(value)
       profile_browser_values(values)

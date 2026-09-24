@@ -1335,10 +1335,15 @@
     # as a display/runtime authority. Other Graphs remain state-only until they
     # are selected; Figure and Export render directly from canonical state.
     active_graph(target)
-    publish_client_graph_catalog(
-      reason = "project-state-first", selected = target
-    )
     complete_project_load_lock("registry/Figure snapshots staged; selected persistent Editor attach")
+
+    # RC13.8: do not queue a Project catalog before/around owner transition.
+    # publish_client_graph_catalog() sends on the next Shiny flush; a payload
+    # captured while editing_graph_id still named the old/empty owner could
+    # arrive after graph-client-edit-begin and make browser hydration reject
+    # the canonical target as an owner mismatch. graph_meta/editing_graph_id
+    # already drive the normal metadata observer, so Project bootstrap should
+    # use the same owner-first path as ordinary Graph selection.
     request_graph_editor(target, source = "project-load-state-first", new_graph = FALSE)
 
     diag_log(

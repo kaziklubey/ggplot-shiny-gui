@@ -185,7 +185,9 @@
     values$reshape_x_name <- graph_state_scalar((cfg$reshape %||% list())$x_name, "Time")
     values$reshape_y_name <- graph_state_scalar((cfg$reshape %||% list())$y_name, "Value")
     snap <- graph_ui_snapshot_normalize(cfg$ui_snapshot)
-    values$graph_main_tab <- graph_replay_selected(snap, "graph_main_tab", "Plot")[[1]]
+    # graph_main_tab is intentionally excluded from browser-direct scalar
+    # hydration.  Shiny's tabset binding owns the pane + input transition and
+    # is restored after this direct value batch with updateTabsetPanel().
     values$sticky_plot <- isTRUE(snap$selections$sticky_plot %||% FALSE)
     values$reshape_columns <- as.character((cfg$reshape %||% list())$columns %||% character(0))
     values$line_breaks <- as.character((cfg$plot %||% list())$line_breaks %||% character(0))
@@ -450,6 +452,9 @@
       as.character((transaction %||% list())$id %||% "")[1]
     } else ""
     required_inputs <- as.character(replay_plan$required_inputs %||% character(0))
+    main_tab_target <- if (graph_editor_profile_has(editor_profile, "full_shell")) {
+      graph_replay_selected(snapshot, "graph_main_tab", "Plot")[[1]]
+    } else NULL
 
     # The Full Editor is one persistent DOM.  Apply its target-derived values
     # and choices locally in the browser and release the canonical render on
@@ -476,6 +481,22 @@
         if (!isTRUE(isolate(graph_state_replay_active())) ||
             !identical(as.integer(isolate(graph_state_replay_generation()) %||% -1L), generation)) return(invisible(NULL))
         session$sendCustomMessage("graph-state-browser-hydrate", payload)
+        if (!is.null(main_tab_target) && length(main_tab_target) == 1L && nzchar(main_tab_target)) {
+          # Do not emulate tab selection by mutating browser scalar/input state.
+          # The native Shiny tabset updater changes the Bootstrap pane and the
+          # graph_main_tab input through one binding-owned operation.  This is
+          # queued after the direct hydration message in the same outbound
+          # flush, so Statistics can observe the real active tab and recalc.
+          updateTabsetPanel(session, "graph_main_tab", selected = main_tab_target)
+          diag(
+            "MAIN-TAB-RESTORE",
+            paste0(
+              "requested=", main_tab_target,
+              " transport=updateTabsetPanel",
+              " generation=", generation
+            )
+          )
+        }
         diag(
           "STATE-REPLAY",
           paste0(
