@@ -149,14 +149,16 @@
     if (identical(signature, isolate(line_break_choice_signature()))) return(invisible(NULL))
     line_break_choice_signature(signature)
 
-    if (graph_editor_profile_has(editor_profile, "full_shell")) {
-      # Keep category-order-driven line-break topology browser-direct as well.
-      # This focused message updates only this selectize and never enters the
-      # legacy Shiny updateSelectizeInput transport/echo path.
+    if (graph_editor_profile_has(editor_profile, "full_shell") ||
+        graph_editor_profile_is_figure(editor_profile)) {
+      # RC13.1: both persistent Editors keep category-order-driven line-break
+      # topology browser-direct. Figure used to fall back to updateSelectizeInput(),
+      # whose delayed echo could be misclassified as a user edit after replay.
       session$sendCustomMessage(
         "graph-browser-control-hydrate",
         list(
           inputPrefix = session$ns(""),
+          mode = as.character(editor_profile$name %||% "full"),
           key = "line_breaks",
           value = as.character(selected),
           choices = lapply(seq_along(choices), function(i) list(

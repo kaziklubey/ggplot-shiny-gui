@@ -239,8 +239,20 @@ graphServer <- function(id, style_clipboard = NULL, diag_log = NULL, ui_preseede
         width = dims$width / export_reference_res,
         height = dims$height / export_reference_res
       )
-      on.exit(grDevices::dev.off(), add = TRUE)
+      dev_id <- grDevices::dev.cur()
+      closed <- FALSE
+      on.exit({
+        if (!closed && identical(grDevices::dev.cur(), dev_id)) {
+          try(grDevices::dev.off(), silent = TRUE)
+        }
+      }, add = TRUE)
       print(panel_sized_plot())
+      grDevices::dev.off()
+      closed <- TRUE
+      norm <- export_text_normalize_utf8_file(file)
+      if (isTRUE(norm$ok) && norm$replacements > 0L) {
+        diag("EXPORT-TEXT-NORMALIZE", paste0("format=svg replacements=", norm$replacements))
+      }
     }
   )
 

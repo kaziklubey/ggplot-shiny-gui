@@ -1561,6 +1561,31 @@
     plots <- isolate(figure_loaded_plots())
     exports <- isolate(figure_loaded_exports())
     persisted <- isolate(figure_persisted_previews())
+
+    # Editable PowerPoint must not rasterize packaged Figure SVGs merely because
+    # their in-memory ggplot objects were not restored with the Project. Rebuild
+    # missing internal plots from the frozen Figure-owned GraphState locally for
+    # this export only; keep SVG raster fallback only for genuinely legacy/missing
+    # editable states.
+    if (isTRUE(editable_pptx_mode)) {
+      pptx_sources <- figure_pptx_prepare_editable_sources(
+        ids = ids,
+        plots = plots,
+        exports = exports,
+        edit_states = isolate(figure_edit_states())
+      )
+      plots <- pptx_sources$plots
+      exports <- pptx_sources$exports
+      diag_log(
+        "FIGURE-PPTX-SOURCE-REBUILD",
+        paste0(
+          "rebuilt={", paste(pptx_sources$rebuilt_ids %||% character(0), collapse=","), "}",
+          " fallback={", paste(pptx_sources$fallback_ids %||% character(0), collapse=","), "}",
+          " errors=", length(pptx_sources$errors %||% list())
+        )
+      )
+    }
+
     svg_fallback_ids <- character(0)
     missing_ids <- character(0)
     for (id in ids) {
@@ -1662,7 +1687,8 @@
             " panels=", length(draw_summary$drawn_ids %||% character(0)),
             " persisted_vector=", length(draw_summary$persisted_svg_ids %||% character(0)),
             " textlength_removed=", as.integer(draw_summary$textlength_removed %||% 0L),
-            " redundant_clips_removed=", as.integer(draw_summary$redundant_clips_removed %||% 0L)
+            " redundant_clips_removed=", as.integer(draw_summary$redundant_clips_removed %||% 0L),
+            " text_normalized=", as.integer(draw_summary$export_text_replacements %||% 0L)
           )
         )
       } else {
@@ -1673,7 +1699,8 @@
             " panels=", length(draw_summary$drawn_ids %||% character(0)),
             " persisted_vector=", length(draw_summary$persisted_svg_ids %||% character(0)),
             " illustrator_textlength_removed=", as.integer(draw_summary$textlength_removed %||% 0L),
-            " redundant_clips_removed=", as.integer(draw_summary$redundant_clips_removed %||% 0L)
+            " redundant_clips_removed=", as.integer(draw_summary$redundant_clips_removed %||% 0L),
+            " text_normalized=", as.integer(draw_summary$export_text_replacements %||% 0L)
           )
         )
       }
@@ -1684,7 +1711,10 @@
         external_assets = isolate(figure_requested_external_assets()),
         inset_snapshots = isolate(figure_inset_preview_cache()),
         persisted_previews = persisted,
-        reference_res = ref_res
+        reference_res = ref_res,
+        diag = function(tag, message) {
+          diag_log(paste0("FIGURE-PPTX-", tag), message)
+        }
       )
       diag_log(
         "FIGURE-PPTX-EDITABLE",
@@ -1694,6 +1724,7 @@
           " persisted_raster=", length(draw_summary$persisted_svg_ids %||% character(0)),
           " flattened_groups=", as.integer(draw_summary$flattened_groups %||% 0L),
           " skipped_groups=", as.integer(draw_summary$skipped_groups %||% 0L),
+          " text_normalized=", as.integer(draw_summary$export_text_replacements %||% 0L),
           " slide=", round(draw_summary$slide_width_in %||% NA_real_, 3), "x",
           round(draw_summary$slide_height_in %||% NA_real_, 3), "in",
           " figure=", round(draw_summary$figure_width_in %||% NA_real_, 3), "x",

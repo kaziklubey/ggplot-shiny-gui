@@ -35,16 +35,16 @@ figure_override_for <- function(id, overrides = list()) {
   ov$legend_free_anchor <- "graph"
   if (!ov$legend %in% c("inherit", "none", "right", "left", "top", "bottom", "free")) ov$legend <- "inherit"
   ov$legend_title <- figure_normalize_legend_title_mode(ov$legend_title)
-  ov$legend_gap <- suppressWarnings(as.numeric(ov$legend_gap %||% 8))
-  if (!is.finite(ov$legend_gap)) ov$legend_gap <- 8
-  ov$legend_x <- suppressWarnings(as.numeric(ov$legend_x %||% 0.72))
-  if (!is.finite(ov$legend_x)) ov$legend_x <- 0.72
-  ov$legend_y <- suppressWarnings(as.numeric(ov$legend_y %||% 0.08))
-  if (!is.finite(ov$legend_y)) ov$legend_y <- 0.08
-  ov$legend_free_x <- suppressWarnings(as.numeric(ov$legend_free_x %||% ov$legend_x))
-  if (!is.finite(ov$legend_free_x)) ov$legend_free_x <- ov$legend_x
-  ov$legend_free_y <- suppressWarnings(as.numeric(ov$legend_free_y %||% ov$legend_y))
-  if (!is.finite(ov$legend_free_y)) ov$legend_free_y <- ov$legend_y
+  # RC13.5: every optional Figure scalar is normalized to length one at the
+  # render/export boundary. `%||%` handles NULL but intentionally does not
+  # replace character(0)/numeric(0), which can appear transiently during the
+  # first Figure materialization. Keep those transport details out of all
+  # downstream scalar `if (...)` predicates.
+  ov$legend_gap <- scalar_num(ov$legend_gap, 8)
+  ov$legend_x <- scalar_num(ov$legend_x, 0.72)
+  ov$legend_y <- scalar_num(ov$legend_y, 0.08)
+  ov$legend_free_x <- scalar_num(ov$legend_free_x, ov$legend_x)
+  ov$legend_free_y <- scalar_num(ov$legend_free_y, ov$legend_y)
   # Detached free legends use owner-Graph-relative coordinates and may live
   # outside both the Graph and its Row/Panel slot. Keep a generous finite range
   # without forcing them back into [0,1].
@@ -54,77 +54,76 @@ figure_override_for <- function(id, overrides = list()) {
   # frame, so seed it from the stable source position once after load. New F1-4g
   # state carries `legend_free_anchor = "graph"` and preserves manual X/Y.
   ov$legend_free_auto <- if (isTRUE(legacy_detached_coords)) TRUE else isTRUE(ov$legend_free_auto)
-  ov$legend_free_origin <- as.character(ov$legend_free_origin %||% "inherit")[1]
+  ov$legend_free_origin <- scalar_chr(ov$legend_free_origin, "inherit")
   if (!ov$legend_free_origin %in% c("inherit", "right", "left", "top", "bottom", "inside")) ov$legend_free_origin <- "inherit"
-  ov$legend_source_origin <- as.character(ov$legend_source_origin %||% "inherit")[1]
+  ov$legend_source_origin <- scalar_chr(ov$legend_source_origin, "inherit")
   if (!ov$legend_source_origin %in% c("inherit", "right", "left", "top", "bottom", "inside")) ov$legend_source_origin <- "inherit"
-  ov$legend_source_x <- suppressWarnings(as.numeric(ov$legend_source_x %||% ov$legend_x)[1])
-  if (!is.finite(ov$legend_source_x)) ov$legend_source_x <- ov$legend_x
-  ov$legend_source_y <- suppressWarnings(as.numeric(ov$legend_source_y %||% ov$legend_y)[1])
-  if (!is.finite(ov$legend_source_y)) ov$legend_source_y <- ov$legend_y
+  ov$legend_source_x <- scalar_num(ov$legend_source_x, ov$legend_x)
+  ov$legend_source_y <- scalar_num(ov$legend_source_y, ov$legend_y)
   ov$legend_source_x <- min(max(ov$legend_source_x, 0), 1)
   ov$legend_source_y <- min(max(ov$legend_source_y, 0), 1)
-  ov$legend_last_side <- as.character(ov$legend_last_side %||% "")[1]
+  ov$legend_last_side <- scalar_chr(ov$legend_last_side, "")
   if (!ov$legend_last_side %in% c("right", "left", "top", "bottom")) ov$legend_last_side <- ""
   if (!is.list(ov$legend_detach_snapshot)) ov$legend_detach_snapshot <- NULL
-  ov$align_h <- as.character(ov$align_h %||% "center")
+  ov$align_h <- scalar_chr(ov$align_h, "center")
   if (!ov$align_h %in% c("left", "center", "right")) ov$align_h <- "center"
-  ov$align_v <- as.character(ov$align_v %||% "center")
+  ov$align_v <- scalar_chr(ov$align_v, "center")
   if (!ov$align_v %in% c("top", "center", "bottom")) ov$align_v <- "center"
-  crop <- ov$crop %||% figure_default_crop()
+  crop <- ov$crop %||% list()
+  if (!is.list(crop)) crop <- list()
+  crop <- modifyList(figure_default_crop(), crop)
   crop$enabled <- isTRUE(crop$enabled)
   for (nm in c("left", "top", "right", "bottom")) {
-    crop[[nm]] <- suppressWarnings(as.numeric(crop[[nm]] %||% 0))
-    if (!is.finite(crop[[nm]])) crop[[nm]] <- 0
-    crop[[nm]] <- min(max(crop[[nm]], 0), 0.49)
+    crop[[nm]] <- min(max(scalar_num(crop[[nm]], 0), 0), 0.49)
   }
   if (crop$left + crop$right >= 0.95) crop$right <- max(0, 0.95 - crop$left)
   if (crop$top + crop$bottom >= 0.95) crop$bottom <- max(0, 0.95 - crop$top)
   ov$crop <- crop
 
-  inset <- ov$inset %||% figure_default_inset()
+  inset <- ov$inset %||% list()
+  if (!is.list(inset)) inset <- list()
+  inset <- modifyList(figure_default_inset(), inset)
   inset$enabled <- isTRUE(inset$enabled)
-  inset$source_type <- as.character(inset$source_type %||% "internal_graph")[1]
+  inset$source_type <- scalar_chr(inset$source_type, "internal_graph")
   if (!inset$source_type %in% c("internal_graph", "external_asset")) inset$source_type <- "internal_graph"
-  inset$source_id <- as.character(inset$source_id %||% "")[1]
+  inset$source_id <- scalar_chr(inset$source_id, "")
   # F1-5 schema: a single owner-Graph-relative coordinate system, matching the
   # detached legend contract. Legacy alpha coordinates are kept numerically but
   # normalized into this coordinate space on first materialization.
   inset$anchor <- "graph"
   for (nm in c("x", "y", "width", "height")) {
-    inset[[nm]] <- suppressWarnings(as.numeric(inset[[nm]] %||% c(x=.62,y=.08,width=.32,height=.32)[[nm]]))
-    if (!is.finite(inset[[nm]])) inset[[nm]] <- c(x=.62,y=.08,width=.32,height=.32)[[nm]]
+    inset[[nm]] <- scalar_num(inset[[nm]], c(x=.62,y=.08,width=.32,height=.32)[[nm]])
   }
   inset$x <- min(max(inset$x, -2), 3)
   inset$y <- min(max(inset$y, -2), 3)
   inset$width <- min(max(inset$width, 0.05), 1.5)
   inset$height <- min(max(inset$height, 0.05), 1.5)
   inset$border <- isTRUE(inset$border)
-  inset$border_width <- min(max(suppressWarnings(as.numeric(inset$border_width %||% 1)), 0), 20)
+  inset$border_width <- min(max(scalar_num(inset$border_width, 1), 0), 20)
   # Layer ordering is structural, not a per-Inset style knob.
   inset$z_index <- 20
   ov$inset <- inset
 
-  app <- modifyList(figure_default_appearance_override(), ov$appearance %||% list())
+  app_raw <- ov$appearance %||% list()
+  if (!is.list(app_raw)) app_raw <- list()
+  app <- modifyList(figure_default_appearance_override(), app_raw)
   for (nm in c("title_mode", "xlab_mode", "ylab_mode")) {
-    app[[nm]] <- as.character(app[[nm]] %||% "inherit")[1]
+    app[[nm]] <- scalar_chr(app[[nm]], "inherit")
     if (!app[[nm]] %in% c("inherit", "override")) app[[nm]] <- "inherit"
   }
-  for (nm in c("title", "xlab", "ylab")) app[[nm]] <- as.character(app[[nm]] %||% "")[1]
+  for (nm in c("title", "xlab", "ylab")) app[[nm]] <- scalar_chr(app[[nm]], "")
   for (nm in c("color_mode", "linetype_mode", "shape_mode")) {
-    app[[nm]] <- as.character(app[[nm]] %||% "inherit")[1]
+    app[[nm]] <- scalar_chr(app[[nm]], "inherit")
     if (!app[[nm]] %in% c("inherit", "override")) app[[nm]] <- "inherit"
   }
-  app$color <- as.character(app$color %||% "#000000")[1]
+  app$color <- scalar_chr(app$color, "#000000")
   if (!grepl("^#[0-9A-Fa-f]{6}$", app$color)) app$color <- "#000000"
-  app$linetype <- as.character(app$linetype %||% "solid")[1]
+  app$linetype <- scalar_chr(app$linetype, "solid")
   if (!app$linetype %in% c("solid","dashed","dotted","dotdash","longdash","twodash")) app$linetype <- "solid"
-  app$shape <- suppressWarnings(as.numeric(app$shape %||% 16)[1])
-  if (!is.finite(app$shape)) app$shape <- 16
+  app$shape <- scalar_num(app$shape, 16)
   app$shape <- min(max(round(app$shape), 0), 25)
   for (nm in c("base_size", "axis_title_size", "axis_text_size", "alpha", "point_size", "line_width", "ymin", "ymax")) {
-    z <- suppressWarnings(as.numeric(app[[nm]] %||% NA_real_)[1])
-    app[[nm]] <- if (is.finite(z)) z else NA_real_
+    app[[nm]] <- scalar_num(app[[nm]], NA_real_)
   }
   if (is.finite(app$base_size)) app$base_size <- min(max(app$base_size, 5), 96)
   if (is.finite(app$axis_title_size)) app$axis_title_size <- min(max(app$axis_title_size, 5), 96)
@@ -134,15 +133,15 @@ figure_override_for <- function(id, overrides = list()) {
   if (is.finite(app$line_width)) app$line_width <- min(max(app$line_width, 0), 12)
   ov$appearance <- app
 
-  exleg <- modifyList(figure_default_external_legend(), ov$external_legend %||% list())
-  exleg$mode <- as.character(exleg$mode %||% "inherit")[1]
+  exleg_raw <- ov$external_legend %||% list()
+  if (!is.list(exleg_raw)) exleg_raw <- list()
+  exleg <- modifyList(figure_default_external_legend(), exleg_raw)
+  exleg$mode <- scalar_chr(exleg$mode, "inherit")
   if (!exleg$mode %in% c("inherit", "included", "separate", "none")) exleg$mode <- "inherit"
-  exleg$position <- as.character(exleg$position %||% "right")[1]
+  exleg$position <- scalar_chr(exleg$position, "right")
   if (!exleg$position %in% c("right", "left", "top", "bottom", "free")) exleg$position <- "right"
   for (nm in c("x","y","width","height","gap","scale")) {
-    z <- suppressWarnings(as.numeric(exleg[[nm]] %||% figure_default_external_legend()[[nm]])[1])
-    if (!is.finite(z)) z <- figure_default_external_legend()[[nm]]
-    exleg[[nm]] <- z
+    exleg[[nm]] <- scalar_num(exleg[[nm]], figure_default_external_legend()[[nm]])
   }
   exleg$x <- min(max(exleg$x, -0.2), 1.2); exleg$y <- min(max(exleg$y, -0.2), 1.2)
   exleg$width <- min(max(exleg$width, 0.03), 1.5); exleg$height <- min(max(exleg$height, 0.03), 1.5)
@@ -287,14 +286,23 @@ figure_label_band <- function(ov) {
 }
 
 figure_plot_for_scale <- function(p_raw, ov, ex, scale = 1) {
-  rr <- suppressWarnings(as.numeric(ex$reference_res %||% 120))
-  if (!is.finite(rr) || rr <= 0) rr <- 120
-  pw <- suppressWarnings(as.numeric(ex$panel_width_px %||% ex$plot_width_px %||% 600))
-  ph <- suppressWarnings(as.numeric(ex$panel_height_px %||% ex$plot_height_px %||% 600))
-  if (!is.finite(pw) || pw <= 0) pw <- 600
-  if (!is.finite(ph) || ph <= 0) ph <- 600
-  scale <- suppressWarnings(as.numeric(scale))
-  if (!is.finite(scale) || scale <= 0) scale <- 1
+  # RC13.5: export metadata is another asynchronous boundary. A partially
+  # materialized Figure snapshot can carry zero-length numeric fields even
+  # though the metadata list itself already exists. Collapse every device scalar
+  # to length one before it can reach an `if (...)` or graphics device.
+  scalar_num <- function(x, fallback) {
+    z <- suppressWarnings(as.numeric(x)[1])
+    if (!length(z) || !is.finite(z)) fallback else z
+  }
+  ex <- if (is.list(ex)) ex else list()
+  rr <- scalar_num(ex$reference_res, 120)
+  if (rr <= 0) rr <- 120
+  pw <- scalar_num(ex$panel_width_px, scalar_num(ex$plot_width_px, 600))
+  ph <- scalar_num(ex$panel_height_px, scalar_num(ex$plot_height_px, 600))
+  if (pw <= 0) pw <- 600
+  if (ph <= 0) ph <- 600
+  scale <- scalar_num(scale, 1)
+  if (scale <= 0) scale <- 1
 
   # Phase 10: do not serialize/unserialize the Graph-owned ggplot here.
   #

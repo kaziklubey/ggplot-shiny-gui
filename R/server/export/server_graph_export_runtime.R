@@ -49,6 +49,7 @@
           "flattened_groups=", as.integer(info$flattened_groups %||% 0L),
           " skipped_groups=", as.integer(info$skipped_groups %||% 0L),
           " exposed_shapes=", as.integer(info$exposed_shapes %||% 0L),
+          " text_normalized=", as.integer(info$export_text_replacements %||% 0L),
           " slide=", round(info$slide_width_in %||% NA_real_, 3), "x",
           round(info$slide_height_in %||% NA_real_, 3), "in"
         ),
@@ -69,6 +70,10 @@
       suppressWarnings(print(p))
       grDevices::dev.off()
       svg_closed <- TRUE
+      norm <- export_text_normalize_utf8_file(path)
+      if (isTRUE(norm$ok) && norm$replacements > 0L) {
+        diag_log("GRAPH-EXPORT-TEXT-NORMALIZE", paste0("format=svg replacements=", norm$replacements), id = id)
+      }
       return(invisible(TRUE))
     }
 

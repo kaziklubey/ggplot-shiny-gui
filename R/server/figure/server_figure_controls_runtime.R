@@ -289,7 +289,10 @@
           div(class = "figure-row-summary-meta", paste0(row$ncol, " panels")),
           div(class = "figure-row-summary-chevron", if (selected) "▾" else "▸")
         ),
-        if (selected) selected_row_detail(r)
+        # RC13.1: every Row detail stays materialized inside one persistent
+        # Figure Layout DOM. Browser selection only toggles the `.selected`
+        # class / visibility; changing Rows must never recreate this renderUI.
+        selected_row_detail(r)
       )
     })
 
@@ -400,8 +403,10 @@
     diag_log("FIGURE-EDIT", paste0("row_click row=", as.character(r)))
     st <- isolate(figure_layout_state())
     if (is.finite(r) && r >= 1L && r <= length(st) && !identical(r, isolate(figure_selected_row()))) {
+      # RC13.1: the browser already switched the persistent Row DOM locally.
+      # Keep only the canonical presentation owner here; no renderUI rebuild.
       figure_selected_row(r)
-      bump_figure_layout_ui()
+      diag_log("FIGURE-LAYOUT-UI", paste0("selection local row=", r, " render skipped"))
     }
   }, ignoreInit = TRUE)
 
@@ -1655,8 +1660,10 @@
       figure_selected_panel_key(key)
       pos <- figure_layout_key_position(isolate(figure_layout_state()), key)
       if (is.finite(pos$row) && !identical(as.integer(pos$row), as.integer(isolate(figure_selected_row())))) {
+        # RC13.1: Figure canvas clicks update the persistent Row UI in-browser.
+        # Server only records the selected Row; no Layout renderUI replacement.
         figure_selected_row(as.integer(pos$row))
-        bump_figure_layout_ui()
+        diag_log("FIGURE-LAYOUT-UI", paste0("panel selection local row=", as.integer(pos$row), " render skipped"), id = id)
       }
       if (id %in% names(isolate(figure_external_assets()))) {
         diag_log("FIGURE-SOURCE", paste0("panel select external_asset=TRUE key=", key), id = id)

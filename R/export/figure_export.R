@@ -1001,12 +1001,15 @@ figure_write_svg_vector <- function(path, layout, canvas_w, canvas_h, overrides,
     if (length(defs)) paste0('<defs>', paste(defs,collapse="\n"), '</defs>') else '',
     body_jobs, inset_jobs, legend_jobs, label_jobs, '</svg>'
   )
+  export_text_replacements <- export_text_normalization_count(doc)
+  if (export_text_replacements > 0L) doc <- export_text_normalize_character(doc)
   writeLines(doc, path, useBytes=TRUE)
   list(
     drawn_ids=unique(drawn_ids), persisted_svg_ids=unique(persisted_svg_ids),
     missing_ids=character(0), vector_svg=TRUE,
     textlength_removed=as.integer(textlength_removed_n),
-    redundant_clips_removed=as.integer(redundant_clips_removed_n)
+    redundant_clips_removed=as.integer(redundant_clips_removed_n),
+    export_text_replacements=as.integer(export_text_replacements)
   )
 }
 
@@ -1054,9 +1057,12 @@ figure_write_svg_office <- function(path, layout, canvas_w, canvas_h, overrides,
     ),
     parts$inner, '</svg>'
   )
+  export_text_replacements <- export_text_normalization_count(doc)
+  if (export_text_replacements > 0L) doc <- export_text_normalize_character(doc)
   writeLines(doc, path, useBytes = TRUE)
   summary$office_svg <- TRUE
   summary$textlength_removed <- as.integer(parts$textlength_removed %||% 0L)
   summary$redundant_clips_removed <- as.integer(parts$redundant_clips_removed %||% 0L)
+  summary$export_text_replacements <- as.integer(export_text_replacements)
   summary
 }

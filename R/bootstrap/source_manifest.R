@@ -23,6 +23,7 @@ source("R/style/shared_style_state.R", local = TRUE)
 source("R/diagnostics/app_function_catalog.R", local = TRUE)
 source("R/editor/ui/graph_ui_module.R", local = TRUE)
 source("R/plot/graph_state_plot.R", local = TRUE)
+source("R/export/export_text_normalization.R", local = TRUE)
 source("R/export/pptx_editable_export.R", local = TRUE)
 source("R/editor/graph_module.R", local = TRUE)
 

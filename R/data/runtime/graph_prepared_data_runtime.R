@@ -233,7 +233,21 @@
   })
 
   output$plot_note <- renderUI({
-    note <- plot_note()
+    # Plot notes are advisory only. During browser-direct Graph hydration the
+    # bound Shiny mapping inputs can lag the already-accepted canonical state
+    # by a flush, while the Preview itself renders correctly from GraphState.
+    # Never surface that transient validation (for example "Y列を選択してください。")
+    # as a stale warning above an otherwise valid plot. Real plot validation
+    # still belongs to make_plot()/the Preview error shield.
+    note <- tryCatch(
+      plot_note(),
+      error = function(e) {
+        if (!inherits(e, c("shiny.silent.error", "validation"))) {
+          diag("PLOT-NOTE", paste0("suppressed advisory error: ", conditionMessage(e)))
+        }
+        NULL
+      }
+    )
     if (is.null(note)) return(NULL)
     div(class = "alert alert-warning plot-note-wrap", note)
   })

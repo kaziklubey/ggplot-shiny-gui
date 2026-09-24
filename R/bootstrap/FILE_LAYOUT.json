@@ -28,6 +28,7 @@
   "graph_ui_bindings.R": "R/editor/ui/graph_ui_bindings.R",
   "graph_ui_module.R": "R/editor/ui/graph_ui_module.R",
   "graph_state_plot.R": "R/plot/graph_state_plot.R",
+  "export_text_normalization.R": "R/export/export_text_normalization.R",
   "pptx_editable_export.R": "R/export/pptx_editable_export.R",
   "graph_module.R": "R/editor/graph_module.R",
   "graph_editor_primitives_runtime.R": "R/editor/runtime/graph_editor_primitives_runtime.R",

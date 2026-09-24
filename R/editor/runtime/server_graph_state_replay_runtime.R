@@ -459,7 +459,17 @@
     if (isTRUE(browser_direct)) {
       payload <- graph_browser_direct_hydration_payload(cfg, replay_plan, transaction)
       if (graph_editor_profile_is_figure(editor_profile)) {
-        profile_browser_values(payload$values)
+        # Browser hydration may intentionally show only the subset of saved
+        # line-break boundaries representable by the current choice universe.
+        # Figure-owned canonical state must still retain the exact saved value;
+        # otherwise the UI-only subset is overlaid back as a fake user edit just
+        # after replay (RC13.1: live-edit-coalesced plot.line_breaks).
+        figure_profile_values <- payload$values
+        figure_profile_values$line_breaks <- as.character(unlist(
+          (cfg$plot %||% list())$line_breaks %||% character(0),
+          use.names = FALSE
+        ))
+        profile_browser_values(figure_profile_values)
         profile_browser_paths(as.list(graph_browser_patch_path_contract(cfg)))
       }
       session$onFlushed(function() {

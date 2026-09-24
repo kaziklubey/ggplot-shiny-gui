@@ -1,5 +1,5 @@
 # Application identity and non-reactive configuration.
-APP_VERSION <- "v4.0-rc13-rapid-edit-stable-figure1"
+APP_VERSION <- "v4.0-rc13.7-statistics-tab-activation1"
 
 GRAPH_RAPID_RENDER_DEBOUNCE_MS <- 180L
 FIGURE_RAPID_INPUT_DEBOUNCE_MS <- 180L

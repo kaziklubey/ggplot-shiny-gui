@@ -126,9 +126,12 @@ app_function_catalog <- function() {
       graph_single_abort_activation = list(kind = "editor transaction fail-safe", input = "Graph id + reason", output = "stale shell clear + explicit reselection"),
       graph_preview_record_from_plot = list(kind = "direct-state vector snapshot helper", input = "GraphState + plot + export meta", output = "caller-owned SVG record or NULL"),
       graph_state_export_snapshot = list(kind = "pure direct-state export renderer", input = "GraphState", output = "plot + measured export metadata"),
+      export_text_normalize_character = list(kind = "export-only compatibility normalizer", input = "external text payload", output = "confirmed fullwidth percent substitutions only"),
+      export_text_normalize_utf8_file = list(kind = "export-only UTF-8 postprocessor", input = "SVG/XML path", output = "normalized external payload + replacement count"),
       pptx_write_ggplot_editable = list(kind = "Graph PowerPoint export boundary", input = "ggplot + physical export size", output = "editable DrawingML pptx with safe wrapper flattening"),
       pptx_flatten_editable_groups = list(kind = "PowerPoint postprocessor", input = "generated pptx + owned label prefix", output = "identity wrapper groups flattened; child shapes exposed"),
       pptx_validate_package_structure = list(kind = "PowerPoint package guard", input = "pptx path", output = "required OPC paths validated before/after postprocessing"),
+      figure_pptx_prepare_editable_sources = list(kind = "Figure PowerPoint source materializer", input = "Figure ids + in-memory plots + Figure-owned GraphStates", output = "export-local editable ggplot sources + legacy fallback ids"),
       request_figure_source_snapshot = list(kind = "direct-state Figure snapshot service", input = "Graph id + optional GraphState override", output = "Figure-owned SVG snapshot"),
       registry_commit = list(kind = "server state mutation", input = "Graph id + state", output = "canonical Registry update")
     )

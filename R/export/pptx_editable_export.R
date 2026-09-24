@@ -269,6 +269,11 @@ pptx_flatten_editable_groups <- function(path, label_prefix = "ggplot-editable-"
     xml2::write_xml(doc, slide_path, options = "format")
   }
 
+  # Export-only compatibility normalization. Canonical app text is untouched;
+  # only the Office XML payload is rewritten. RC13.3 starts with the one
+  # Illustrator-confirmed substitution U+FF05 FULLWIDTH PERCENT -> ASCII %.
+  text_norm <- export_text_normalize_xml_tree(td)
+
   rebuilt <- tempfile("pptx_flattened_", fileext = ".pptx")
   on.exit(try(unlink(rebuilt), silent = TRUE), add = TRUE)
   rel_files <- list.files(td, recursive = TRUE, all.files = TRUE, no.. = TRUE)
@@ -294,7 +299,9 @@ pptx_flatten_editable_groups <- function(path, label_prefix = "ggplot-editable-"
   list(
     flattened = flattened,
     skipped_nonidentity = skipped_nonidentity,
-    exposed_elements = exposed_elements
+    exposed_elements = exposed_elements,
+    export_text_files = as.integer(text_norm$files %||% 0L),
+    export_text_replacements = as.integer(text_norm$replacements %||% 0L)
   )
 }
 
@@ -349,6 +356,7 @@ pptx_write_ggplot_editable <- function(path, plot, width_px, height_px, referenc
     flattened_groups = as.integer(flatten$flattened %||% 0L),
     skipped_groups = as.integer(flatten$skipped_nonidentity %||% 0L),
     exposed_shapes = as.integer(flatten$exposed_elements %||% 0L),
+    export_text_replacements = as.integer(flatten$export_text_replacements %||% 0L),
     slide_width_in = slide_w_in,
     slide_height_in = slide_h_in,
     graph_width_in = graph_w_in,

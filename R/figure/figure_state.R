@@ -32,7 +32,10 @@ figure_make_cell <- function(row, col, id = "", width = 1, source_type = "intern
     panel_label_auto = isTRUE(panel_label_auto),
     label_size = figure_num_or(label_size, 18, 6, 72),
     top_gutter = figure_num_or(top_gutter, 32, 0, 240),
-    label_mode = if (as.character(label_mode %||% "align")[1] %in% c("align", "free")) as.character(label_mode)[1] else "align",
+    label_mode = {
+      z <- as.character(label_mode %||% "align")
+      if (!length(z) || is.na(z[[1]]) || !z[[1]] %in% c("align", "free")) "align" else z[[1]]
+    },
     label_anchor = {
       a <- as.character(label_anchor %||% "panel")[1]
       if (identical(a, "plot_axis")) a <- "panel"
@@ -189,12 +192,23 @@ figure_normalize_legend_title_mode <- function(x) {
 
 figure_apply_slot_label_to_override <- function(ov, slot) {
   ov <- modifyList(figure_default_override(), ov %||% list())
-  if (!is.list(slot)) return(ov)
   fields <- c(
     "panel_label", "label_size", "top_gutter", "label_mode", "label_anchor",
     "label_x_offset", "label_y_offset", "label_x", "label_y"
   )
-  for (nm in fields) if (!is.null(slot[[nm]])) ov[[nm]] <- slot[[nm]]
+  if (is.list(slot)) {
+    for (nm in fields) if (!is.null(slot[[nm]])) ov[[nm]] <- slot[[nm]]
+  }
+
+  # RC13.4: slot payloads can legitimately arrive from a fresh/default Figure
+  # with optional scalars represented as zero-length vectors.  The source
+  # override was normalized before the Slot merge, so copying character(0) or
+  # numeric(0) here could reintroduce invalid values and make downstream scalar
+  # predicates such as `if (nzchar(ov$panel_label))` fail during editable PPTX
+  # drawing.  Re-normalize only the Slot-owned label fields at this ownership
+  # boundary.  Canonical Figure/Graph state is not mutated.
+  normalized <- figure_slot_label_payload(ov)
+  for (nm in setdiff(names(normalized), "panel_label_auto")) ov[[nm]] <- normalized[[nm]]
   ov
 }
 
@@ -205,7 +219,10 @@ figure_slot_label_payload <- function(cell) {
     panel_label_auto = if (is.null(cell$panel_label_auto)) TRUE else isTRUE(cell$panel_label_auto),
     label_size = figure_num_or(cell$label_size, 18, 6, 72),
     top_gutter = figure_num_or(cell$top_gutter, 48, 0, 240),
-    label_mode = if (as.character(cell$label_mode %||% "align")[1] %in% c("align", "free")) as.character(cell$label_mode)[1] else "align",
+    label_mode = {
+      z <- as.character(cell$label_mode %||% "align")
+      if (!length(z) || is.na(z[[1]]) || !z[[1]] %in% c("align", "free")) "align" else z[[1]]
+    },
     label_anchor = {
       a <- as.character(cell$label_anchor %||% "panel")[1]
       if (identical(a, "plot_axis")) a <- "panel"
