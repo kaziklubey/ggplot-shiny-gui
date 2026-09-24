@@ -4,9 +4,9 @@ root_dir <- dirname(app_dir)
 req_file <- file.path(app_dir, "req.txt")
 if (!file.exists(req_file)) req_file <- file.path(root_dir, "req.txt")
 
-bootstrap_file <- file.path(app_dir, "bootstrap_packages.R")
-if (!file.exists(bootstrap_file)) bootstrap_file <- file.path(root_dir, "bootstrap_packages.R")
-if (!file.exists(bootstrap_file)) stop("bootstrap_packages.R was not found.", call. = FALSE)
+bootstrap_file <- file.path(app_dir, "R/bootstrap/bootstrap_packages.R")
+if (!file.exists(bootstrap_file)) bootstrap_file <- file.path(root_dir, "R/bootstrap/bootstrap_packages.R")
+if (!file.exists(bootstrap_file)) stop("R/bootstrap/bootstrap_packages.R was not found.", call. = FALSE)
 source(bootstrap_file, local = .GlobalEnv)
 
 req <- trimws(readLines(req_file, warn = FALSE))
