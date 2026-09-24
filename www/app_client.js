@@ -802,7 +802,7 @@ function ggplotGuiRestoreEditorUiState(graphId, forceTopKey) {
 function ggplotGuiSyncWorkspaceSectionBar(tabValue) {
   tabValue = String(tabValue || 'Plot');
   // v3.73.1.1: Graph section ownership is workspace-global, not per Graph.
-  // Record it immediately; Graph section ownership is workspace-global.
+  // The internal Shiny tabset is the truth; this outer bar mirrors that state.
   window.ggplotGuiWorkspaceMainTab = tabValue;
   document.querySelectorAll('#graph_workspace_section_bar [data-graph-main-tab]').forEach(function(btn) {
     btn.classList.toggle('active', String(btn.getAttribute('data-graph-main-tab') || '') === tabValue);
@@ -814,28 +814,101 @@ function ggplotGuiSyncWorkspaceSectionBar(tabValue) {
   }
 }
 
-window.ggplotGuiSelectGraphMainTab = function(tabValue) {
+function ggplotGuiGraphMainTabLinks(root) {
+  if (!root) return [];
+  return Array.prototype.slice.call(root.querySelectorAll(
+    '.graph-internal-main-tabs a[data-toggle="tab"], ' +
+    '.graph-internal-main-tabs a[data-bs-toggle="tab"], ' +
+    '.graph-internal-main-tabs a[data-value]'
+  ));
+}
+
+function ggplotGuiGraphMainTabValue(link) {
+  return link ? String(link.getAttribute('data-value') || '').trim() : '';
+}
+
+function ggplotGuiGraphMainTabIsActive(link) {
+  if (!link) return false;
+  if (link.classList && link.classList.contains('active')) return true;
+  var parent = link.parentElement;
+  if (parent && parent.classList && parent.classList.contains('active')) return true;
+  return String(link.getAttribute('aria-selected') || '').toLowerCase() === 'true';
+}
+
+function ggplotGuiActiveGraphMainTab(root) {
+  var links = ggplotGuiGraphMainTabLinks(root);
+  for (var i = 0; i < links.length; i++) {
+    if (ggplotGuiGraphMainTabIsActive(links[i])) return ggplotGuiGraphMainTabValue(links[i]);
+  }
+  return '';
+}
+
+function ggplotGuiActivateGraphMainTab(root, tabValue) {
   tabValue = String(tabValue || 'Plot');
-  window.ggplotGuiWorkspaceMainTab = tabValue;
-  var root = ggplotGuiEditorModuleRoot();
-  if (!root) return false;
-  var links = root.querySelectorAll('.graph-internal-main-tabs a[data-toggle="tab"], .graph-internal-main-tabs a[data-value]');
+  var links = ggplotGuiGraphMainTabLinks(root);
   var target = null;
   for (var i = 0; i < links.length; i++) {
-    if (String(links[i].getAttribute('data-value') || '').trim() === tabValue) {
+    if (ggplotGuiGraphMainTabValue(links[i]) === tabValue) {
       target = links[i];
       break;
     }
   }
-  if (target) {
-    try { $(target).tab('show'); } catch (e) { try { target.click(); } catch (e2) {} }
-  } else if (window.Shiny) {
-    // Binding fallback for an unexpectedly different Bootstrap structure.
-    Shiny.setInputValue('graph_editor_single-graph_main_tab', tabValue, {priority:'event'});
-  }
-  ggplotGuiSyncWorkspaceSectionBar(tabValue);
+  if (!target) return {ok:false, value:ggplotGuiActiveGraphMainTab(root)};
+
+  // Prefer the tabset's own click path. This is the same path a normal Shiny
+  // tab anchor uses and avoids treating a library call that silently no-ops as
+  // success.
+  try { target.click(); } catch (e) {}
+  var activeValue = ggplotGuiActiveGraphMainTab(root);
+  if (activeValue === tabValue) return {ok:true, value:activeValue};
+
+  // Bootstrap 5 fallback, only if that API is actually present.
+  try {
+    if (window.bootstrap && window.bootstrap.Tab &&
+        typeof window.bootstrap.Tab.getOrCreateInstance === 'function') {
+      window.bootstrap.Tab.getOrCreateInstance(target).show();
+    }
+  } catch (e2) {}
+  activeValue = ggplotGuiActiveGraphMainTab(root);
+  if (activeValue === tabValue) return {ok:true, value:activeValue};
+
+  // Bootstrap 3 / Shiny default fallback. Verify the DOM afterwards instead of
+  // assuming that calling .tab('show') means activation succeeded.
+  try {
+    if (window.jQuery && typeof window.jQuery(target).tab === 'function') {
+      window.jQuery(target).tab('show');
+    } else if (typeof $ === 'function' && typeof $(target).tab === 'function') {
+      $(target).tab('show');
+    }
+  } catch (e3) {}
+  activeValue = ggplotGuiActiveGraphMainTab(root);
+  return {ok:activeValue === tabValue, value:activeValue};
+}
+
+window.ggplotGuiSelectGraphMainTab = function(tabValue) {
+  tabValue = String(tabValue || 'Plot');
+  var root = ggplotGuiEditorModuleRoot();
+  if (!root) return false;
+
+  var result = ggplotGuiActivateGraphMainTab(root, tabValue);
+  var actualValue = String((result && result.value) || ggplotGuiActiveGraphMainTab(root) || '');
+  if (actualValue) ggplotGuiSyncWorkspaceSectionBar(actualValue);
   return false;
 };
+
+// Keep the outer workspace buttons presentation-only even when the internal
+// tabset changes through updateTabsetPanel()/restore instead of an outer click.
+if (window.jQuery) {
+  window.jQuery(document).on(
+    'shown.bs.tab.ggplotGuiGraphMainTab',
+    '#panel_graph_editor_single .graph-internal-main-tabs a[data-value]',
+    function() {
+      var root = ggplotGuiEditorModuleRoot();
+      var actualValue = ggplotGuiActiveGraphMainTab(root);
+      if (actualValue) ggplotGuiSyncWorkspaceSectionBar(actualValue);
+    }
+  );
+}
 
 function ggplotGuiUpdateEditorShell(selectedId, stateOverride) {
   selectedId = String(selectedId || window.ggplotGuiClientSelectedGraph || '');
@@ -1364,10 +1437,13 @@ $(document).on('shiny:inputchanged.browserDirectHydration', function(ev) {
 // that can legitimately change while the same Graph remains attached.
 Shiny.addCustomMessageHandler('graph-browser-control-hydrate', function(msg) {
   msg = msg || {};
-  var st = window.ggplotGuiBrowserPatchPoc || {};
+  var prefix = String(msg.inputPrefix || '');
+  var mode = String(msg.mode || 'full');
+  var figureStates = window.ggplotGuiFigureBrowserStates || {};
+  var figureMode = mode === 'figure_controls' || Object.prototype.hasOwnProperty.call(figureStates, prefix);
+  var st = figureMode ? (figureStates[prefix] || {}) : (window.ggplotGuiBrowserPatchPoc || {});
   var key = String(msg.key || '');
   if (!key) return;
-  var prefix = String(msg.inputPrefix || '');
   var el = document.getElementById(prefix + key);
   if (!el) return;
   var generation = Number(msg.generation || st.hydrationGeneration || 0);
@@ -1375,10 +1451,16 @@ Shiny.addCustomMessageHandler('graph-browser-control-hydrate', function(msg) {
   st.hydrationGeneration = generation;
   st.hydrationGuardUntil = Date.now() + 1000;
   st.hydrationExpected = st.hydrationExpected || {};
+  st.values = st.values || {};
   st.hydrationExpected[key] = msg.value;
+  st.values[key] = msg.value;
   ggplotGuiBrowserDirectReplaceChoices(el, msg.choices || []);
   ggplotGuiBrowserDirectSetValue(el, msg.value);
   ggplotGuiBrowserDirectSyncClientInput(prefix + key, msg.value, true);
+  if (figureMode) {
+    window.ggplotGuiFigureBrowserStates = window.ggplotGuiFigureBrowserStates || {};
+    window.ggplotGuiFigureBrowserStates[prefix] = st;
+  }
   window.setTimeout(function() {
     if (Number(st.hydrationGeneration || 0) === generation) st.hydrating = false;
   }, 0);
@@ -1892,11 +1974,30 @@ $(document).on('change', '.figure-panel-graph-edit', function() {
   });
 });
 
-// v3.3.47: compact accordion-style Row selection.
+// RC13.1: Figure Layout is one persistent DOM. Row selection is a local
+// presentation operation; the server only records the selected Row and never
+// recreates the Layout renderUI merely because selection moved.
+function ggplotGuiFigureSelectLayoutRow(row) {
+  row = parseInt(row, 10);
+  if (!isFinite(row)) return false;
+  var matched = false;
+  $('.figure-row-summary[data-figure-row]').each(function() {
+    var own = parseInt($(this).attr('data-figure-row'), 10);
+    var selected = isFinite(own) && own === row;
+    $(this).toggleClass('selected', selected);
+    var chevron = this.querySelector('.figure-row-summary-chevron');
+    if (chevron) chevron.textContent = selected ? '▾' : '▸';
+    if (selected) matched = true;
+  });
+  return matched;
+}
+window.ggplotGuiFigureSelectLayoutRow = ggplotGuiFigureSelectLayoutRow;
+
 $(document).on('click', '.figure-row-summary[data-figure-row]', function(e) {
   if ($(e.target).closest('input,select,button,.selectize-control').length) return;
   var row = parseInt($(this).attr('data-figure-row'), 10);
   if (!isFinite(row)) return;
+  ggplotGuiFigureSelectLayoutRow(row);
   Shiny.setInputValue('figure_row_clicked', {row: row, nonce: Date.now()}, {priority: 'event'});
 });
 
@@ -1907,7 +2008,9 @@ $(document).on('click', '.figure-grid-cell[data-figure-id]', function(e) {
   if ($(e.target).closest('.figure-draggable').length) return;
   var id = String($(this).attr('data-figure-id') || '');
   var key = String($(this).attr('data-figure-key') || '');
+  var row = parseInt($(this).attr('data-figure-row'), 10);
   if (!id) return;
+  if (isFinite(row)) ggplotGuiFigureSelectLayoutRow(row);
   $('.figure-grid-cell').removeClass('selected');
   $(this).addClass('selected');
   // v3.49.1: snapshot the current Inspector fold presentation state

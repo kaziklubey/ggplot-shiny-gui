@@ -878,6 +878,12 @@
   gap: 6px;
   margin: 7px 0 10px 0;
 }
+.figure-row-summary:not(.selected) > .figure-selected-row-editor {
+  display: none;
+}
+.figure-row-summary.selected > .figure-selected-row-editor {
+  display: block;
+}
 .figure-selected-row-editor {
   border-top: 1px solid #d9e5ee;
   padding: 7px 8px 8px 8px;
