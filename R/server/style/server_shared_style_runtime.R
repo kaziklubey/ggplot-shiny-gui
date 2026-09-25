@@ -419,7 +419,7 @@
     filename = function() paste0("ggplot_shared_style_library_", Sys.Date(), ".json"),
     content = function(file) {
       jsonlite::write_json(
-        shared_style_normalize_library(isolate(shared_style_library())),
+        app_json_safe_tree(shared_style_normalize_library(isolate(shared_style_library()))),
         file, pretty=TRUE, auto_unbox=TRUE, null="null"
       )
     }

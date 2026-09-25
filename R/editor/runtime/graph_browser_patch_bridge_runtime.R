@@ -4,7 +4,7 @@
 
   graph_browser_patch_path_contract <- function(state = NULL) {
     paths <- c(
-      project_name = "project_name", text = "data_text",
+      project_name = "project_name",
       reshape_wide = "reshape.enabled", reshape_row_id = "reshape.row_id",
       reshape_columns = "reshape.columns", reshape_x_name = "reshape.x_name",
       reshape_y_name = "reshape.y_name",
@@ -85,6 +85,50 @@
       if (nzchar(key) && !grepl("\\.", key)) style$appearance[[key]] <- ov$values[[nm]]
     }
     style
+  }
+
+
+  graph_browser_owned_state <- function() {
+    state <- tryCatch(attached_state_seed(), error = function(e) NULL)
+    if (!is.list(state)) return(NULL)
+    if (graph_editor_profile_is_figure(editor_profile)) {
+      state <- graph_apply_browser_patch_overlay(state)
+    }
+    state
+  }
+
+  graph_state_path_value <- function(state, path, fallback = NULL) {
+    if (!is.list(state)) return(fallback)
+    parts <- strsplit(as.character(path %||% "")[1], ".", fixed = TRUE)[[1]]
+    if (!length(parts) || any(!nzchar(parts))) return(fallback)
+    cur <- state
+    for (key in parts) {
+      if (!is.list(cur) || !key %in% (names(cur) %||% character(0))) return(fallback)
+      cur <- cur[[key]]
+    }
+    if (is.null(cur)) fallback else cur
+  }
+
+  # Browser-direct controls deliberately do not update the server-side Shiny
+  # input mirror. Any R-side derived UI/action/runtime read therefore has to
+  # resolve the accepted canonical GraphState (or Figure-owned working overlay)
+  # first. `input$...` is only a startup/non-browser fallback here.
+  graph_browser_owned_value <- function(key, fallback = NULL) {
+    key <- as.character(key %||% "")[1]
+    if (!nzchar(key)) return(fallback)
+    if (!graph_editor_profile_has(editor_profile, "full_shell") &&
+        !graph_editor_profile_is_figure(editor_profile)) return(fallback)
+    state <- graph_browser_owned_state()
+    if (!is.list(state)) return(fallback)
+    paths <- graph_browser_patch_path_contract(state)
+    if (!key %in% names(paths)) return(fallback)
+    graph_state_path_value(state, paths[[key]], fallback)
+  }
+
+  graph_browser_owned_scalar <- function(key, fallback = NULL) {
+    value <- graph_browser_owned_value(key, fallback)
+    if (is.null(value) || !length(value)) return(fallback)
+    value[[1]]
   }
 
   graph_browser_patch_direct_render_active <- function() {

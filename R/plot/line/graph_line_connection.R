@@ -75,6 +75,89 @@ graph_line_break_apply_group <- function(data, x_col, levels_now, selected,
   data
 }
 
+# ggplot2 cannot draw a non-solid path when colour changes within that path.
+# The v3.80 line contract deliberately allows Color to be visual-only, so do
+# not add Color to the series key merely to satisfy that renderer constraint.
+# Instead, identify only the affected paths and prepare adjacent segments.
+graph_line_path_requires_segments <- function(
+    data, group_col, colour_col, linetype_col, linetype_values,
+    boundary_cols = character(0)) {
+  required <- unique(c(group_col, colour_col, linetype_col))
+  if (!is.data.frame(data) || nrow(data) < 2L ||
+      any(!nzchar(required)) || any(!required %in% names(data))) {
+    return(FALSE)
+  }
+
+  boundary_cols <- unique(as.character(boundary_cols %||% character(0)))
+  boundary_cols <- boundary_cols[nzchar(boundary_cols) & boundary_cols %in% names(data)]
+  key_cols <- unique(c(boundary_cols, group_col))
+  path_key <- if (length(key_cols) == 1L) {
+    as.character(data[[key_cols]])
+  } else {
+    do.call(
+      interaction,
+      c(lapply(key_cols, function(nm) data[[nm]]), list(drop = TRUE, lex.order = TRUE))
+    )
+  }
+
+  colour <- as.character(data[[colour_col]])
+  linetype_key <- as.character(data[[linetype_col]])
+  linetype <- unname(as.character(linetype_values[linetype_key]))
+  non_solid <- !is.na(linetype) & nzchar(linetype) & !linetype %in% c("solid", "1")
+
+  for (idx in split(seq_len(nrow(data)), path_key, drop = TRUE)) {
+    path_colours <- unique(colour[idx][!is.na(colour[idx])])
+    if (length(path_colours) > 1L && any(non_solid[idx])) return(TRUE)
+  }
+  FALSE
+}
+
+graph_line_segment_data <- function(
+    data, x_col, y_col, group_col, boundary_cols = character(0),
+    xend_col = ".line_xend__", yend_col = ".line_yend__") {
+  empty_result <- function(z) {
+    out <- z[0, , drop = FALSE]
+    out[[xend_col]] <- z[[x_col]][0]
+    out[[yend_col]] <- z[[y_col]][0]
+    out
+  }
+  required <- unique(c(x_col, y_col, group_col))
+  if (!is.data.frame(data) || nrow(data) < 2L ||
+      any(!nzchar(required)) || any(!required %in% names(data))) {
+    return(empty_result(data))
+  }
+
+  boundary_cols <- unique(as.character(boundary_cols %||% character(0)))
+  boundary_cols <- boundary_cols[nzchar(boundary_cols) & boundary_cols %in% names(data)]
+  key_cols <- unique(c(boundary_cols, group_col))
+  path_key <- if (length(key_cols) == 1L) {
+    as.character(data[[key_cols]])
+  } else {
+    do.call(
+      interaction,
+      c(lapply(key_cols, function(nm) data[[nm]]), list(drop = TRUE, lex.order = TRUE))
+    )
+  }
+
+  pieces <- lapply(split(seq_len(nrow(data)), path_key, drop = TRUE), function(idx) {
+    idx <- idx[order(data[[x_col]][idx], seq_along(idx), na.last = TRUE)]
+    if (length(idx) < 2L) return(NULL)
+    left <- idx[-length(idx)]
+    right <- idx[-1L]
+    keep <- !is.na(data[[x_col]][left]) & !is.na(data[[y_col]][left]) &
+      !is.na(data[[x_col]][right]) & !is.na(data[[y_col]][right])
+    if (!any(keep)) return(NULL)
+
+    out <- data[left[keep], , drop = FALSE]
+    out[[xend_col]] <- data[[x_col]][right[keep]]
+    out[[yend_col]] <- data[[y_col]][right[keep]]
+    out
+  })
+  pieces <- pieces[!vapply(pieces, is.null, logical(1))]
+  if (!length(pieces)) return(empty_result(data))
+  do.call(rbind, pieces)
+}
+
 graph_line_break_plan <- function(cfg, mapping_plan = NULL) {
   if (!is.list(cfg)) {
     return(list(levels = character(0), choices = character(0), selected = character(0)))

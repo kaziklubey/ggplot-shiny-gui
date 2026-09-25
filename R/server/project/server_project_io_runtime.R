@@ -1290,7 +1290,7 @@
       }
     }
 
-    diag_log("PACK", "not a usable packaged Project; trying legacy RDS/JSON")
+    diag_log("PACK", "not a usable packaged Project; trying legacy RDS")
     rds_error <- NULL
     cfg <- tryCatch(
       readRDS(path),
@@ -1301,22 +1301,7 @@
     )
     if (!is.null(cfg)) return(cfg)
 
-    json_error <- NULL
-    cfg <- tryCatch(
-      jsonlite::read_json(path, simplifyVector = FALSE),
-      error = function(e) {
-        json_error <<- conditionMessage(e)
-        NULL
-      }
-    )
-    if (!is.null(cfg)) return(cfg)
-
-    project_read_error(
-      paste0(
-        "RDS: ", rds_error %||% "unknown",
-        " / JSON: ", json_error %||% "unknown"
-      )
-    )
+    project_read_error(paste0("RDS: ", rds_error %||% "unknown"))
     NULL
   }
 

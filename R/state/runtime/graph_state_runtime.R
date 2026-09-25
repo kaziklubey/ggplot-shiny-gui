@@ -13,34 +13,34 @@
         x = resolved_xvar(),
         y = resolved_yvar(),
         position = effective_position_var(dat()),
-        color = input$colorvar,
-        linetype = input$linetypevar %||% "__color__",
-        shape = input$shapevar %||% "__color__",
-        line_series_mode = input$line_series_mode %||% "auto",
-        line_series_var = input$line_series_var %||% "",
-        id = input$idvar,
-        facet = input$facetvar,
-        external_error = input$external_error_col %||% "",
-        external_ymin = input$external_ymin_col %||% "",
-        external_ymax = input$external_ymax_col %||% ""
+        color = graph_mapping_value("color", input$colorvar %||% ""),
+        linetype = graph_mapping_value("linetype", input$linetypevar %||% "__color__"),
+        shape = graph_mapping_value("shape", input$shapevar %||% "__color__"),
+        line_series_mode = graph_mapping_value("line_series_mode", input$line_series_mode %||% "auto"),
+        line_series_var = graph_mapping_value("line_series_var", input$line_series_var %||% ""),
+        id = graph_mapping_value("id", input$idvar %||% ""),
+        facet = graph_mapping_value("facet", input$facetvar %||% ""),
+        external_error = graph_mapping_value("external_error", input$external_error_col %||% ""),
+        external_ymin = graph_mapping_value("external_ymin", input$external_ymin_col %||% ""),
+        external_ymax = graph_mapping_value("external_ymax", input$external_ymax_col %||% "")
       ),
       plot = list(
-        type = input$plot_type,
-        summary = input$summary_type,
-        summary_unit = input$summary_unit %||% "row",
-        external_error_mode = input$external_error_mode %||% "none",
-        show_raw = input$show_raw,
-        connect_id = input$connect_id,
-        scatter_connect_mode = input$scatter_connect_mode %||% "none",
+        type = graph_plot_value("type", input$plot_type %||% "line"),
+        summary = graph_plot_value("summary", input$summary_type %||% "mean"),
+        summary_unit = graph_plot_value("summary_unit", input$summary_unit %||% "row"),
+        external_error_mode = graph_plot_value("external_error_mode", input$external_error_mode %||% "none"),
+        show_raw = graph_plot_value("show_raw", input$show_raw),
+        connect_id = graph_plot_value("connect_id", input$connect_id),
+        scatter_connect_mode = graph_plot_value("scatter_connect_mode", input$scatter_connect_mode %||% "none"),
         line_breaks = line_break_clean(line_break_state())
       ),
       labels = list(
-        xlab = normalize_multiline_label(input$xlab),
-        ylab = normalize_multiline_label(input$ylab),
-        title = input$title,
-        ymin = input$ymin,
-        ymax = input$ymax,
-        y_top_to_tick = input$y_top_to_tick
+        xlab = normalize_multiline_label(graph_label_value("xlab", input$xlab %||% "")),
+        ylab = normalize_multiline_label(graph_label_value("ylab", input$ylab %||% "")),
+        title = graph_label_value("title", input$title %||% ""),
+        ymin = graph_label_value("ymin", input$ymin %||% ""),
+        ymax = graph_label_value("ymax", input$ymax %||% ""),
+        y_top_to_tick = graph_label_value("y_top_to_tick", input$y_top_to_tick)
       ),
       export = list(
         mode = "follow_plot",
@@ -66,15 +66,26 @@
       stats_recipes()
       stats_selected_id()
 
-      live$project_name <- input$project_name
-      live$data_text <- input$text
-      live$reshape <- list(
-        enabled = input$reshape_wide,
-        row_id = input$reshape_row_id,
-        columns = input$reshape_columns,
-        x_name = input$reshape_x_name,
-        y_name = input$reshape_y_name
-      )
+      live$project_name <- graph_browser_owned_scalar("project_name", input$project_name %||% "")
+      # Data/reshape are canonical Graph-owned fields. Browser patch acceptance
+      # updates attached_state_seed() before this coalesced snapshot runs, so do
+      # not reconstruct them from delayed Shiny mirrors of Ace/reshape controls.
+      canonical_data <- attached_state_seed()
+      if (is.list(canonical_data)) {
+        live$data_text <- graph_state_scalar(canonical_data$data_text, "")
+        live$reshape <- canonical_data$reshape %||% list()
+      } else {
+        # Startup/replay normally returns above before reaching this branch. Keep
+        # a defensive fallback for an unexpectedly unattached Full Editor.
+        live$data_text <- input$text
+        live$reshape <- list(
+          enabled = input$reshape_wide,
+          row_id = input$reshape_row_id,
+          columns = input$reshape_columns,
+          x_name = input$reshape_x_name,
+          y_name = input$reshape_y_name
+        )
+      }
       live$statistics_recipes <- stats_recipes_for_project()
       live$statistics_selected_id <- stats_selected_id_for_project()
       live$ui_snapshot <- graph_capture_editor_ui_snapshot()

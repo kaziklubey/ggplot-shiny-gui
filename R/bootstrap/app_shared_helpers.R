@@ -1,6 +1,33 @@
 # Shared application helpers used by Graph and Figure runtimes.
 `%||%` <- function(a, b) if (is.null(a)) b else a
 
+# Convert named atomic vectors to named lists before JSON serialization.
+# jsonlite currently accepts named vectors as JSON objects with
+# keep_vec_names=TRUE, but that compatibility path is deprecated. Keep this
+# helper at the application boundary so Style/Shared Style export and other
+# explicit JSON encoding do not depend on that legacy behavior.
+app_json_safe_tree <- function(x) {
+  if (is.data.frame(x)) return(x)
+
+  if (is.atomic(x) && !is.null(names(x))) {
+    nm <- names(x)
+    if (length(nm) && any(nzchar(nm))) {
+      out <- as.list(unname(x))
+      names(out) <- nm
+      return(out)
+    }
+    return(unname(x))
+  }
+
+  if (is.list(x)) {
+    out <- lapply(x, app_json_safe_tree)
+    names(out) <- names(x)
+    return(out)
+  }
+
+  x
+}
+
 # -----------------------------------------------------------------------------
 # Runtime font catalogue / text helpers
 # -----------------------------------------------------------------------------

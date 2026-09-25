@@ -306,6 +306,71 @@
         }
         NULL
       },
+      on_data_text_commit = function(text_now) {
+        if (isTRUE(isolate(graph_single_editor_loading()))) return(invisible(FALSE))
+        owner <- as.character(graph_single_owner() %||% "")[1]
+        if (!nzchar(owner) || !cache_has(owner) || !graph_single_ready(owner)) return(invisible(FALSE))
+        if (!graph_single_revision_is_current(owner)) return(invisible(FALSE))
+
+        old <- cache_get(owner)
+        if (!is.list(old)) return(invisible(FALSE))
+        text_now <- as.character(text_now %||% "")[1]
+        if (identical(text_now, graph_state_scalar(old$data_text, ""))) return(invisible(TRUE))
+
+        candidate <- old
+        candidate$data_text <- text_now
+        reconciled <- graph_reconcile_mapping_after_data_change(old, candidate)
+        candidate <- reconciled$state
+
+        result <- graph_settings_manager_commit_exact(owner, candidate, source = "data-text-transport")
+        if (!isTRUE(result$changed) && !isTRUE(result$render)) return(invisible(TRUE))
+
+        canonical_now <- cache_get(owner)
+        if (!is.list(canonical_now)) return(invisible(FALSE))
+
+        # Keep the module attachment, dependent Mapping choices and the browser
+        # patch revision on the same accepted canonical state before rendering.
+        if (exists("graph_browser_patch_epoch", mode = "function", inherits = TRUE)) {
+          graph_browser_patch_epoch(as.integer(isolate(graph_browser_patch_epoch()) %||% 0L) + 1L)
+        }
+        mod_now <- graph_single_mod()
+        if (!is.null(mod_now) && is.function(mod_now$accept_canonical)) {
+          try(mod_now$accept_canonical(canonical_now, reason = "data-text-transport", seed_render = FALSE), silent = TRUE)
+        }
+        if (!is.null(mod_now) && is.function(mod_now$refresh_browser_hydration)) {
+          try(mod_now$refresh_browser_hydration(canonical_now, graph_id = owner), silent = TRUE)
+        }
+
+        graph_single_claim_revision(owner, reason = "data-text-transport")
+        graph_single_mark_editor_visit(owner)
+        session$sendCustomMessage(
+          "graph-browser-patch-rebase",
+          app_json_safe_tree(list(
+            graphId = owner,
+            revision = graph_render_state_revision_value(owner)
+          ))
+        )
+
+        if (isTRUE(result$render) && !is.null(mod_now) && is.function(mod_now$release_render_state)) {
+          try(mod_now$release_render_state(canonical_now, reason = "data-text-transport"), silent = TRUE)
+        }
+
+        changed_keys <- as.character(reconciled$changed_keys %||% character(0))
+        plan <- reconciled$plan
+        dims <- if (is.list(plan) && is.data.frame(plan$raw)) {
+          paste0(" rows=", nrow(plan$raw), " cols=", ncol(plan$raw))
+        } else " parse=invalid"
+        diag_log(
+          "DATA-TEXT-COMMIT",
+          paste0(
+            "chars=", nchar(text_now, type = "chars"), dims,
+            if (length(changed_keys)) paste0(" mapping_resolved={", paste(changed_keys, collapse = ","), "}") else "",
+            " render=", isTRUE(result$render)
+          ),
+          id = owner
+        )
+        invisible(TRUE)
+      },
       statistics_plot_preview = function() {
         # Read-only Statistics Plot: create a temporary vector snapshot from
         # the one persistent Editor. It is intentionally NOT published into a
@@ -369,6 +434,27 @@
       on_shared_style_library_change = function(library_now) {
         owner <- graph_single_owner()
         if (!nzchar(owner)) return(invisible(FALSE))
+
+        # Graph -> Shared Library write-through is valid only while the
+        # persistent Editor still owns the current canonical revision.
+        # Library -> Graph application advances/invalidate that revision first;
+        # any delayed observer from the stale Editor must therefore be rejected
+        # exactly like ordinary stale GraphState publication.
+        if (!graph_single_revision_is_current(owner)) {
+          lease <- isolate(graph_single_editor_lease())
+          diag_log(
+            "SHARED-STYLE-LIBRARY-SKIP",
+            paste0(
+              "source=graph-editor stale-lease lease_revision=",
+              as.integer(lease$revision %||% -1L),
+              " canonical_revision=",
+              as.integer(graph_state_revision_value(owner) %||% 0L)
+            ),
+            id = owner
+          )
+          return(invisible(FALSE))
+        }
+
         shared_style_commit_library(library_now, source = "graph-editor", skip_graph_id = owner)
       },
       on_state_change = function(state_now) {
@@ -424,12 +510,12 @@
     } else NULL
     session$sendCustomMessage(
       "graph-client-edit-ready",
-      list(
+      app_json_safe_tree(list(
         id = id,
         single = TRUE,
         uiPanels = graph_ui_panels_for_id(id, canonical),
         browserPatch = patch_seed
-      )
+      ))
     )
     session$onFlushed(function() {
       session$sendCustomMessage("refresh-visible-graph-ui", list(id = graph_single_editor_id))

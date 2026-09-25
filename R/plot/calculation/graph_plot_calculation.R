@@ -598,6 +598,60 @@
         group_col = ".line_group__", output_col = ".line_group__"
       )
 
+      add_summary_line <- function(p0, z, xcol, ycol) {
+        boundary_cols <- if (nzchar(facet) && facet %in% names(z)) facet else character(0)
+        use_segments <- identical(linetype_mode, "__color__") &&
+          graph_line_path_requires_segments(
+            z,
+            group_col = ".line_group__",
+            colour_col = color_map_var,
+            linetype_col = linetype_map_var,
+            linetype_values = linetype_values,
+            boundary_cols = boundary_cols
+          )
+
+        if (isTRUE(use_segments)) {
+          seg <- graph_line_segment_data(
+            z, x_col = xcol, y_col = ycol, group_col = ".line_group__",
+            boundary_cols = boundary_cols
+          )
+          segment_map <- dynamic_aes(
+            xcol = xcol,
+            ycol = ycol,
+            xendcol = ".line_xend__",
+            yendcol = ".line_yend__",
+            colourcol = color_map_var,
+            linetypecol = linetype_map_var
+          )
+          segment_args <- list(
+            mapping = segment_map,
+            data = seg,
+            linewidth = input$line_width,
+            show.legend = graph_legend_layer_flags(legend_policy, "summary_line")
+          )
+          if (!has_color) segment_args$colour <- input$mean_color_mode
+          if (!effective_has_linetype) segment_args$linetype <- input$mean_linetype
+          return(p0 + do.call(geom_segment, segment_args))
+        }
+
+        line_map <- dynamic_aes(
+          xcol = xcol,
+          ycol = ycol,
+          groupcol = ".line_group__",
+          colourcol = color_map_var,
+          linetypecol = linetype_map_var
+        )
+        line_args <- list(
+          mapping = line_map,
+          data = z,
+          linewidth = input$line_width,
+          show.legend = graph_legend_layer_flags(legend_policy, "summary_line")
+        )
+        if (!has_color) line_args$colour <- input$mean_color_mode
+        if (!effective_has_linetype) line_args$linetype <- input$mean_linetype
+        p0 + do.call(geom_line, line_args)
+      }
+
       # Individual connection lines must never bridge different routes /
       # conditions of the same ID. Example:
       # ID5 × Route a and ID5 × Route b are two independent trajectories.
@@ -619,23 +673,11 @@
 
         p <- ggplot()
 
-        line_map <- dynamic_aes(
+        p <- add_summary_line(
+          p, d,
           xcol = if (has_id) ".x_raw" else ".x_group",
-          ycol = y,
-          groupcol = ".line_group__",
-          colourcol = color_map_var,
-          linetypecol = linetype_map_var
+          ycol = y
         )
-
-        line_args <- list(
-          mapping = line_map,
-          data = d,
-          linewidth = input$line_width,
-          show.legend = graph_legend_layer_flags(legend_policy, "summary_line")
-        )
-        if (!has_color) line_args$colour <- input$mean_color_mode
-        if (!effective_has_linetype) line_args$linetype <- input$mean_linetype
-        p <- p + do.call(geom_line, line_args)
 
         point_map <- dynamic_aes(
           xcol = if (has_id) ".x_raw" else ".x_group",
@@ -713,20 +755,7 @@
         p <- ggplot()
 
         add_summary_line_point <- function(p0) {
-          line_map <- dynamic_aes(
-            xcol = ".x_group",
-            ycol = "mean",
-            groupcol = ".line_group__",
-            colourcol = color_map_var,
-            linetypecol = linetype_map_var
-          )
-          line_args <- list(
-            mapping = line_map, data = s, linewidth = input$line_width,
-            show.legend = graph_legend_layer_flags(legend_policy, "summary_line")
-          )
-          if (!has_color) line_args$colour <- input$mean_color_mode
-          if (!effective_has_linetype) line_args$linetype <- input$mean_linetype
-          p0 <- p0 + do.call(geom_line, line_args)
+          p0 <- add_summary_line(p0, s, xcol = ".x_group", ycol = "mean")
 
           point_map <- dynamic_aes(
             xcol = ".x_group",

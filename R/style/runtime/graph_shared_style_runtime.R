@@ -203,11 +203,15 @@
         item <- lib$items[[b$axis[[axis_nm]] %||% ""]]
         if (is.list(item) && identical(item$kind, "axis_label") && isTRUE(item$manage$display)) {
           if (identical(axis_nm, "x")) {
-            if (!identical(as.character(input$xlab %||% ""), as.character(item$display))) {
+            current_xlab <- graph_label_value("xlab", input$xlab %||% "")
+            if (!identical(as.character(current_xlab), as.character(item$display))) {
               updateTextAreaInput(session, "xlab", value = item$display)
             }
-          } else if (!identical(as.character(input$ylab %||% ""), as.character(item$display))) {
-            updateTextAreaInput(session, "ylab", value = item$display)
+          } else {
+            current_ylab <- graph_label_value("ylab", input$ylab %||% "")
+            if (!identical(as.character(current_ylab), as.character(item$display))) {
+              updateTextAreaInput(session, "ylab", value = item$display)
+            }
           }
         }
       }
@@ -215,10 +219,15 @@
         item <- lib$items[[b$legends[[legend_key]]]]
         if (!is.list(item) || !identical(item$kind, "legend_title") || !isTRUE(item$manage$display)) next
         if (!identical(lt[[legend_key]], item$display)) { lt[[legend_key]] <- item$display; changed <- TRUE }
-        key <- graph_group_legend_key(list(mapping = list(color = input$colorvar,
-          position = input$groupvar), style = list(appearance = list(series_style_override = input$series_style_override))))
-        title_input <- if ((input$plot_type %||% "line") %in% c("bar", "box")) "legend_fill_title" else "legend_colour_title"
-        if (identical(legend_key, key) && !identical(input[[title_input]], item$display)) {
+        key <- graph_group_legend_key(list(mapping = list(
+          color = graph_mapping_value("color", input$colorvar %||% ""),
+          position = graph_mapping_value("position", input$groupvar %||% "")
+        ), style = list(appearance = list(
+          series_style_override = graph_appearance_value("series_style_override", input$series_style_override)
+        ))))
+        title_input <- if (graph_plot_value("type", input$plot_type %||% "line") %in% c("bar", "box")) "legend_fill_title" else "legend_colour_title"
+        current_legend_title <- graph_appearance_value(title_input, input[[title_input]] %||% "")
+        if (identical(legend_key, key) && !identical(current_legend_title, item$display)) {
           shared_style_pending_group_title(item$display)
           updateTextInput(session, "legend_group_title", value = item$display)
           updateTextInput(session, title_input, value = item$display)
@@ -251,10 +260,15 @@
     b <- shared_style_normalize_binding(shared_style_binding())
     if (!isTRUE(b$enabled) || !is.function(on_shared_style_library_change)) return()
 
-    # Dependencies that can represent linked user edits.
+    # Dependencies that can represent linked user edits. Browser-direct fixed
+    # controls are read through the accepted canonical/Figure working state;
+    # their Shiny mirrors intentionally stay stale.
     level_labels(); color_styles(); shape_styles(); linetype_styles(); legend_titles()
-    input$xlab; input$ylab; input$legend_colour_title; input$legend_fill_title
-    current_title <- if ((input$plot_type %||% "line") %in% c("bar", "box")) input$legend_fill_title else input$legend_colour_title
+    current_xlab <- graph_label_value("xlab", input$xlab %||% "")
+    current_ylab <- graph_label_value("ylab", input$ylab %||% "")
+    current_colour_title <- graph_appearance_value("legend_colour_title", input$legend_colour_title %||% "")
+    current_fill_title <- graph_appearance_value("legend_fill_title", input$legend_fill_title %||% "")
+    current_title <- if (graph_plot_value("type", input$plot_type %||% "line") %in% c("bar", "box")) current_fill_title else current_colour_title
     pending_title <- shared_style_pending_group_title()
     if (!is.null(pending_title)) {
       if (!identical(current_title, pending_title)) return()
@@ -271,11 +285,14 @@
     b_write$axis <- list(x = "", y = "")
 
     partial_state <- list(
-      mapping = list(color = input$colorvar, position = input$groupvar),
-      labels = list(xlab = input$xlab %||% "", ylab = input$ylab %||% ""),
+      mapping = list(
+        color = graph_mapping_value("color", input$colorvar %||% ""),
+        position = graph_mapping_value("position", input$groupvar %||% "")
+      ),
+      labels = list(xlab = current_xlab, ylab = current_ylab),
       style = list(
         appearance = list(legend_group_title = current_title,
-                          series_style_override = input$series_style_override),
+                          series_style_override = graph_appearance_value("series_style_override", input$series_style_override)),
         color_styles = isolate(color_styles()),
         shape_styles = isolate(shape_styles()),
         linetype_styles = isolate(linetype_styles()),

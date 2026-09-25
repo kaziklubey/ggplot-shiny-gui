@@ -1,3 +1,55 @@
+# Snapshot-side canonical accessor contract. The live Graph/Figure editor defines
+# the same helpers against accepted GraphState/browser working state. This
+# synchronous context already exposes canonical values as a plain `input` list,
+# so shared calculation code can use one API in both environments.
+graph_mapping_value <- function(key, fallback = "") {
+    input_key <- switch(
+      as.character(key %||% "")[1],
+      x = "xvar", y = "yvar", position = "groupvar", color = "colorvar",
+      linetype = "linetypevar", shape = "shapevar", id = "idvar",
+      facet = "facetvar", line_series_mode = "line_series_mode",
+      line_series_var = "line_series_var", external_error = "external_error_col",
+      external_ymin = "external_ymin_col", external_ymax = "external_ymax_col",
+      ""
+    )
+    if (!nzchar(input_key)) return(fallback)
+    value <- input[[input_key]]
+    if (is.null(value) || !length(value)) fallback else value[[1]]
+  }
+
+graph_plot_value <- function(key, fallback = "") {
+    input_key <- switch(
+      as.character(key %||% "")[1],
+      type = "plot_type", summary = "summary_type", summary_unit = "summary_unit",
+      external_error_mode = "external_error_mode", show_raw = "show_raw",
+      connect_id = "connect_id", scatter_connect_mode = "scatter_connect_mode",
+      line_breaks = "line_breaks", ""
+    )
+    if (!nzchar(input_key)) return(fallback)
+    value <- input[[input_key]]
+    if (is.null(value) || !length(value)) return(fallback)
+    if (identical(input_key, "line_breaks")) return(value)
+    value[[1]]
+  }
+
+graph_label_value <- function(key, fallback = "") {
+    input_key <- switch(
+      as.character(key %||% "")[1],
+      xlab = "xlab", ylab = "ylab", title = "title", ymin = "ymin", ymax = "ymax",
+      y_top_to_tick = "y_top_to_tick", ""
+    )
+    if (!nzchar(input_key)) return(fallback)
+    value <- input[[input_key]]
+    if (is.null(value) || !length(value)) fallback else value[[1]]
+  }
+
+graph_appearance_value <- function(key, fallback = "") {
+    input_key <- as.character(key %||% "")[1]
+    if (!nzchar(input_key)) return(fallback)
+    value <- input[[input_key]]
+    if (is.null(value) || !length(value)) fallback else value[[1]]
+  }
+
 # Private, synchronous state calculation helpers.
 legend_title_value <- function(key, default_title) {
     st <- legend_titles()

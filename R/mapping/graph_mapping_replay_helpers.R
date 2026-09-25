@@ -60,6 +60,8 @@ graph_replay_mapping_plan <- function(cfg) {
       raw = raw,
       data = d,
       recipe = recipe,
+      transform_applied = isTRUE(transformed$transformed),
+      transform_warning = transformed$warning %||% NULL,
       raw_cols = raw_cols,
       reshape_columns = reshape_cols,
       cols = cols,
@@ -79,6 +81,64 @@ graph_replay_mapping_plan <- function(cfg) {
       external_ymax = choose(mp$external_ymax, numeric_cols, "", allow_empty = TRUE)
     )
   }
+
+
+# Reconcile Mapping against any accepted change that can alter the effective
+# data schema (raw Data text or Wide→Long recipe). This is one pure state step:
+# Mapping is resolved from the transformed data before the canonical commit.
+# Invalid/partial Data/reshape deliberately leaves Mapping unchanged so the
+# ordinary validation/recovery UI can handle the transient state safely.
+graph_reconcile_mapping_for_schema_change <- function(previous_state, state) {
+  if (!is.list(state)) {
+    return(list(state = state, plan = NULL, changed_keys = character(0)))
+  }
+
+  mapping_plan <- tryCatch(graph_replay_mapping_plan(state), error = function(e) NULL)
+  if (!is.list(mapping_plan)) {
+    return(list(state = state, plan = NULL, changed_keys = character(0)))
+  }
+  reshape_enabled <- isTRUE((state$reshape %||% list())$enabled)
+  if (isTRUE(reshape_enabled) && !isTRUE(mapping_plan$transform_applied)) {
+    return(list(state = state, plan = mapping_plan, changed_keys = character(0)))
+  }
+
+  old_mapping <- if (is.list(previous_state) && is.list(previous_state$mapping)) previous_state$mapping else list()
+  current_mapping <- if (is.list(state$mapping)) state$mapping else list()
+  resolved_mapping <- list(
+    x = mapping_plan$x,
+    y = mapping_plan$y,
+    color = mapping_plan$color,
+    linetype = mapping_plan$linetype,
+    shape = mapping_plan$shape,
+    id = mapping_plan$id,
+    facet = mapping_plan$facet,
+    position = mapping_plan$position,
+    line_series_mode = mapping_plan$line_series_mode,
+    line_series_var = mapping_plan$line_series_var,
+    external_error = mapping_plan$external_error,
+    external_ymin = mapping_plan$external_ymin,
+    external_ymax = mapping_plan$external_ymax
+  )
+
+  state$mapping <- utils::modifyList(current_mapping, resolved_mapping)
+  if (is.list(state$reshape)) {
+    state$reshape$columns <- as.character(mapping_plan$reshape_columns %||% character(0))
+  }
+
+  changed_keys <- names(resolved_mapping)[vapply(names(resolved_mapping), function(nm) {
+    !identical(
+      graph_state_scalar(old_mapping[[nm]], NULL),
+      graph_state_scalar(resolved_mapping[[nm]], NULL)
+    )
+  }, logical(1))]
+
+  list(state = state, plan = mapping_plan, changed_keys = changed_keys)
+}
+
+# Backward-compatible focused name used by the Data transport boundary.
+graph_reconcile_mapping_after_data_change <- function(previous_state, state) {
+  graph_reconcile_mapping_for_schema_change(previous_state, state)
+}
 
 # A queued commit belongs to the generation and phase in which it was captured.
 graph_commit_candidate_current <- function(candidate, generation, active) {

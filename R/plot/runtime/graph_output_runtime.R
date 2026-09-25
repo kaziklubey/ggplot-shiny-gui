@@ -1,58 +1,17 @@
   # ============================================================
   # Outputs
   # ============================================================
-  # Plot size: sliderと直接数値入力を同期
-  observeEvent(input$plot_width_px, {
-    z <- safe_num1(input$plot_width_px, NA_real_)
-    if (is.finite(z)) {
-      cur <- safe_num1(input$plot_width_px_direct, NA_real_)
-      if (!is.finite(cur) || abs(cur - z) > 0.5) {
-        updateNumericInput(session, "plot_width_px_direct", value = z)
-      }
-    }
-  }, ignoreInit = FALSE)
-
-  observeEvent(input$plot_width_px_direct, {
-    z <- safe_num1(input$plot_width_px_direct, NA_real_)
-    if (is.finite(z)) {
-      z <- max(250, min(2000, z))
-      cur <- safe_num1(input$plot_width_px, NA_real_)
-      if (z >= 300 && z <= 1400 && (!is.finite(cur) || abs(cur - z) > 0.5)) {
-        updateSliderInput(session, "plot_width_px", value = z)
-      }
-    }
-  }, ignoreInit = FALSE)
-
-  observeEvent(input$plot_height_px, {
-    z <- safe_num1(input$plot_height_px, NA_real_)
-    if (is.finite(z)) {
-      cur <- safe_num1(input$plot_height_px_direct, NA_real_)
-      if (!is.finite(cur) || abs(cur - z) > 0.5) {
-        updateNumericInput(session, "plot_height_px_direct", value = z)
-      }
-    }
-  }, ignoreInit = FALSE)
-
-  observeEvent(input$plot_height_px_direct, {
-    z <- safe_num1(input$plot_height_px_direct, NA_real_)
-    if (is.finite(z)) {
-      z <- max(180, min(1400, z))
-      cur <- safe_num1(input$plot_height_px, NA_real_)
-      if (z >= 220 && z <= 900 && (!is.finite(cur) || abs(cur - z) > 0.5)) {
-        updateSliderInput(session, "plot_height_px", value = z)
-      }
-    }
-  }, ignoreInit = FALSE)
-
+  # Plot size is browser-owned. The slider/direct numeric aliases are kept in
+  # sync in app_client.js; R reads only the accepted canonical/Figure working
+  # appearance value. This avoids depending on Shiny mirrors that are purposely
+  # prevented from reaching the server by browser-direct transport.
   effective_plot_width_px <- reactive({
-    z <- safe_num1(input$plot_width_px_direct, NA_real_)
-    if (!is.finite(z)) z <- safe_num1(input$plot_width_px, 600)
+    z <- safe_num1(graph_appearance_value("plot_width_px", 600), 600)
     max(250, min(2000, z))
   })
 
   effective_plot_height_px <- reactive({
-    z <- safe_num1(input$plot_height_px_direct, NA_real_)
-    if (!is.finite(z)) z <- safe_num1(input$plot_height_px, 600)
+    z <- safe_num1(graph_appearance_value("plot_height_px", 600), 600)
     max(180, min(1400, z))
   })
 
@@ -227,7 +186,7 @@
     )
 
     p <- graph_render_plot_safely(function() panel_sized_plot())
-    app_draw_static_plot(p)
+    graph_draw_plot_safely(p)
 
     # The completed Plot belongs to the semantic target released by the render
     # revision boundary.  Do not re-read browser inputs here: dynamic controls
@@ -267,8 +226,9 @@
   data_view_is_stale <- reactiveVal(FALSE)
 
   data_view_data <- reactive({
-    # input$textを明示依存にして、貼り付け更新を確実に拾う。
-    input$text
+    # plot_source_data() now depends on the attached canonical GraphState. A
+    # malformed/incomplete paste therefore invalidates here through the same
+    # source as Plot/Statistics; the last valid Data View is retained below.
     dnow <- tryCatch(plot_source_data(), error = function(e) NULL)
 
     if (!is.null(dnow) && is.data.frame(dnow)) {
@@ -308,7 +268,13 @@
     x <- if (!nzchar(x0)) "X" else x0
     y <- if (!nzchar(y0)) "Y" else y0
     g <- effective_position_var(dat())
-    summary_label <- switch(input$summary_type,
+    plot_type_now <- graph_plot_value("type", input$plot_type %||% "line")
+    color_now <- graph_mapping_value("color", input$colorvar %||% "")
+    linetype_now <- graph_mapping_value("linetype", input$linetypevar %||% "__color__")
+    shape_now <- graph_mapping_value("shape", input$shapevar %||% "__color__")
+    facet_now <- graph_mapping_value("facet", input$facetvar %||% "")
+    summary_now <- graph_plot_value("summary", input$summary_type %||% "mean")
+    summary_label <- switch(summary_now,
                             value = "値（集計しない）",
                             mean = "平均",
                             sd = "平均 ± SD",
@@ -318,7 +284,7 @@
 
     summary_unit_label <- if (isTRUE(direct_value_mode())) {
       "使用しない（入力行をそのまま使用）"
-    } else if (identical(input$summary_unit %||% "row", "id_mean")) {
+    } else if (identical(graph_plot_value("summary_unit", input$summary_unit %||% "row"), "id_mean")) {
       "ID mean -> between-ID summary"
     } else {
       "row"
@@ -326,17 +292,17 @@
 
     external_error_label <- if (isTRUE(direct_value_mode())) {
       switch(
-        input$external_error_mode %||% "none",
-        symmetric = paste0("Y ± ", input$external_error_col %||% ""),
+        graph_plot_value("external_error_mode", input$external_error_mode %||% "none"),
+        symmetric = paste0("Y ± ", graph_mapping_value("external_error", input$external_error_col %||% "")),
         bounds = paste0(
-          "lower=", input$external_ymin_col %||% "",
-          " / upper=", input$external_ymax_col %||% ""
+          "lower=", graph_mapping_value("external_ymin", input$external_ymin_col %||% ""),
+          " / upper=", graph_mapping_value("external_ymax", input$external_ymax_col %||% "")
         ),
         "なし"
       )
     } else {
       switch(
-        input$summary_type %||% "mean",
+        graph_plot_value("summary", input$summary_type %||% "mean"),
         sd = "GUI計算 SD",
         sem = "GUI計算 SEM",
         ci95 = "GUI計算 95% CI",
@@ -346,21 +312,21 @@
 
     paste0(
       "# GUIで作成した図の主要設定\n",
-      "# Plot: ", input$plot_type, "\n",
-      "# X: ", x, " / Y: ", y, if (nzchar(g)) paste0(" / Position: ", g) else "", if (!is.null(input$colorvar) && nzchar(input$colorvar)) paste0(" / Color: ", input$colorvar) else "",
-      if (!is.null(input$linetypevar) && nzchar(input$linetypevar) && input$linetypevar != "__color__") paste0(" / Linetype: ", input$linetypevar) else "",
-      if (!is.null(input$shapevar) && nzchar(input$shapevar) && input$shapevar != "__color__") paste0(" / Shape: ", input$shapevar) else "", "\n",
+      "# Plot: ", plot_type_now, "\n",
+      "# X: ", x, " / Y: ", y, if (nzchar(g)) paste0(" / Position: ", g) else "", if (nzchar(color_now)) paste0(" / Color: ", color_now) else "",
+      if (nzchar(linetype_now) && linetype_now != "__color__") paste0(" / Linetype: ", linetype_now) else "",
+      if (nzchar(shape_now) && shape_now != "__color__") paste0(" / Shape: ", shape_now) else "", "\n",
       "# Summary: ", summary_label, "\n",
       "# Summary unit: ", summary_unit_label, "\n",
       "# Error bar: ", external_error_label, "\n",
       "# X order: ", paste(x_levels(), collapse = ", "), "\n",
       if (length(group_levels())) paste0("# Position order: ", paste(group_levels(), collapse = ", "), "\n") else "",
-      if (!is.null(input$facetvar) && nzchar(input$facetvar)) {
-        fobs <- unique(as.character(dat()[[input$facetvar]]))
+      if (nzchar(facet_now) && facet_now %in% names(dat())) {
+        fobs <- unique(as.character(dat()[[facet_now]]))
         fobs <- fobs[!is.na(fobs)]
         paste0(
           "# Facet order: ",
-          paste(get_saved_order("facet", input$facetvar, fobs), collapse = ", "),
+          paste(get_saved_order("facet", facet_now, fobs), collapse = ", "),
           "\n"
         )
       } else "",
@@ -375,4 +341,3 @@
   })
 
   init_timing_emit("SETTINGS-BEGIN")
-

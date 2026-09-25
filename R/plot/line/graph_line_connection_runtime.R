@@ -72,12 +72,12 @@
     invisible(valid)
   }
 
-  # Browser edits become canonical only outside Graph replay. Programmatic
-  # updates that keep the same selection are harmless; replay updates are
-  # ignored while the transaction is active.
-  observeEvent(input$line_breaks, {
+  # Browser-direct edits are accepted into GraphState/Figure working state
+  # without updating the server-side Shiny mirror. Mirror the canonical value
+  # into the module-local line-break state instead of observing input$line_breaks.
+  observe({
     if (isTRUE(graph_state_replay_active())) return(invisible(NULL))
-    if (!identical(input$plot_type %||% "line", "line")) return(invisible(NULL))
+    if (!identical(graph_plot_value("type", input$plot_type %||% "line"), "line")) return(invisible(NULL))
 
     d <- tryCatch(plot_data(), error = function(e) NULL)
     x_now <- as.character(resolved_xvar() %||% "")[1]
@@ -88,10 +88,13 @@
       levels_now <- unique(as.character(d[[x_now]]))
       levels_now <- levels_now[!is.na(levels_now)]
     }
-    selected <- graph_line_break_normalize(input$line_breaks %||% character(0), levels_now)
-    line_break_set_state(selected, x_var = x_now, source = "browser-user")
+    selected <- graph_line_break_normalize(
+      graph_plot_value("line_breaks", isolate(line_break_state())),
+      levels_now
+    )
+    line_break_set_state(selected, x_var = x_now, source = "canonical-browser")
     invisible(NULL)
-  }, ignoreInit = TRUE, priority = 130)
+  }, priority = 130)
 
   # Keep labels/choices synchronized with the effective X Category order. If
   # the current choice universe cannot represent a saved canonical break, do
@@ -99,7 +102,7 @@
   # transient that previously occurred just after duplicate/Graph replay.
   observe({
     if (isTRUE(graph_state_replay_active())) return(invisible(NULL))
-    if (!identical(input$plot_type %||% "line", "line")) return(invisible(NULL))
+    if (!identical(graph_plot_value("type", input$plot_type %||% "line"), "line")) return(invisible(NULL))
 
     d <- tryCatch(plot_data(), error = function(e) NULL)
     x_now <- as.character(resolved_xvar() %||% "")[1]

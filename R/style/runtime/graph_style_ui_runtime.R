@@ -10,7 +10,7 @@
   observe({
     style_restore_epoch()
     d <- dat(); v <- resolve_color_var(d); lev <- style_levels()
-    bar_box_now <- (input$plot_type %||% "line") %in% c("bar", "box")
+    bar_box_now <- graph_plot_value("type", input$plot_type %||% "line") %in% c("bar", "box")
     if (!nzchar(v) || !length(lev)) {
       graph_slot_pool_publish(
         "color_style", "color_fill", list(),
@@ -42,9 +42,28 @@
     if (isTRUE(restoring_style_state())) return()
     d <- dat(); v <- resolve_color_var(d); lev <- style_levels()
     if (!nzchar(v) || !length(lev)) return()
-    tree <- isolate(color_styles()); br <- tree[[v]] %||% list(); pal <- default_palette(length(lev), input$palette_preset)
+
+    # Browser-direct editors do not write palette_preset back to the Shiny
+    # input mirror.  The apply action must therefore use the same accepted
+    # canonical / Figure-owned working state as the derived Appearance UI.
+    preset <- as.character(graph_appearance_value(
+      "palette_preset", input$palette_preset %||% "okabe_ito"
+    ) %||% "okabe_ito")[[1]]
+    if (!nzchar(preset)) preset <- "okabe_ito"
+
+    tree <- isolate(color_styles())
+    br <- tree[[v]] %||% list()
+    pal <- default_palette(length(lev), preset)
     for (i in seq_along(lev)) br[[lev[i]]] <- pal[i]
-    tree[[v]] <- br; color_styles(tree); style_restore_epoch(isolate(style_restore_epoch()) + 1L)
+    tree[[v]] <- br
+    color_styles(tree)
+    style_restore_epoch(isolate(style_restore_epoch()) + 1L)
+    diag("PALETTE-APPLY", paste0(
+      "preset=", preset,
+      " variable=", v,
+      " levels=", length(lev),
+      " profile=", as.character(editor_profile %||% "unknown")[[1]]
+    ))
   })
 
   observe({
@@ -90,7 +109,7 @@
   # ============================================================
   observe({
     style_restore_epoch(); keys <- series_combo_levels()
-    enabled <- isTRUE(input$series_style_override)
+    enabled <- isTRUE(graph_appearance_value("series_style_override", input$series_style_override))
     if (!enabled || !length(keys)) {
       graph_slot_pool_publish(
         "series_style", "color", list(),
@@ -128,8 +147,8 @@
 
   # ============================================================
   regression_levels <- reactive({
-    if (!isTRUE(input$scatter_regression)) return(character(0))
-    mode <- input$scatter_regression_group %||% "overall"
+    if (!isTRUE(graph_appearance_value("scatter_regression", input$scatter_regression))) return(character(0))
+    mode <- graph_appearance_value("scatter_regression_group", input$scatter_regression_group %||% "overall")
     if (identical(mode, "overall")) return(character(0))
 
     d <- dat()
@@ -287,7 +306,8 @@
     if (!nzchar(cvar)) return(NULL)
 
     g <- effective_position_var(d)
-    combo <- isTRUE(input$series_style_override) && nzchar(g) && !identical(g, cvar)
+    combo <- isTRUE(graph_appearance_value("series_style_override", input$series_style_override)) &&
+      nzchar(g) && !identical(g, cvar)
 
     if (combo) {
       observed <- graph_series_combo_key(as.character(d[[cvar]]), as.character(d[[g]]))
@@ -372,7 +392,11 @@
     if (isTRUE(restoring_style_state())) return()
     ctx <- raw_custom_colour_context()
     if (is.null(ctx) || !length(ctx$levels)) return()
-    pal <- default_palette(length(ctx$levels), input$raw_palette_preset)
+    raw_preset <- as.character(graph_appearance_value(
+      "raw_palette_preset", input$raw_palette_preset %||% "okabe_ito"
+    ) %||% "okabe_ito")[[1]]
+    if (!nzchar(raw_preset)) raw_preset <- "okabe_ito"
+    pal <- default_palette(length(ctx$levels), raw_preset)
     tree <- isolate(raw_group_colors())
     br <- tree[[ctx$key]] %||% list()
     for (i in seq_along(ctx$levels)) br[[ctx$levels[i]]] <- pal[i]

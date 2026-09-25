@@ -61,7 +61,7 @@ div(
           fileInput(
             "upload_project_all",
             NULL,
-            accept = c(".ggplotproj", ".ggplotpack", ".json"),
+            accept = c(".ggplotproj", ".ggplotpack"),
             buttonLabel = "開く",
             placeholder = ""
           )

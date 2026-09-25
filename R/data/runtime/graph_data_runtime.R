@@ -33,15 +33,57 @@
       return(validate_editor_raw_data(plan$raw))
     }
 
+    # v4.0.1-data-canonical-bootstrap1: once a Graph owns the persistent Editor,
+    # Data is read only from the accepted canonical GraphState attachment. The one
+    # exception is the pristine startup bootstrap before any GraphState has been
+    # attached: the default Graph template must be capturable from the mounted Ace
+    # controls. This fallback is unreachable after the first canonical attach, so
+    # ordinary user edits never reintroduce the old input$text/canonical split.
+    base <- attached_state_seed()
+    if (is.list(base) && !is.null(base$data_text)) {
+      return(validate_editor_raw_data(
+        graph_parse_pasted_data(graph_state_scalar(base$data_text, ""))
+      ))
+    }
     if (isTRUE(editor_has_data_controls)) {
-      req(input$text)
       return(validate_editor_raw_data(graph_parse_pasted_data(input$text)))
     }
-
-    base <- attached_state_seed()
-    req(is.list(base), !is.null(base$data_text))
-    validate_editor_raw_data(graph_parse_pasted_data(base$data_text))
+    req(FALSE)
   })
+
+
+  # v4.0.1-mapping-style-canonical1: Data text is the one Full-Editor field that does
+  # not use the generic browser-patch queue. shinyAce owns browser -> Shiny
+  # rate policy; once input$text settles, send that single value to the outer
+  # canonical GraphState owner. Plot/Data View continue to read only the accepted
+  # attached GraphState, so input$text is transport only, never canonical truth.
+  observeEvent(input$text, {
+    if (!isTRUE(editor_has_data_controls)) return()
+    if (!graph_editor_profile_has(editor_profile, "full_shell")) return()
+    if (isTRUE(graph_state_replay_active())) return()
+    if (!is.function(on_data_text_commit)) return()
+
+    base <- isolate(attached_state_seed())
+    if (!is.list(base)) return()
+
+    text_now <- as.character(input$text %||% "")[1]
+    if (identical(text_now, graph_state_scalar(base$data_text, ""))) return()
+
+    accepted <- tryCatch(
+      isTRUE(on_data_text_commit(text_now)),
+      error = function(e) {
+        diag("DATA-TEXT-TRANSPORT", paste0("commit error: ", conditionMessage(e)))
+        FALSE
+      }
+    )
+    if (isTRUE(accepted)) {
+      line_count <- if (!nzchar(text_now)) 0L else length(strsplit(text_now, "\n", fixed = TRUE)[[1]])
+      diag(
+        "DATA-TEXT-TRANSPORT",
+        paste0("accepted chars=", nchar(text_now, type = "chars"), " lines=", line_count)
+      )
+    }
+  }, ignoreInit = TRUE, priority = 170)
 
 
   # Wide→Long変換エラーはアプリ全体へ伝播させず、
@@ -73,7 +115,7 @@
     msg <- reshape_warning()
     if (is.null(msg) || !nzchar(msg)) return(NULL)
 
-    editing <- isTRUE(reshape_edit_recovery()) && isTRUE(input$reshape_wide)
+    editing <- isTRUE(reshape_edit_recovery()) && isTRUE(graph_reshape_value("enabled", input$reshape_wide))
     div(
       class = "alert alert-warning",
       style = "padding:6px 9px; margin-top:6px; margin-bottom:8px;",
@@ -108,7 +150,7 @@
     restore_keep <- if (!is.null(restore_cols) && length(restore_cols)) {
       as.character(restore_cols)[as.character(restore_cols) %in% cols]
     } else character(0)
-    current_cols <- isolate(input$reshape_columns)
+    current_cols <- isolate(graph_reshape_value("columns", input$reshape_columns))
     current_keep <- if (!is.null(current_cols) && length(current_cols)) {
       as.character(current_cols)[as.character(current_cols) %in% cols]
     } else character(0)
@@ -126,7 +168,7 @@
     if (isTRUE(graph_state_replay_active())) return()
     seed <- reshape_restore_seed()
     if (is.null(seed)) return()
-    current <- input$reshape_columns %||% character(0)
+    current <- graph_reshape_value("columns", input$reshape_columns %||% character(0))
     if (identical(as.character(current), as.character(seed))) reshape_restore_seed(NULL)
   }, priority = 119)
 
@@ -137,6 +179,20 @@
       return(plan$recipe)
     }
 
+    # Reshape follows the same ownership rule as raw Data. Canonical GraphState is
+    # authoritative after attach; only the pristine startup bootstrap may read the
+    # mounted Shiny controls so the initial sample/default GraphState can be built.
+    base <- attached_state_seed()
+    if (is.list(base)) {
+      r <- base$reshape %||% list()
+      return(graph_plot_data_transform_recipe(
+        enabled = isTRUE(r$enabled),
+        row_id = isTRUE(r$row_id),
+        columns = r$columns %||% character(0),
+        x_name = r$x_name %||% "Time",
+        y_name = r$y_name %||% "Value"
+      ))
+    }
     if (isTRUE(editor_has_reshape_controls)) {
       return(graph_plot_data_transform_recipe(
         enabled = isTRUE(input$reshape_wide),
@@ -146,17 +202,7 @@
         y_name = input$reshape_y_name %||% "Value"
       ))
     }
-
-    base <- attached_state_seed()
-    req(is.list(base))
-    r <- base$reshape %||% list()
-    graph_plot_data_transform_recipe(
-      enabled = isTRUE(r$enabled),
-      row_id = isTRUE(r$row_id),
-      columns = r$columns %||% character(0),
-      x_name = r$x_name %||% "Time",
-      y_name = r$y_name %||% "Value"
-    )
+    req(FALSE)
   })
 
   # Plot source data is the raw Graph dataset plus only the Plot-owned transform
@@ -192,7 +238,7 @@
     if (isTRUE(graph_state_replay_active())) return()
 
     msg <- reshape_warning()
-    enabled <- isTRUE(input$reshape_wide)
+    enabled <- isTRUE(graph_reshape_value("enabled", input$reshape_wide))
 
     # Do not clear recovery while the checkbox is OFF: the next manual enable
     # needs that grace period.  A successful enabled transform ends recovery.
@@ -230,7 +276,7 @@
     seed <- restore_position_seed()
     if (is.null(seed) || !length(seed)) return()
     expected <- as.character(seed)[1]
-    actual <- input$groupvar %||% ""
+    actual <- graph_mapping_value("position", input$groupvar %||% "")
     if (identical(actual, expected)) {
       restore_position_seed(NULL)
     }
@@ -241,7 +287,7 @@
     seed <- restore_linetype_seed()
     if (is.null(seed) || !length(seed)) return()
     expected <- as.character(seed)[1]
-    actual <- input$linetypevar %||% "__color__"
+    actual <- graph_mapping_value("linetype", input$linetypevar %||% "__color__")
     if (identical(actual, expected)) {
       restore_linetype_seed(NULL)
     }
@@ -282,12 +328,12 @@
       fallback
     }
 
-    selected_x <- keep(input$xvar, cols, default_x)
-    selected_y <- keep(input$yvar, numeric_cols, default_y)
-    selected_color <- keep(input$colorvar, cols, default_color, allow_empty = TRUE)
-    selected_shape <- keep(input$shapevar, cols, "__color__", specials = c("", "__color__"))
-    selected_id <- keep(input$idvar, cols, default_id, allow_empty = TRUE)
-    selected_facet <- keep(input$facetvar, cols, "", allow_empty = TRUE)
+    selected_x <- keep(graph_mapping_value("x", input$xvar), cols, default_x)
+    selected_y <- keep(graph_mapping_value("y", input$yvar), numeric_cols, default_y)
+    selected_color <- keep(graph_mapping_value("color", input$colorvar %||% ""), cols, default_color, allow_empty = TRUE)
+    selected_shape <- keep(graph_mapping_value("shape", input$shapevar %||% "__color__"), cols, "__color__", specials = c("", "__color__"))
+    selected_id <- keep(graph_mapping_value("id", input$idvar %||% ""), cols, default_id, allow_empty = TRUE)
+    selected_facet <- keep(graph_mapping_value("facet", input$facetvar %||% ""), cols, "", allow_empty = TRUE)
 
     cfg <- isolate(graph_state_replay_target())
     mp <- cfg$mapping
@@ -327,7 +373,7 @@
     color_now <- resolve_color_var(d)
     if (!graph_mapping_choices_changed("group", list(d, color_now))) return()
 
-    current_linetype <- isolate(input$linetypevar)
+    current_linetype <- isolate(graph_mapping_value("linetype", input$linetypevar %||% "__color__"))
     if (is.null(current_linetype) || !length(current_linetype)) current_linetype <- if (nzchar(color_now)) "__color__" else ""
     current_linetype <- as.character(current_linetype)[1]
     if (!current_linetype %in% c("", "__color__", cols)) current_linetype <- if (nzchar(color_now)) "__color__" else ""
@@ -338,7 +384,7 @@
       if (seeded_linetype %in% c("", "__color__", cols)) current_linetype <- seeded_linetype
     }
 
-    current_group <- isolate(input$groupvar)
+    current_group <- isolate(graph_mapping_value("position", input$groupvar %||% ""))
     if (is.null(current_group) || !length(current_group)) current_group <- ""
     current_group <- as.character(current_group)[1]
     if (!current_group %in% c("", cols)) current_group <- ""
@@ -359,7 +405,7 @@
       selected = current_group
     )
 
-    current_series_var <- isolate(input$line_series_var %||% "")
+    current_series_var <- isolate(graph_mapping_value("line_series_var", input$line_series_var %||% ""))
     if (!nzchar(current_series_var) || !current_series_var %in% cols) current_series_var <- ""
     cfg_series <- isolate(graph_state_replay_target())
     saved_series_var <- if (is.list(cfg_series)) json_chr((cfg_series$mapping %||% list())$line_series_var, "") else ""
@@ -387,7 +433,7 @@
     numeric_cols <- unique(all_names[numeric_flags & all_names %in% cols])
     if (!length(numeric_cols)) return()
 
-    y_now <- input$yvar %||% ""
+    y_now <- graph_mapping_value("y", input$yvar %||% "")
     if (!graph_mapping_choices_changed("external", list(d, y_now))) return()
     other_numeric <- setdiff(numeric_cols, y_now)
     if (!length(other_numeric)) other_numeric <- numeric_cols
@@ -415,19 +461,19 @@
     }
 
     sym_selected <- choose_column(
-      input$external_error_col,
+      graph_mapping_value("external_error", input$external_error_col %||% ""),
       c("sem", "se", "stderr", "std_error", "sd", "error", "err"),
       other_numeric,
       restore_external_error_seed
     )
     low_selected <- choose_column(
-      input$external_ymin_col,
+      graph_mapping_value("external_ymin", input$external_ymin_col %||% ""),
       c("ci_low", "ci_lower", "lower", "low", "lwr", "ymin"),
       other_numeric,
       restore_external_ymin_seed
     )
     high_selected <- choose_column(
-      input$external_ymax_col,
+      graph_mapping_value("external_ymax", input$external_ymax_col %||% ""),
       c("ci_high", "ci_upper", "upper", "high", "upr", "ymax"),
       other_numeric,
       restore_external_ymax_seed
@@ -468,39 +514,98 @@
       invisible(NULL)
     }
 
-    release_seed(restore_external_error_seed, input$external_error_col)
-    release_seed(restore_external_ymin_seed, input$external_ymin_col)
-    release_seed(restore_external_ymax_seed, input$external_ymax_col)
+    release_seed(restore_external_error_seed, graph_mapping_value("external_error", input$external_error_col %||% ""))
+    release_seed(restore_external_ymin_seed, graph_mapping_value("external_ymin", input$external_ymin_col %||% ""))
+    release_seed(restore_external_ymax_seed, graph_mapping_value("external_ymax", input$external_ymax_col %||% ""))
   })
 
-  observeEvent(input$plot_type, {
-    pt <- input$plot_type %||% "line"
+  observe({
+    pt <- graph_plot_value("type", input$plot_type %||% "line")
     if (!pt %in% c("line", "bar", "box")) restore_position_seed(NULL)
     if (!pt %in% c("line", "scatter")) restore_linetype_seed(NULL)
-  }, ignoreInit = TRUE)
+  })
 
   # v3.73.2.18: groupvar is one persistent Mapping input for line/bar/box.
   # The old line-only position_var_ui remount was removed.
 
+  # Browser-direct controls are resolved through one canonical read boundary.
+  # Full Editor reads the attached accepted GraphState; Figure Controls read the
+  # frozen Figure-owned state plus their local working overlay.
+  graph_mapping_value <- function(key, fallback = "") {
+    input_key <- switch(
+      as.character(key %||% "")[1],
+      x = "xvar", y = "yvar", position = "groupvar", color = "colorvar",
+      linetype = "linetypevar", shape = "shapevar", id = "idvar",
+      facet = "facetvar", line_series_mode = "line_series_mode",
+      line_series_var = "line_series_var", external_error = "external_error_col",
+      external_ymin = "external_ymin_col", external_ymax = "external_ymax_col",
+      ""
+    )
+    if (!nzchar(input_key)) return(fallback)
+    graph_browser_owned_scalar(input_key, fallback)
+  }
+
+  graph_plot_value <- function(key, fallback = "") {
+    input_key <- switch(
+      as.character(key %||% "")[1],
+      type = "plot_type", summary = "summary_type", summary_unit = "summary_unit",
+      external_error_mode = "external_error_mode", show_raw = "show_raw",
+      connect_id = "connect_id", scatter_connect_mode = "scatter_connect_mode",
+      line_breaks = "line_breaks", ""
+    )
+    if (!nzchar(input_key)) return(fallback)
+    if (identical(input_key, "line_breaks")) {
+      return(graph_browser_owned_value(input_key, fallback))
+    }
+    graph_browser_owned_scalar(input_key, fallback)
+  }
+
+  graph_label_value <- function(key, fallback = "") {
+    input_key <- switch(
+      as.character(key %||% "")[1],
+      xlab = "xlab", ylab = "ylab", title = "title", ymin = "ymin", ymax = "ymax",
+      y_top_to_tick = "y_top_to_tick", ""
+    )
+    if (!nzchar(input_key)) return(fallback)
+    graph_browser_owned_scalar(input_key, fallback)
+  }
+
+  graph_reshape_value <- function(key, fallback = NULL) {
+    input_key <- switch(
+      as.character(key %||% "")[1],
+      enabled = "reshape_wide", row_id = "reshape_row_id", columns = "reshape_columns",
+      x_name = "reshape_x_name", y_name = "reshape_y_name", ""
+    )
+    if (!nzchar(input_key)) return(fallback)
+    if (identical(input_key, "reshape_columns")) {
+      return(graph_browser_owned_value(input_key, fallback))
+    }
+    graph_browser_owned_scalar(input_key, fallback)
+  }
+
+  graph_appearance_value <- function(key, fallback = "") {
+    graph_browser_owned_scalar(as.character(key %||% "")[1], fallback)
+  }
+
   effective_position_var <- function(d = NULL) {
-    plot_now <- input$plot_type %||% "line"
+    plot_now <- graph_plot_value("type", input$plot_type %||% "line")
     if (!plot_now %in% c("line", "bar", "box")) return("")
-    v <- input$groupvar %||% ""
+    v <- graph_mapping_value("position", input$groupvar %||% "")
     if (!has_selection(v)) return("")
     if (!is.null(d) && !v %in% names(d)) return("")
     v
   }
 
   resolve_color_var <- function(d) {
-    mode <- input$colorvar %||% ""
+    mode <- graph_mapping_value("color", input$colorvar %||% "")
     if (identical(mode, "__fixed__") || !nzchar(mode)) return("")
     if (has_selection(mode) && mode %in% names(d)) mode else ""
   }
 
   resolve_linetype_var <- function(d) {
     # LinetypeはLine、またはScatterの接続線で使用する。
-    if (!(input$plot_type %||% "line") %in% c("line", "scatter")) return("")
-    mode <- input$linetypevar %||% "__color__"
+    if (!graph_plot_value("type", input$plot_type %||% "line") %in% c("line", "scatter")) return("")
+    mode <- graph_mapping_value("linetype", input$linetypevar %||% "__color__")
     if (identical(mode, "__color__")) {
       return(resolve_color_var(d))
     }
@@ -508,7 +613,7 @@
   }
 
   resolve_shape_var <- function(d) {
-    mode <- input$shapevar %||% "__color__"
+    mode <- graph_mapping_value("shape", input$shapevar %||% "__color__")
     if (identical(mode, "__color__")) {
       return(resolve_color_var(d))
     }
@@ -523,12 +628,12 @@
       resolve_color_var(d),
       resolve_linetype_var(d),
       resolve_shape_var(d),
-      input$facetvar %||% ""
+      graph_mapping_value("facet", input$facetvar %||% "")
     )
     vars <- unique(vars[nzchar(vars) & vars %in% names(d)])
 
     # Scatterの数値Xはカテゴリ名変更の対象外。
-    if (identical(input$plot_type, "scatter") &&
+    if (identical(graph_plot_value("type", input$plot_type %||% "line"), "scatter") &&
         has_selection(resolved_xvar()) &&
         resolved_xvar() %in% vars) {
       vars <- setdiff(vars, resolved_xvar())
@@ -543,7 +648,7 @@
     svar0 <- resolve_shape_var(d)
     g0 <- effective_position_var(d)
 
-    combo0 <- isTRUE(input$series_style_override) &&
+    combo0 <- isTRUE(graph_appearance_value("series_style_override", input$series_style_override)) &&
       nzchar(g0) && nzchar(cvar0) && !identical(g0, cvar0)
 
     color_key <- if (combo0) paste0("__combo__::", cvar0, "::", g0) else cvar0
@@ -559,7 +664,7 @@
       )
     }
 
-    line_mode <- input$linetypevar %||% "__color__"
+    line_mode <- graph_mapping_value("linetype", input$linetypevar %||% "__color__")
     if (!identical(line_mode, "") && nzchar(lvar0)) {
       k <- if (identical(line_mode, "__color__") && !combo0) color_key else lvar0
       def <- if (identical(line_mode, "__color__") && !combo0) color_default else lvar0
@@ -570,7 +675,7 @@
       }
     }
 
-    shape_mode0 <- input$shapevar %||% "__color__"
+    shape_mode0 <- graph_mapping_value("shape", input$shapevar %||% "__color__")
     if (!identical(shape_mode0, "") && nzchar(svar0)) {
       k <- if (identical(shape_mode0, "__color__") && !combo0) color_key else svar0
       def <- if (identical(shape_mode0, "__color__") && !combo0) color_default else svar0
@@ -710,7 +815,7 @@
 
     var_ui <- lapply(vars, function(v) {
       z <- d[[v]]
-      if (is.numeric(z) && identical(v, resolved_xvar()) && identical(input$plot_type, "scatter")) {
+      if (is.numeric(z) && identical(v, resolved_xvar()) && identical(graph_plot_value("type", input$plot_type %||% "line"), "scatter")) {
         return(NULL)
       }
 
@@ -823,10 +928,11 @@
 
   x_levels <- reactive({
     d <- dat()
-    if (!has_selection(input$xvar) || !input$xvar %in% names(d)) return(character(0))
-    observed <- unique(as.character(d[[input$xvar]]))
+    x_now <- graph_mapping_value("x", input$xvar %||% "")
+    if (!has_selection(x_now) || !x_now %in% names(d)) return(character(0))
+    observed <- unique(as.character(d[[x_now]]))
     observed <- observed[!is.na(observed)]
-    get_saved_order("x", input$xvar, observed)
+    get_saved_order("x", x_now, observed)
   })
 
   observe({
@@ -838,4 +944,3 @@
     if (nzchar(lv) && length(ll)) ensure_style_branch("linetype", lv, ll)
     if (nzchar(sv) && length(shl)) ensure_style_branch("shape", sv, shl)
   })
-

@@ -15,7 +15,7 @@
     displayed <- level_label_values(g, ordered)
 
     mapped_by <- character(0)
-    plot_type0 <- input$plot_type %||% "line"
+    plot_type0 <- graph_plot_value("type", input$plot_type %||% "line")
     c0 <- resolve_color_var(d)
     l0 <- resolve_linetype_var(d)
     s0 <- resolve_shape_var(d)
@@ -46,19 +46,20 @@
     l0 <- resolve_linetype_var(d)
     s0 <- resolve_shape_var(d)
     g0 <- effective_position_var(d)
-    f0 <- if (has_selection(input$facetvar) && input$facetvar %in% names(d)) input$facetvar else ""
+    facet_now <- graph_mapping_value("facet", input$facetvar %||% "")
+    f0 <- if (has_selection(facet_now) && facet_now %in% names(d)) facet_now else ""
 
     info <- graph_mapping_diagnostics(
       data = d,
-      plot_type = input$plot_type %||% "line",
+      plot_type = graph_plot_value("type", input$plot_type %||% "line"),
       xvar = x0,
       position_var = g0,
       color_var = c0,
       linetype_var = l0,
       shape_var = s0,
       facet_var = f0,
-      line_series_mode = input$line_series_mode %||% "auto",
-      line_series_var = input$line_series_var %||% ""
+      line_series_mode = graph_mapping_value("line_series_mode", input$line_series_mode %||% "auto"),
+      line_series_var = graph_mapping_value("line_series_var", input$line_series_var %||% "")
     )
     if (!length(info$messages)) return(NULL)
 

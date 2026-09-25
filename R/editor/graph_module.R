@@ -3,7 +3,7 @@
 # Each module owns its own input/reactive/style/data state.
 # ============================================================
 
-graphServer <- function(id, style_clipboard = NULL, diag_log = NULL, ui_preseeded = FALSE, on_state_change = NULL, profile = c("full", "figure_controls"), render_gate = NULL, persistent_shell = FALSE, shared_style_library = NULL, on_shared_style_library_change = NULL, statistics_plot_preview = NULL, browser_patch_override = NULL) {
+graphServer <- function(id, style_clipboard = NULL, diag_log = NULL, ui_preseeded = FALSE, on_state_change = NULL, profile = c("full", "figure_controls"), render_gate = NULL, persistent_shell = FALSE, shared_style_library = NULL, on_shared_style_library_change = NULL, statistics_plot_preview = NULL, browser_patch_override = NULL, on_data_text_commit = NULL) {
   editor_profile <- graph_editor_profile(match.arg(profile))
   init_timing_outer_ms <- as.numeric(proc.time()[["elapsed"]]) * 1000
   init_timing_last_ms <- init_timing_outer_ms
@@ -67,6 +67,14 @@ graphServer <- function(id, style_clipboard = NULL, diag_log = NULL, ui_preseede
   # Mapping/reshape/style input updates from rebuilding or drawing the Plot.
   if (is.null(render_gate) || !is.function(render_gate)) {
     render_gate <- reactiveVal(TRUE)
+  }
+
+  # Data text deliberately uses the native shinyAce input transport rather than
+  # the generic revisioned browser-patch queue. The outer single-Editor runtime
+  # remains the canonical GraphState owner and receives one settled text value
+  # through this focused callback.
+  if (!is.function(on_data_text_commit)) {
+    on_data_text_commit <- NULL
   }
 
   # v3.73.2.18: normal Graph switches replay one saved GraphState into this
@@ -147,7 +155,18 @@ graphServer <- function(id, style_clipboard = NULL, diag_log = NULL, ui_preseede
         if (!isTRUE(normalized$ok)) return()
         value <- normalized$value
       }
-      values[key] <- list(value)
+      # Width/height slider + direct numeric inputs are aliases of one canonical
+      # Figure appearance path. Keep both working-copy aliases coherent so the
+      # later overlay cannot let a stale sibling overwrite the user's edit.
+      if (key %in% c("plot_width_px", "plot_width_px_direct")) {
+        values$plot_width_px <- value
+        values$plot_width_px_direct <- value
+      } else if (key %in% c("plot_height_px", "plot_height_px_direct")) {
+        values$plot_height_px <- value
+        values$plot_height_px_direct <- value
+      } else {
+        values[key] <- list(value)
+      }
       profile_browser_values(values)
       diag("BROWSER-PATCH", paste0("profile=figure_controls key=", key, " accepted=TRUE"))
     }, ignoreInit = TRUE, priority = 160)
@@ -370,13 +389,24 @@ graphServer <- function(id, style_clipboard = NULL, diag_log = NULL, ui_preseede
     },
     refresh_browser_hydration = function(state, graph_id = "") {
       if (!is.list(state) || !graph_editor_profile_has(editor_profile, "full_shell")) return(invisible(FALSE))
-      graph_mapping_replay_plan(graph_replay_mapping_plan(state))
-      graph_mapping_choices_seed(isolate(graph_mapping_replay_plan()))
+      mapping_plan <- tryCatch(graph_replay_mapping_plan(state), error = function(e) NULL)
+      # A transient malformed/incomplete paste is already handled by the Data
+      # validation path. Keep the current browser choices until canonical data
+      # becomes valid instead of hydrating a half-built topology.
+      if (!is.list(mapping_plan)) return(invisible(FALSE))
+      graph_mapping_replay_plan(mapping_plan)
+      graph_mapping_choices_seed(mapping_plan)
       plan <- graph_editor_replay_plan(NULL, state, editor_profile)
       payload <- graph_browser_direct_hydration_payload(
         state, plan, transaction = list(id = as.character(graph_id %||% "")[1])
       )
-      session$sendCustomMessage("graph-state-browser-hydrate", payload)
+      # Same-Graph topology refreshes must not write the potentially very large
+      # Ace text back to the browser. The current Ace value is already the user
+      # working copy whose accepted patch produced `state`; only dependent
+      # choices/scalars need refreshing. Graph switching still uses the normal
+      # full replay path above and therefore restores Data text normally.
+      payload$values$text <- NULL
+      session$sendCustomMessage("graph-state-browser-hydrate", app_json_safe_tree(payload))
       graph_browser_direct_publish_pools(state)
       invisible(TRUE)
     },

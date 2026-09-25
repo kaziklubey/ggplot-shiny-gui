@@ -128,9 +128,9 @@
   graph_settings_manager_jump_js <- function(id, section, input_id) {
     paste0(
       "return window.ggplotGuiJumpToGraphSetting && window.ggplotGuiJumpToGraphSetting(",
-      jsonlite::toJSON(as.character(id), auto_unbox = TRUE), ",",
-      jsonlite::toJSON(as.character(section), auto_unbox = TRUE), ",",
-      jsonlite::toJSON(as.character(input_id), auto_unbox = TRUE), ");"
+      jsonlite::toJSON(unname(as.character(id)[1]), auto_unbox = TRUE), ",",
+      jsonlite::toJSON(unname(as.character(section)[1]), auto_unbox = TRUE), ",",
+      jsonlite::toJSON(unname(as.character(input_id)[1]), auto_unbox = TRUE), ");"
     )
   }
 
@@ -148,7 +148,7 @@
     if (!isTRUE(got$found)) return("<missing>")
     raw <- got$value
     encoded <- tryCatch(
-      jsonlite::toJSON(raw, auto_unbox = TRUE, null = "null", na = "string", digits = NA),
+      jsonlite::toJSON(app_json_safe_tree(raw), auto_unbox = TRUE, null = "null", na = "string", digits = NA),
       error = function(e) graph_settings_manager_scalar(raw)
     )
     paste0(typeof(raw), ":", as.character(encoded))
@@ -347,7 +347,7 @@
   })
 
   observe({
-    session$sendCustomMessage("graph-settings-manager-data", graph_settings_manager_payload())
+    session$sendCustomMessage("graph-settings-manager-data", app_json_safe_tree(graph_settings_manager_payload()))
   })
 
   # Diagnostics only; confirms that a jump request from the in-page or popout

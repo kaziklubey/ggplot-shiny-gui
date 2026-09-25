@@ -11,7 +11,7 @@
 
   resolved_xvar <- reactive({
     d <- dat()
-    z <- input$xvar
+    z <- graph_mapping_value("x", input$xvar)
     if (!is.null(z) && length(z) && z %in% names(d)) return(as.character(z)[1])
     z <- last_valid_xvar()
     if (!is.null(z) && length(z) && z %in% names(d)) return(as.character(z)[1])
@@ -20,7 +20,7 @@
 
   resolved_yvar <- reactive({
     d <- dat()
-    z <- input$yvar
+    z <- graph_mapping_value("y", input$yvar)
     if (!is.null(z) && length(z) && z %in% names(d)) return(as.character(z)[1])
     z <- last_valid_yvar()
     if (!is.null(z) && length(z) && z %in% names(d)) return(as.character(z)[1])
@@ -29,8 +29,8 @@
 
   observe({
     d <- dat()
-    xv <- input$xvar
-    yv <- input$yvar
+    xv <- graph_mapping_value("x", input$xvar)
+    yv <- graph_mapping_value("y", input$yvar)
     if (!is.null(xv) && length(xv) && xv %in% names(d)) last_valid_xvar(as.character(xv)[1])
     if (!is.null(yv) && length(yv) && yv %in% names(d)) last_valid_yvar(as.character(yv)[1])
   })
@@ -60,11 +60,11 @@
   # external_error_bounds is shared by Graph and state snapshots.
 
   output$summary_unit_status <- renderUI({
-    if (identical(input$plot_type, "scatter") || isTRUE(direct_value_mode())) return(NULL)
+    if (identical(graph_plot_value("type", input$plot_type %||% "line"), "scatter") || isTRUE(direct_value_mode())) return(NULL)
     d <- tryCatch(plot_data(), error = function(e) NULL)
     if (is.null(d)) return(NULL)
 
-    idv <- input$idvar %||% ""
+    idv <- graph_mapping_value("id", input$idvar %||% "")
     if (!has_selection(idv) || !idv %in% names(d)) {
       return(p(
         class = "help-block",
@@ -79,7 +79,7 @@
       summarise(any_repeat = any(.n_trial__ > 1L)) %>%
       pull(.data$any_repeat)
 
-    if (identical(input$summary_unit %||% "row", "id_mean")) {
+    if (identical(graph_plot_value("summary_unit", input$summary_unit %||% "row"), "id_mean")) {
       return(p(
         class = "help-block",
         "現在はID内の複数trialを各条件セルで先に平均します。平均・SD・SEM・95%CIのnは個体数です。"
@@ -135,7 +135,7 @@
   }
 
   observe({
-    mode <- app_normalize_font_family_mode(input$font_family_mode %||% "sans")
+    mode <- app_normalize_font_family_mode(graph_appearance_value("font_family_mode", input$font_family_mode %||% "sans"))
     old <- isolate(font_family_mode_effective())
     if (!identical(old, mode)) {
       diag("FONT-BIND", paste0("mode ", old, " -> ", mode))
@@ -144,7 +144,7 @@
   })
 
   observe({
-    fam <- app_normalize_font_family_custom(input$font_family_custom %||% "")
+    fam <- app_normalize_font_family_custom(graph_appearance_value("font_family_custom", input$font_family_custom %||% ""))
     old <- isolate(font_family_custom_effective())
     if (!identical(old, fam)) {
       diag(
@@ -196,15 +196,20 @@
   # Plot notes / warnings
   # ============================================================
   plot_note <- reactive({
-    d <- if (identical(input$plot_type, "scatter") || isTRUE(direct_value_mode())) {
+    plot_type_now <- graph_plot_value("type", input$plot_type %||% "line")
+    x_now <- graph_mapping_value("x", input$xvar %||% "")
+    group_now <- graph_mapping_value("position", input$groupvar %||% "")
+    facet_now <- graph_mapping_value("facet", input$facetvar %||% "")
+    summary_now <- graph_plot_value("summary", input$summary_type %||% "mean")
+    d <- if (identical(plot_type_now, "scatter") || isTRUE(direct_value_mode())) {
       plot_data()
     } else {
       display_observation_data()
     }
 
-    if (identical(input$plot_type, "scatter") &&
-        has_selection(input$xvar) && input$xvar %in% names(dat())) {
-      raw_x <- dat()[[input$xvar]]
+    if (identical(plot_type_now, "scatter") &&
+        has_selection(x_now) && x_now %in% names(dat())) {
+      raw_x <- dat()[[x_now]]
       if (!is.numeric(raw_x)) {
         x_chr <- trimws(as.character(raw_x))
         present <- !is.na(x_chr) & nzchar(x_chr)
@@ -212,7 +217,7 @@
         if (any(present) && any(is.finite(x_num[present])) &&
             any(!is.finite(x_num[present]))) {
           return(paste0(
-            "散布図のX列「", input$xvar,
+            "散布図のX列「", x_now,
             "」には数値と文字が混在しています。文字の行を捨てず、離散Xとして表示しています。",
             "数値Xとして回帰したい場合はX列を数値だけに整理してください。"
           ))
@@ -220,10 +225,10 @@
       }
     }
 
-    if (input$plot_type == "bar" && identical(input$summary_type, "value")) {
-      grouping <- c(input$xvar)
-      if (has_selection(input$groupvar)) grouping <- c(grouping, input$groupvar)
-      if (has_selection(input$facetvar)) grouping <- c(grouping, input$facetvar)
+    if (identical(plot_type_now, "bar") && identical(summary_now, "value")) {
+      grouping <- c(x_now)
+      if (has_selection(group_now)) grouping <- c(grouping, group_now)
+      if (has_selection(facet_now)) grouping <- c(grouping, facet_now)
       dup <- d %>% count(across(all_of(unique(grouping)))) %>% filter(n > 1)
       if (nrow(dup) > 0) {
         return("『値（集計しない）』の棒グラフで同じ X × Group × Facet に複数行があります。平均化はしていないため、棒が同じ位置に重なります。必要ならIDをX/Group側に含めるか、事前に1値へ整理してください。")
@@ -251,4 +256,3 @@
     if (is.null(note)) return(NULL)
     div(class = "alert alert-warning plot-note-wrap", note)
   })
-

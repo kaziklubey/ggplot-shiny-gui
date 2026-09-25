@@ -4,7 +4,7 @@
 # one revisioned patch input. Figure Controls keep their separate replay path.
 
   graph_browser_patch_explicit_paths <- c(
-    project_name = "project_name", text = "data_text",
+    project_name = "project_name",
     reshape_wide = "reshape.enabled", reshape_row_id = "reshape.row_id",
     reshape_columns = "reshape.columns", reshape_x_name = "reshape.x_name",
     reshape_y_name = "reshape.y_name",
@@ -43,7 +43,7 @@
   # all 134 controls on every spinner step only creates avoidable browser work.
   graph_browser_patch_needs_hydration <- function(key) {
     as.character(key %||% "")[1] %in% c(
-      "text", "reshape_wide", "reshape_row_id", "reshape_columns",
+      "reshape_wide", "reshape_row_id", "reshape_columns",
       "reshape_x_name", "reshape_y_name",
       "xvar", "yvar", "colorvar", "linetypevar", "shapevar", "idvar",
       "facetvar", "groupvar", "line_series_mode", "line_series_var",
@@ -58,7 +58,6 @@
   graph_browser_patch_values_from_state <- function(state, owned_only = NULL) {
     values <- utils::modifyList(graph_snapshot_input_defaults(), graph_ui_seed_from_state(state))
     values$project_name <- graph_state_scalar(state$project_name, "")
-    values$text <- graph_state_scalar(state$data_text, "")
     values$reshape_wide <- isTRUE((state$reshape %||% list())$enabled)
     values$reshape_row_id <- isTRUE((state$reshape %||% list())$row_id)
     values$reshape_x_name <- graph_state_scalar((state$reshape %||% list())$x_name, "Time")
@@ -120,7 +119,7 @@
       reason = as.character(reason %||% "")[1])
     if (!is.null(value)) payload$value <- value
     if (is.list(canonical_values)) payload$canonicalValues <- canonical_values
-    session$sendCustomMessage("graph-browser-patch-result", payload)
+    session$sendCustomMessage("graph-browser-patch-result", app_json_safe_tree(payload))
     invisible(payload)
   }
 
@@ -159,6 +158,31 @@
     normalized <- graph_browser_patch_normalize(key, path, req$value, old)
     if (!isTRUE(normalized$ok)) return(reject(normalized$message %||% "invalid-value"))
     new <- graph_settings_manager_set_path(old, path, normalized$value)
+
+    # Wide→Long changes can replace the effective X/Y/Color/etc. column
+    # universe just like replacing Data text. Commit the reshape recipe and its
+    # dependent Mapping reconciliation atomically; otherwise browser choices can
+    # show Time/Value while canonical Mapping still points at pre-reshape columns
+    # and make_plot exits immediately with an X/Y validation message.
+    if (key %in% c("reshape_wide", "reshape_row_id", "reshape_columns",
+                   "reshape_x_name", "reshape_y_name")) {
+      reconciled <- tryCatch(
+        graph_reconcile_mapping_for_schema_change(old, new),
+        error = function(e) NULL
+      )
+      if (is.list(reconciled) && is.list(reconciled$state)) {
+        new <- reconciled$state
+        changed_mapping <- as.character(reconciled$changed_keys %||% character(0))
+        if (length(changed_mapping)) {
+          diag_log(
+            "RESHAPE-MAPPING-RECONCILE",
+            paste0("key=", key, " mapping={", paste(changed_mapping, collapse = ","), "}"),
+            id = id
+          )
+        }
+      }
+    }
+
     result <- graph_settings_manager_commit_exact(id, new, source = "browser-working-state")
     graph_browser_patch_last_seq[[id]] <- seq
 

@@ -27,112 +27,112 @@
       # formatting and should travel with Graph書式.  Axis/title text remains
       # Graph-specific content and is intentionally not copied here.
       axes = list(
-        ymin = input$ymin,
-        ymax = input$ymax,
-        y_top_to_tick = input$y_top_to_tick
+        ymin = graph_label_value("ymin", input$ymin %||% ""),
+        ymax = graph_label_value("ymax", input$ymax %||% ""),
+        y_top_to_tick = graph_label_value("y_top_to_tick", input$y_top_to_tick)
       ),
       appearance = list(
-        series_style_override = input$series_style_override,
-        palette_preset = input$palette_preset,
-        raw_palette_preset = input$raw_palette_preset,
-        scatter_regression = input$scatter_regression,
-        scatter_regression_group = input$scatter_regression_group,
-        scatter_regression_color = input$scatter_regression_color,
-        scatter_regression_linetype = input$scatter_regression_linetype,
-        scatter_regression_width = input$scatter_regression_width,
-        scatter_regression_se = input$scatter_regression_se,
-        scatter_regression_se_alpha = input$scatter_regression_se_alpha,
-        theme = input$theme,
+        series_style_override = graph_appearance_value("series_style_override", input$series_style_override),
+        palette_preset = graph_appearance_value("palette_preset", input$palette_preset),
+        raw_palette_preset = graph_appearance_value("raw_palette_preset", input$raw_palette_preset),
+        scatter_regression = graph_appearance_value("scatter_regression", input$scatter_regression),
+        scatter_regression_group = graph_appearance_value("scatter_regression_group", input$scatter_regression_group),
+        scatter_regression_color = graph_appearance_value("scatter_regression_color", input$scatter_regression_color),
+        scatter_regression_linetype = graph_appearance_value("scatter_regression_linetype", input$scatter_regression_linetype),
+        scatter_regression_width = graph_appearance_value("scatter_regression_width", input$scatter_regression_width),
+        scatter_regression_se = graph_appearance_value("scatter_regression_se", input$scatter_regression_se),
+        scatter_regression_se_alpha = graph_appearance_value("scatter_regression_se_alpha", input$scatter_regression_se_alpha),
+        theme = graph_appearance_value("theme", input$theme),
         # Persist the render-facing canonical font state. Browser Selectize
         # binding values may settle later, but equivalent UI materialisation
         # must not change GraphState/RenderState.
         font_family_mode = app_normalize_font_family_mode(font_family_mode_effective()),
         font_family_custom = app_normalize_font_family_custom(font_family_custom_effective()),
-        base_size = graph_style_canonical_base_size(input$base_size, 13),
-        summary_type = input$summary_type,
-        summary_unit = input$summary_unit %||% "row",
-        mean_color_mode = input$mean_color_mode,
-        bar_fill_none_fixed = input$bar_fill_none_fixed,
-        mean_linetype = input$mean_linetype,
-        mean_shape = input$mean_shape,
-        point_size = input$point_size,
-        scatter_point_alpha = input$scatter_point_alpha,
-        scatter_jitter_enabled = input$scatter_jitter_enabled,
-        scatter_jitter_x = input$scatter_jitter_x,
-        scatter_jitter_y = input$scatter_jitter_y,
-        line_width = input$line_width,
-        line_group_dodge = input$line_group_dodge,
-        line_x_spacing = input$line_x_spacing,
+        base_size = graph_style_canonical_base_size(graph_appearance_value("base_size", input$base_size), 13),
+        summary_type = graph_plot_value("summary", input$summary_type %||% "sem"),
+        summary_unit = graph_plot_value("summary_unit", input$summary_unit %||% "row"),
+        mean_color_mode = graph_appearance_value("mean_color_mode", input$mean_color_mode),
+        bar_fill_none_fixed = graph_appearance_value("bar_fill_none_fixed", input$bar_fill_none_fixed),
+        mean_linetype = graph_appearance_value("mean_linetype", input$mean_linetype),
+        mean_shape = graph_appearance_value("mean_shape", input$mean_shape),
+        point_size = graph_appearance_value("point_size", input$point_size),
+        scatter_point_alpha = graph_appearance_value("scatter_point_alpha", input$scatter_point_alpha),
+        scatter_jitter_enabled = graph_appearance_value("scatter_jitter_enabled", input$scatter_jitter_enabled),
+        scatter_jitter_x = graph_appearance_value("scatter_jitter_x", input$scatter_jitter_x),
+        scatter_jitter_y = graph_appearance_value("scatter_jitter_y", input$scatter_jitter_y),
+        line_width = graph_appearance_value("line_width", input$line_width),
+        line_group_dodge = graph_appearance_value("line_group_dodge", input$line_group_dodge),
+        line_x_spacing = graph_appearance_value("line_x_spacing", input$line_x_spacing),
         plot_width_px = effective_plot_width_px(),
         plot_height_px = effective_plot_height_px(),
-        bar_width = input$bar_width,
-        bar_zero_touch = input$bar_zero_touch,
-        group_spacing = input$group_spacing,
-        box_width_scale = input$box_width_scale,
-        x_category_spacing = input$x_category_spacing,
-        bar_border_mode = input$bar_border_mode,
-        bar_border_color = input$bar_border_color,
-        bar_border_width = input$bar_border_width,
-        bar_border_linetype = input$bar_border_linetype,
-        bar_border_dash = input$bar_border_dash,
-        bar_border_gap = input$bar_border_gap,
-        raw_color_mode = input$raw_color_mode,
-        raw_fixed_custom = input$raw_fixed_custom,
-        raw_lighten = input$raw_lighten,
-        raw_alpha = input$raw_alpha,
-        raw_shape_mode = input$raw_shape_mode,
-        raw_shape = input$raw_shape,
-        raw_point_size = input$raw_point_size,
-        jitter_width = input$jitter_width,
-        id_line_color_mode = input$id_line_color_mode,
-        id_line_custom_color = input$id_line_custom_color,
-        id_line_lighten = input$id_line_lighten,
-        id_linetype = input$id_linetype,
-        id_line_width = input$id_line_width,
-        id_line_alpha = input$id_line_alpha,
-        summary_on_top = input$summary_on_top,
-        error_color_mode = input$error_color_mode,
-        error_color = input$error_color,
-        error_width = input$error_width,
-        error_line_width = input$error_line_width,
-        y_break_enabled = input$y_break_enabled,
-        y_breaks_auto = input$y_breaks_auto,
-        y_breaks_step = input$y_breaks_step,
-        y_break_from = input$y_break_from,
-        y_break_to = input$y_break_to,
-        y_break_space = input$y_break_space,
-        y_break_symbol = input$y_break_symbol,
-        x_tick_labels_show = input$x_tick_labels_show,
-        legend_pos = input$legend_pos,
-        legend_colour_show = input$legend_colour_show,
-        legend_fill_show = input$legend_fill_show,
-        legend_linetype_show = input$legend_linetype_show,
-        legend_shape_show = input$legend_shape_show,
-        legend_merge_mode = input$legend_merge_mode,
-        legend_merge_linetype_shape = input$legend_merge_linetype_shape,
-        legend_merge_colour_shape = input$legend_merge_colour_shape,
-        legend_title_show = input$legend_title_show,
-        legend_group_title = input$legend_group_title,
-        legend_individual_title_show = input$legend_individual_title_show,
-        legend_individual_title = input$legend_individual_title,
-        legend_colour_title_show = input$legend_colour_title_show,
-        legend_fill_title_show = input$legend_fill_title_show,
-        legend_linetype_title_show = input$legend_linetype_title_show,
-        legend_shape_title_show = input$legend_shape_title_show,
-        legend_colour_title = input$legend_colour_title,
-        legend_fill_title = input$legend_fill_title,
-        legend_linetype_title = input$legend_linetype_title,
-        legend_shape_title = input$legend_shape_title,
-        legend_colour_order = graph_legend_order(input$legend_colour_order, 1L),
-        legend_fill_order = graph_legend_order(input$legend_fill_order, 2L),
-        legend_linetype_order = graph_legend_order(input$legend_linetype_order, 3L),
-        legend_shape_order = graph_legend_order(input$legend_shape_order, 4L),
-        legend_wrap_mode = input$legend_wrap_mode %||% "auto",
-        legend_wrap_count = as.integer(input$legend_wrap_count %||% 2L),
-        legend_item_spacing = input$legend_item_spacing %||% -1,
-        legend_text_size = input$legend_text_size %||% 0,
-        legend_key_width = input$legend_key_width,
-        facet_spacing_x = input$facet_spacing_x
+        bar_width = graph_appearance_value("bar_width", input$bar_width),
+        bar_zero_touch = graph_appearance_value("bar_zero_touch", input$bar_zero_touch),
+        group_spacing = graph_appearance_value("group_spacing", input$group_spacing),
+        box_width_scale = graph_appearance_value("box_width_scale", input$box_width_scale),
+        x_category_spacing = graph_appearance_value("x_category_spacing", input$x_category_spacing),
+        bar_border_mode = graph_appearance_value("bar_border_mode", input$bar_border_mode),
+        bar_border_color = graph_appearance_value("bar_border_color", input$bar_border_color),
+        bar_border_width = graph_appearance_value("bar_border_width", input$bar_border_width),
+        bar_border_linetype = graph_appearance_value("bar_border_linetype", input$bar_border_linetype),
+        bar_border_dash = graph_appearance_value("bar_border_dash", input$bar_border_dash),
+        bar_border_gap = graph_appearance_value("bar_border_gap", input$bar_border_gap),
+        raw_color_mode = graph_appearance_value("raw_color_mode", input$raw_color_mode),
+        raw_fixed_custom = graph_appearance_value("raw_fixed_custom", input$raw_fixed_custom),
+        raw_lighten = graph_appearance_value("raw_lighten", input$raw_lighten),
+        raw_alpha = graph_appearance_value("raw_alpha", input$raw_alpha),
+        raw_shape_mode = graph_appearance_value("raw_shape_mode", input$raw_shape_mode),
+        raw_shape = graph_appearance_value("raw_shape", input$raw_shape),
+        raw_point_size = graph_appearance_value("raw_point_size", input$raw_point_size),
+        jitter_width = graph_appearance_value("jitter_width", input$jitter_width),
+        id_line_color_mode = graph_appearance_value("id_line_color_mode", input$id_line_color_mode),
+        id_line_custom_color = graph_appearance_value("id_line_custom_color", input$id_line_custom_color),
+        id_line_lighten = graph_appearance_value("id_line_lighten", input$id_line_lighten),
+        id_linetype = graph_appearance_value("id_linetype", input$id_linetype),
+        id_line_width = graph_appearance_value("id_line_width", input$id_line_width),
+        id_line_alpha = graph_appearance_value("id_line_alpha", input$id_line_alpha),
+        summary_on_top = graph_appearance_value("summary_on_top", input$summary_on_top),
+        error_color_mode = graph_appearance_value("error_color_mode", input$error_color_mode),
+        error_color = graph_appearance_value("error_color", input$error_color),
+        error_width = graph_appearance_value("error_width", input$error_width),
+        error_line_width = graph_appearance_value("error_line_width", input$error_line_width),
+        y_break_enabled = graph_appearance_value("y_break_enabled", input$y_break_enabled),
+        y_breaks_auto = graph_appearance_value("y_breaks_auto", input$y_breaks_auto),
+        y_breaks_step = graph_appearance_value("y_breaks_step", input$y_breaks_step),
+        y_break_from = graph_appearance_value("y_break_from", input$y_break_from),
+        y_break_to = graph_appearance_value("y_break_to", input$y_break_to),
+        y_break_space = graph_appearance_value("y_break_space", input$y_break_space),
+        y_break_symbol = graph_appearance_value("y_break_symbol", input$y_break_symbol),
+        x_tick_labels_show = graph_appearance_value("x_tick_labels_show", input$x_tick_labels_show),
+        legend_pos = graph_appearance_value("legend_pos", input$legend_pos),
+        legend_colour_show = graph_appearance_value("legend_colour_show", input$legend_colour_show),
+        legend_fill_show = graph_appearance_value("legend_fill_show", input$legend_fill_show),
+        legend_linetype_show = graph_appearance_value("legend_linetype_show", input$legend_linetype_show),
+        legend_shape_show = graph_appearance_value("legend_shape_show", input$legend_shape_show),
+        legend_merge_mode = graph_appearance_value("legend_merge_mode", input$legend_merge_mode),
+        legend_merge_linetype_shape = graph_appearance_value("legend_merge_linetype_shape", input$legend_merge_linetype_shape),
+        legend_merge_colour_shape = graph_appearance_value("legend_merge_colour_shape", input$legend_merge_colour_shape),
+        legend_title_show = graph_appearance_value("legend_title_show", input$legend_title_show),
+        legend_group_title = graph_appearance_value("legend_group_title", input$legend_group_title),
+        legend_individual_title_show = graph_appearance_value("legend_individual_title_show", input$legend_individual_title_show),
+        legend_individual_title = graph_appearance_value("legend_individual_title", input$legend_individual_title),
+        legend_colour_title_show = graph_appearance_value("legend_colour_title_show", input$legend_colour_title_show),
+        legend_fill_title_show = graph_appearance_value("legend_fill_title_show", input$legend_fill_title_show),
+        legend_linetype_title_show = graph_appearance_value("legend_linetype_title_show", input$legend_linetype_title_show),
+        legend_shape_title_show = graph_appearance_value("legend_shape_title_show", input$legend_shape_title_show),
+        legend_colour_title = graph_appearance_value("legend_colour_title", input$legend_colour_title),
+        legend_fill_title = graph_appearance_value("legend_fill_title", input$legend_fill_title),
+        legend_linetype_title = graph_appearance_value("legend_linetype_title", input$legend_linetype_title),
+        legend_shape_title = graph_appearance_value("legend_shape_title", input$legend_shape_title),
+        legend_colour_order = graph_legend_order(graph_appearance_value("legend_colour_order", input$legend_colour_order), 1L),
+        legend_fill_order = graph_legend_order(graph_appearance_value("legend_fill_order", input$legend_fill_order), 2L),
+        legend_linetype_order = graph_legend_order(graph_appearance_value("legend_linetype_order", input$legend_linetype_order), 3L),
+        legend_shape_order = graph_legend_order(graph_appearance_value("legend_shape_order", input$legend_shape_order), 4L),
+        legend_wrap_mode = graph_appearance_value("legend_wrap_mode", input$legend_wrap_mode) %||% "auto",
+        legend_wrap_count = as.integer(graph_appearance_value("legend_wrap_count", input$legend_wrap_count) %||% 2L),
+        legend_item_spacing = graph_appearance_value("legend_item_spacing", input$legend_item_spacing) %||% -1,
+        legend_text_size = graph_appearance_value("legend_text_size", input$legend_text_size) %||% 0,
+        legend_key_width = graph_appearance_value("legend_key_width", input$legend_key_width),
+        facet_spacing_x = graph_appearance_value("facet_spacing_x", input$facet_spacing_x)
       )
     )
     # RC5 browser-patch PoC: generic style copy/download must see the same
@@ -171,32 +171,6 @@
     list(color=cv, linetype=lv, shape=sv)
   }
 
-  json_safe_tree <- function(x) {
-    # jsonliteのkeep_vec_names warningを避ける。
-    # JSON objectとして保持したいnamed atomic vectorはnamed listへ変換する。
-    if (is.data.frame(x)) {
-      return(x)
-    }
-
-    if (is.atomic(x) && !is.null(names(x))) {
-      nm <- names(x)
-      if (length(nm) && any(nzchar(nm))) {
-        out <- as.list(unname(x))
-        names(out) <- nm
-        return(out)
-      }
-      return(unname(x))
-    }
-
-    if (is.list(x)) {
-      out <- lapply(x, json_safe_tree)
-      names(out) <- names(x)
-      return(out)
-    }
-
-    x
-  }
-
   output$download_style <- downloadHandler(
     filename = function() paste0("ggplot_style_", Sys.Date(), ".json"),
     content = function(file) {
@@ -205,14 +179,18 @@
       # not travel with a generic Graph-format file. Library definitions have
       # their own explicit import/export surface in Figure.
       cfg$shared_library <- NULL
-      jsonlite::write_json(json_safe_tree(cfg), file, pretty = TRUE, auto_unbox = TRUE)
+      jsonlite::write_json(app_json_safe_tree(cfg), file, pretty = TRUE, auto_unbox = TRUE)
     }
   )
 
   apply_style_config <- function(cfg, success_message = "書式を適用しました。", release_guard = TRUE,
                                  notify = TRUE, hydrate_bound_controls = TRUE) {
     target <- isolate(graph_state_replay_target())
-    mp <- if (is.list(target)) target$mapping else list(color = isolate(input$colorvar), position = isolate(input$groupvar))
+    attached <- isolate(attached_state_seed())
+    mp <- if (is.list(attached)) attached$mapping else if (is.list(target)) target$mapping else list(
+      color = isolate(graph_mapping_value("color", input$colorvar %||% "")),
+      position = isolate(graph_mapping_value("position", input$groupvar %||% ""))
+    )
     cfg <- graph_style_migrate_v6(cfg)
     cfg <- graph_normalize_legend_state(list(mapping = mp, style = cfg))$style
     restoring_style_state(TRUE)
@@ -222,6 +200,11 @@
       # scheduled, never leave this Graph permanently frozen in restore mode.
       if (!isTRUE(restore_release_scheduled)) restoring_style_state(FALSE)
     }, add = TRUE)
+
+    # Shared Style binding metadata is Graph-owned state. The persistent Editor
+    # must replace it on every replay just like the other style trees; otherwise
+    # the Graph visited second inherits the previous Graph's live binding.
+    shared_style_binding(shared_style_normalize_binding(cfg$shared_library %||% NULL))
 
     # Persistent single Editor: target GraphState owns these trees completely.
     # Replace (rather than merge) them on every replay so an empty/new Graph can

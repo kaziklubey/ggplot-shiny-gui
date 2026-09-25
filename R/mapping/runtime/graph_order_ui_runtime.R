@@ -24,13 +24,16 @@
 
   output$order_ui <- renderUI({
     d <- dat()
-    req(input$xvar)
+    x_now <- graph_mapping_value("x", input$xvar %||% "")
+    facet_now <- graph_mapping_value("facet", input$facetvar %||% "")
+    plot_type_now <- graph_plot_value("type", input$plot_type %||% "line")
+    req(x_now)
 
     items <- list()
-    if (!identical(input$plot_type %||% "line", "scatter")) {
+    if (!identical(plot_type_now, "scatter")) {
       items <- c(items, list(category_order_box(
-        "x", input$xvar,
-        paste0("X軸（", input$xvar, "）の順序"),
+        "x", x_now,
+        paste0("X軸（", x_now, "）の順序"),
         "↑ / ↓ で左から表示する順序を変更します。カテゴリ名にカンマが含まれていてもそのまま扱えます。"
       )))
     }
@@ -44,7 +47,7 @@
       )))
     }
 
-    used_vars <- unique(c(as.character(input$xvar %||% "")[1], g_order_var))
+    used_vars <- unique(c(as.character(x_now)[1], g_order_var))
     used_vars <- used_vars[nzchar(used_vars)]
     aes_specs <- list(
       list(label = "色 / 塗り", var = resolve_color_var(d)),
@@ -62,10 +65,10 @@
       used_vars <- c(used_vars, v)
     }
 
-    if (has_selection(input$facetvar) && input$facetvar %in% names(d) && !input$facetvar %in% used_vars) {
+    if (has_selection(facet_now) && facet_now %in% names(d) && !facet_now %in% used_vars) {
       items <- c(items, list(category_order_box(
-        "facet", input$facetvar,
-        paste0("Facet（", input$facetvar, "）の順序"),
+        "facet", facet_now,
+        paste0("Facet（", facet_now, "）の順序"),
         "↑ / ↓ で左上から表示するFacet順を変更します。"
       )))
     }
@@ -90,7 +93,7 @@
     if (identical(current, moved)) return()
     set_saved_order(kind, variable, moved)
 
-    if (identical(kind, "x") && identical(variable, as.character(input$xvar %||% "")[1]) &&
+    if (identical(kind, "x") && identical(variable, as.character(graph_mapping_value("x", input$xvar %||% ""))[1]) &&
         exists("line_break_prune_to_levels", mode = "function")) {
       line_break_prune_to_levels(moved, source = "x-category-order")
     }

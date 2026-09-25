@@ -28,10 +28,10 @@ compute_plot_data <- function() {
     svar_guard <- resolve_shape_var(d)
 
     line_series_guard <- if (
-      identical(input$plot_type %||% "line", "line") &&
-      identical(input$line_series_mode %||% "auto", "column") &&
-      has_selection(input$line_series_var)
-    ) input$line_series_var else ""
+      identical(graph_plot_value("type", input$plot_type %||% "line"), "line") &&
+      identical(graph_mapping_value("line_series_mode", input$line_series_mode %||% "auto"), "column") &&
+      has_selection(graph_mapping_value("line_series_var", input$line_series_var %||% ""))
+    ) graph_mapping_value("line_series_var", input$line_series_var %||% "") else ""
 
     categorical_map <- c(
       effective_position_var(d),
@@ -39,8 +39,8 @@ compute_plot_data <- function() {
       lvar_guard,
       svar_guard,
       line_series_guard,
-      if (has_selection(input$idvar)) input$idvar else "",
-      if (has_selection(input$facetvar)) input$facetvar else ""
+      if (has_selection(graph_mapping_value("id", input$idvar %||% ""))) graph_mapping_value("id", input$idvar %||% "") else "",
+      if (has_selection(graph_mapping_value("facet", input$facetvar %||% ""))) graph_mapping_value("facet", input$facetvar %||% "") else ""
     )
     categorical_map <- unique(categorical_map[nzchar(categorical_map)])
 
@@ -57,7 +57,7 @@ compute_plot_data <- function() {
     d <- d[!is.na(d[[yvar_now]]), , drop = FALSE]
     shiny::validate(shiny::need(nrow(d) > 0, "Y列に数値データがありません。"))
 
-    if (identical(input$plot_type %||% "line", "scatter")) {
+    if (identical(graph_plot_value("type", input$plot_type %||% "line"), "scatter")) {
       x_num_test <- suppressWarnings(as.numeric(d[[xvar_now]]))
       shiny::validate(shiny::need(
         sum(is.finite(x_num_test)) > 0L,
@@ -69,7 +69,7 @@ compute_plot_data <- function() {
     # 散布図では回帰・相関用に数値Xを保持する。
     # それ以外のカテゴリ型プロットでは設定順をfactor levelへ反映する。
     if (has_selection(xvar_now) && xvar_now %in% names(d)) {
-      if (identical(input$plot_type, "scatter")) {
+      if (identical(graph_plot_value("type", input$plot_type %||% "line"), "scatter")) {
         if (!is.numeric(d[[xvar_now]])) {
           x_chr <- trimws(as.character(d[[xvar_now]]))
           present <- !is.na(x_chr) & nzchar(x_chr)
@@ -91,11 +91,12 @@ compute_plot_data <- function() {
       }
     }
 
-    if (has_selection(input$groupvar) && input$groupvar %in% names(d)) {
-      observed_group <- unique(as.character(d[[input$groupvar]]))
+    groupvar_now <- graph_mapping_value("position", input$groupvar %||% "")
+    if (has_selection(groupvar_now) && groupvar_now %in% names(d)) {
+      observed_group <- unique(as.character(d[[groupvar_now]]))
       observed_group <- observed_group[!is.na(observed_group)]
 
-      gl <- get_saved_order("group", input$groupvar, observed_group)
+      gl <- get_saved_order("group", groupvar_now, observed_group)
 
       # Project復元途中などで保存orderが空・staleでも、
       # 実データの水準へ必ずフォールバックする。
@@ -105,7 +106,7 @@ compute_plot_data <- function() {
         gl <- c(gl[gl %in% observed_group], setdiff(observed_group, gl))
       }
 
-      d[[input$groupvar]] <- factor(as.character(d[[input$groupvar]]), levels = gl)
+      d[[groupvar_now]] <- factor(as.character(d[[groupvar_now]]), levels = gl)
     }
 
     cvar_plot <- resolve_color_var(d)
@@ -118,7 +119,7 @@ compute_plot_data <- function() {
       # suppress Color's own ordering.
       preserve_color_order <- cvar_plot %in% c(
         xvar_now %||% "",
-        if (has_selection(input$groupvar)) input$groupvar else ""
+        if (has_selection(groupvar_now)) groupvar_now else ""
       ) && is.factor(d[[cvar_plot]])
       existing_levels <- if (preserve_color_order) levels(d[[cvar_plot]]) else character(0)
       if (length(existing_levels)) {
@@ -141,7 +142,7 @@ compute_plot_data <- function() {
     extra_aes_vars <- extra_aes_vars[nzchar(extra_aes_vars)]
     already_ordered_vars <- unique(c(
       xvar_now %||% "",
-      if (has_selection(input$groupvar)) input$groupvar else "",
+      if (has_selection(groupvar_now)) groupvar_now else "",
       cvar_plot
     ))
     for (v in extra_aes_vars) {
@@ -157,21 +158,22 @@ compute_plot_data <- function() {
 
     # Facetは専用順序を使う。ただし同じ列が先にX/Group/Color/Linetype/Shape
     # として順序付け済みなら、最後にFacetがその順序を壊さない。
-    if (has_selection(input$facetvar) && input$facetvar %in% names(d)) {
-      facet_prior_role <- input$facetvar %in% unique(c(already_ordered_vars, extra_aes_vars))
-      if (!(facet_prior_role && is.factor(d[[input$facetvar]]))) {
-        observed_facet <- unique(as.character(d[[input$facetvar]]))
+    facetvar_now <- graph_mapping_value("facet", input$facetvar %||% "")
+    if (has_selection(facetvar_now) && facetvar_now %in% names(d)) {
+      facet_prior_role <- facetvar_now %in% unique(c(already_ordered_vars, extra_aes_vars))
+      if (!(facet_prior_role && is.factor(d[[facetvar_now]]))) {
+        observed_facet <- unique(as.character(d[[facetvar_now]]))
         observed_facet <- observed_facet[!is.na(observed_facet)]
 
-        fl <- get_saved_order("facet", input$facetvar, observed_facet)
+        fl <- get_saved_order("facet", facetvar_now, observed_facet)
         if (length(fl) == 0L) {
           fl <- observed_facet
         } else {
           fl <- c(fl[fl %in% observed_facet], setdiff(observed_facet, fl))
         }
 
-        d[[input$facetvar]] <- factor(
-          as.character(d[[input$facetvar]]),
+        d[[facetvar_now]] <- factor(
+          as.character(d[[facetvar_now]]),
           levels = fl
         )
       }
@@ -190,26 +192,27 @@ compute_summary_grouping_vars <- function() {
     cvar_sum <- resolve_color_var(d)
     if (nzchar(cvar_sum)) grouping <- c(grouping, cvar_sum)
 
-    if (identical(input$plot_type, "line")) {
+    if (identical(graph_plot_value("type", input$plot_type %||% "line"), "line")) {
       lvar_sum <- resolve_linetype_var(d)
       svar_sum <- resolve_shape_var(d)
       if (nzchar(lvar_sum)) grouping <- c(grouping, lvar_sum)
       if (nzchar(svar_sum)) grouping <- c(grouping, svar_sum)
-      if (identical(input$line_series_mode %||% "auto", "column")) {
-        series_var_sum <- input$line_series_var %||% ""
+      if (identical(graph_mapping_value("line_series_mode", input$line_series_mode %||% "auto"), "column")) {
+        series_var_sum <- graph_mapping_value("line_series_var", input$line_series_var %||% "")
         if (nzchar(series_var_sum) && series_var_sum %in% names(d)) grouping <- c(grouping, series_var_sum)
       }
     }
 
-    if (has_selection(input$facetvar)) grouping <- c(grouping, input$facetvar)
+    facet_sum <- graph_mapping_value("facet", input$facetvar %||% "")
+    if (has_selection(facet_sum)) grouping <- c(grouping, facet_sum)
     unique(grouping[nzchar(grouping) & grouping %in% names(d)])
   }
 
 compute_id_mean_data <- function() {
     d <- plot_data()
-    if (!identical(input$summary_unit %||% "row", "id_mean")) return(d)
+    if (!identical(graph_plot_value("summary_unit", input$summary_unit %||% "row"), "id_mean")) return(d)
 
-    idv <- input$idvar %||% ""
+    idv <- graph_mapping_value("id", input$idvar %||% "")
     shiny::validate(
       shiny::need(
         has_selection(idv) && idv %in% names(d),
@@ -255,7 +258,7 @@ compute_id_mean_data <- function() {
   }
 
 compute_display_observation_data <- function() {
-    if (!identical(input$summary_unit %||% "row", "id_mean")) return(plot_data())
+    if (!identical(graph_plot_value("summary_unit", input$summary_unit %||% "row"), "id_mean")) return(plot_data())
     d <- id_mean_data()
     d[[resolved_yvar()]] <- d$.id_mean_y__
     d$.id_mean_y__ <- NULL
@@ -265,7 +268,7 @@ compute_display_observation_data <- function() {
 compute_summary_data <- function() {
     d <- id_mean_data()
     grouping <- summary_grouping_vars()
-    y_source <- if (identical(input$summary_unit %||% "row", "id_mean")) {
+    y_source <- if (identical(graph_plot_value("summary_unit", input$summary_unit %||% "row"), "id_mean")) {
       ".id_mean_y__"
     } else {
       resolved_yvar()
@@ -284,28 +287,28 @@ compute_summary_data <- function() {
   }
 
 compute_direct_value_mode <- function() {
-    identical(input$summary_type %||% "mean", "value") &&
-      (input$plot_type %||% "line") %in% c("line", "bar")
+    identical(graph_plot_value("summary", input$summary_type %||% "mean"), "value") &&
+      graph_plot_value("type", input$plot_type %||% "line") %in% c("line", "bar")
   }
 
 compute_theme_object <- function() {
     fam <- selected_font_family()
 
-    legend_key_width <- suppressWarnings(as.numeric(input$legend_key_width))
+    legend_key_width <- suppressWarnings(as.numeric(graph_appearance_value("legend_key_width", input$legend_key_width)))
     if (!is.finite(legend_key_width) || legend_key_width < 0) {
       legend_key_width <- 1.8
     }
-    legend_text_size <- suppressWarnings(as.numeric(input$legend_text_size %||% 0))
+    legend_text_size <- suppressWarnings(as.numeric(graph_appearance_value("legend_text_size", input$legend_text_size %||% 0)))
     if (!is.finite(legend_text_size) || legend_text_size < 0) legend_text_size <- 0
-    legend_item_spacing <- suppressWarnings(as.numeric(input$legend_item_spacing %||% -1))
+    legend_item_spacing <- suppressWarnings(as.numeric(graph_appearance_value("legend_item_spacing", input$legend_item_spacing %||% -1)))
     if (!is.finite(legend_item_spacing)) legend_item_spacing <- -1
 
     th <- switch(
-      input$theme,
-      classic = theme_classic(base_size = input$base_size, base_family = fam),
-      bw = theme_bw(base_size = input$base_size, base_family = fam),
-      minimal = theme_minimal(base_size = input$base_size, base_family = fam),
-      gray = theme_gray(base_size = input$base_size, base_family = fam)
+      graph_appearance_value("theme", input$theme),
+      classic = theme_classic(base_size = graph_appearance_value("base_size", input$base_size), base_family = fam),
+      bw = theme_bw(base_size = graph_appearance_value("base_size", input$base_size), base_family = fam),
+      minimal = theme_minimal(base_size = graph_appearance_value("base_size", input$base_size), base_family = fam),
+      gray = theme_gray(base_size = graph_appearance_value("base_size", input$base_size), base_family = fam)
     )
     legend_title_element <- element_text(family = fam)
     legend_text_element <- if (legend_text_size > 0) {
@@ -314,10 +317,10 @@ compute_theme_object <- function() {
       element_text(family = fam)
     }
     theme_bits <- list(
-      legend.position = input$legend_pos,
+      legend.position = graph_appearance_value("legend_pos", input$legend_pos),
       legend.key.width = grid::unit(legend_key_width, "cm"),
       panel.spacing.x = grid::unit(
-        suppressWarnings(as.numeric(input$facet_spacing_x %||% 0.12)), "cm"
+        suppressWarnings(as.numeric(graph_appearance_value("facet_spacing_x", input$facet_spacing_x %||% 0.12))), "cm"
       ),
       text = element_text(family = fam),
       plot.title = element_text(family = fam),
@@ -347,7 +350,7 @@ compute_theme_object <- function() {
   }
 
 external_error_bounds <- function(z, ycol) {
-    mode <- input$external_error_mode %||% "none"
+    mode <- graph_plot_value("external_error_mode", input$external_error_mode %||% "none")
     if (!isTRUE(direct_value_mode()) || identical(mode, "none")) return(NULL)
 
     shiny::validate(
@@ -356,7 +359,7 @@ external_error_bounds <- function(z, ycol) {
     yv <- z[[ycol]]
 
     if (identical(mode, "symmetric")) {
-      ecol <- input$external_error_col %||% ""
+      ecol <- graph_mapping_value("external_error", input$external_error_col %||% "")
       shiny::validate(
         shiny::need(nzchar(ecol) && ecol %in% names(z), "Error barに使用する誤差列を指定してください。"),
         shiny::need(is.numeric(z[[ecol]]), "Error barの誤差列には数値列を指定してください。")
@@ -374,8 +377,8 @@ external_error_bounds <- function(z, ycol) {
     }
 
     if (identical(mode, "bounds")) {
-      low_col <- input$external_ymin_col %||% ""
-      high_col <- input$external_ymax_col %||% ""
+      low_col <- graph_mapping_value("external_ymin", input$external_ymin_col %||% "")
+      high_col <- graph_mapping_value("external_ymax", input$external_ymax_col %||% "")
       shiny::validate(
         shiny::need(nzchar(low_col) && low_col %in% names(z), "Error barの下限列を指定してください。"),
         shiny::need(nzchar(high_col) && high_col %in% names(z), "Error barの上限列を指定してください。"),

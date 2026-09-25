@@ -42,6 +42,7 @@ app_function_catalog <- function() {
       app_normalize_font_family_mode = list(kind = "pure canonicalizer", input = "font selector value", output = "canonical mode/family"),
       app_normalize_font_family_custom = list(kind = "pure canonicalizer", input = "custom font text", output = "trimmed family"),
       app_effective_font_family = list(kind = "pure resolver", input = "mode + custom", output = "ggplot family"),
+      app_json_safe_tree = list(kind = "pure JSON boundary canonicalizer", input = "R object tree", output = "tree without named atomic vectors"),
       graph_build_legend_policy = list(kind = "pure Legend Policy", input = "effective Mapping + appearance + plot/layer context", output = "aesthetic guide policy"),
       graph_legend_merge_plan = list(kind = "pure Legend Policy", input = "legend policy", output = "aesthetic merge components"),
       graph_legend_layer_flags = list(kind = "pure Legend Policy", input = "legend policy + layer role", output = "named show.legend flags"),

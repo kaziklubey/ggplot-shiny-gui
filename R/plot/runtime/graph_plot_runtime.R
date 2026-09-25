@@ -4,7 +4,11 @@
   
   # Y-axis tick sequence helper
   y_break_values <- function(ymin, ymax) {
-    manual_y_break_values(ymin, ymax, input$y_breaks_step, input$y_breaks_auto)
+    manual_y_break_values(
+      ymin, ymax,
+      graph_appearance_value("y_breaks_step", input$y_breaks_step),
+      graph_appearance_value("y_breaks_auto", input$y_breaks_auto)
+    )
   }
 
 make_plot <- reactive({
@@ -65,7 +69,7 @@ make_plot <- reactive({
     plot_type_diag <- if (is.list(state_for_plot)) {
       as.character((state_for_plot$plot %||% list())$type %||% "<unset>")[1]
     } else {
-      as.character(input$plot_type %||% "<unset>")[1]
+      as.character(graph_plot_value("type", input$plot_type %||% "<unset>"))[1]
     }
     diag("PLOT", paste0("make_plot START rev=", build_rev, " type=", plot_type_diag))
     on.exit({

@@ -146,8 +146,9 @@
     observed <- observed[!is.na(observed)]
     if (!length(observed)) return(character(0))
 
-    x_now <- as.character(input$xvar %||% "")[1]
-    if (nzchar(x_now) && identical(var_name, x_now) && !identical(input$plot_type %||% "line", "scatter")) {
+    x_now <- as.character(graph_mapping_value("x", input$xvar %||% ""))[1]
+    if (nzchar(x_now) && identical(var_name, x_now) &&
+        !identical(graph_plot_value("type", input$plot_type %||% "line"), "scatter")) {
       return(get_saved_order("x", var_name, observed))
     }
 
@@ -256,7 +257,7 @@
   series_combo_key <- graph_series_combo_key
 
   series_combo_levels <- reactive({
-    if (!isTRUE(input$series_style_override)) return(character(0))
+    if (!isTRUE(graph_appearance_value("series_style_override", input$series_style_override))) return(character(0))
     d <- dat()
     g0 <- effective_position_var(d)
     cvar0 <- resolve_color_var(d)
@@ -292,4 +293,3 @@
     ensure_series_styles(keys_now); ss <- series_styles()
     list(color = setNames(vapply(keys_now, function(k) as.character(ss[[k]]$color %||% "#333333"), character(1)), keys_now))
   }
-

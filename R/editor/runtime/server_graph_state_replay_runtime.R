@@ -480,7 +480,7 @@
       session$onFlushed(function() {
         if (!isTRUE(isolate(graph_state_replay_active())) ||
             !identical(as.integer(isolate(graph_state_replay_generation()) %||% -1L), generation)) return(invisible(NULL))
-        session$sendCustomMessage("graph-state-browser-hydrate", payload)
+        session$sendCustomMessage("graph-state-browser-hydrate", app_json_safe_tree(payload))
         if (!is.null(main_tab_target) && length(main_tab_target) == 1L && nzchar(main_tab_target)) {
           # Do not emulate tab selection by mutating browser scalar/input state.
           # The native Shiny tabset updater changes the Bootstrap pane and the
