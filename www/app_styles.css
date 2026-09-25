@@ -1606,7 +1606,8 @@
   border: 1px solid #dddddd;
   border-radius: 7px;
   background: #ffffff;
-  overflow: hidden;
+  /* Selectize menus are absolutely positioned; do not clip them at the card boundary. */
+  overflow: visible;
 }
 .aesthetic-style-panel > summary {
   cursor: pointer;

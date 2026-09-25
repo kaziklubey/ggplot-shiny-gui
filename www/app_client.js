@@ -523,6 +523,39 @@ function ggplotGuiBrowserPatchSetControl(key, value) {
   return ggplotGuiBrowserDirectSet('graph_editor_single-', key, value, null);
 }
 
+function ggplotGuiBrowserSizeAlias(key, value) {
+  key = String(key || '');
+  var num = Number(value);
+  if (key === 'plot_width_px') return {key:'plot_width_px_direct', sync:true};
+  if (key === 'plot_height_px') return {key:'plot_height_px_direct', sync:true};
+  if (key === 'plot_width_px_direct') {
+    return {key:'plot_width_px', sync:Number.isFinite(num) && num >= 300 && num <= 1400};
+  }
+  if (key === 'plot_height_px_direct') {
+    return {key:'plot_height_px', sync:Number.isFinite(num) && num >= 220 && num <= 900};
+  }
+  return null;
+}
+
+function ggplotGuiBrowserPatchSyncSizeAlias(st, prefix, key, value, valueStoreName) {
+  var alias = ggplotGuiBrowserSizeAlias(key, value);
+  if (!alias || !alias.sync) return false;
+  st.suppressOnce = st.suppressOnce || {};
+  st.suppressOnce[alias.key] = value;
+  if (valueStoreName === 'values') {
+    st.values = st.values || {};
+    st.values[alias.key] = value;
+  } else {
+    st.working = st.working || {};
+    st.working[alias.key] = value;
+  }
+  var el = document.getElementById(String(prefix || '') + alias.key);
+  if (!el) return false;
+  var ok = ggplotGuiBrowserDirectSetValue(el, value);
+  if (ok) ggplotGuiBrowserDirectSyncClientInput(String(prefix || '') + alias.key, value, false);
+  return ok;
+}
+
 function ggplotGuiBrowserPatchQueue(key, value) {
   var st = window.ggplotGuiBrowserPatchPoc;
   var path = st.paths[key];
@@ -577,6 +610,7 @@ $(document).on('shiny:inputchanged.browserPatchPoc', function(ev) {
   // event is prevented from reaching R. conditionalPanel visibility depends on
   // that client mirror (e.g. Bar must hide Line-only controls immediately).
   ggplotGuiBrowserDirectSyncClientInput(name, value, true);
+  ggplotGuiBrowserPatchSyncSizeAlias(st, 'graph_editor_single-', key, value, 'working');
   if (Object.prototype.hasOwnProperty.call(st.suppressOnce, key)) {
     var expected = st.suppressOnce[key];
     delete st.suppressOnce[key];
@@ -658,6 +692,22 @@ Shiny.addCustomMessageHandler('graph-browser-patch-result', function(msg) {
   st.inflight = null;
   ggplotGuiBrowserPatchDrain();
 });
+
+// Data text uses shinyAce's native input transport instead of the generic
+// browser-patch queue. A successful canonical Data commit can still advance the
+// Graph render-state revision, so rebase the optimistic patch client without
+// touching controls or creating a fake patch sequence. Any already-inflight
+// patch retains its old baseRevision and will follow the existing one-retry
+// revision-mismatch path if necessary.
+Shiny.addCustomMessageHandler('graph-browser-patch-rebase', function(msg) {
+  msg = msg || {};
+  var st = window.ggplotGuiBrowserPatchPoc;
+  var graphId = String(msg.graphId || '');
+  if (!st || graphId !== String(st.graphId || '')) return;
+  var revision = Number(msg.revision);
+  if (Number.isFinite(revision)) st.revision = revision;
+});
+
 
 // v3.64.0-lazyui1: presentation-only Editor memory.  This deliberately
 // lives outside GraphState/Project serialization and disappears with the
@@ -1335,6 +1385,7 @@ Shiny.addCustomMessageHandler('graph-state-browser-hydrate', function(msg) {
   st.hydrationExpected = {};
   st.hydrationGuardUntil = Date.now() + 1000;
   st.userIntentUntil = st.userIntentUntil || {};
+  st.suppressOnce = st.suppressOnce || {};
   st.values = {};
   st.patchInput = String(msg.patchInput || '');
   if (st.hydrationClearTimer !== null) {
@@ -1397,6 +1448,15 @@ $(document).on('shiny:inputchanged.figureBrowserPatch', function(ev) {
     if (!key || !Object.prototype.hasOwnProperty.call(st.values || {}, key)) return;
     var value = ev.value;
     ggplotGuiBrowserDirectSyncClientInput(name, value, true);
+    ggplotGuiBrowserPatchSyncSizeAlias(st, prefix, key, value, 'values');
+    if (Object.prototype.hasOwnProperty.call(st.suppressOnce || {}, key)) {
+      var expected = st.suppressOnce[key];
+      delete st.suppressOnce[key];
+      if (ggplotGuiBrowserPatchMatches(expected, value)) {
+        ev.preventDefault();
+        return;
+      }
+    }
     if (st.hydrating) {
       ev.preventDefault();
       return;
