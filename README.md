@@ -21,7 +21,7 @@ R / Shiny と ggplot2 を使ったグラフ作成・Figure編集GUIです。コ�
 
 ## 動作環境
 
-- Windows
+- Windows　(Macでの動作は未確認)
 - R
 - 必要なRパッケージは `req.txt` に記載
 
