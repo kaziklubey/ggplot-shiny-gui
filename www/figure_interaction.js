@@ -7,6 +7,12 @@ function figureViewZoomFactor() {
   return (isFinite(z) && z > 0) ? z : 1;
 }
 
+function figurePreviewHorizontalRail(vp) {
+  if (!vp || !vp.closest) return null;
+  var shell = vp.closest('.figure-preview-shell');
+  return shell ? shell.querySelector('.figure-preview-hscroll') : null;
+}
+
 function fitFigurePreviewCanvas() {
   var zoom = figureViewZoomFactor();
   var viewports = document.querySelectorAll('.figure-preview-viewport');
@@ -25,6 +31,9 @@ function fitFigurePreviewCanvas() {
     var visualW = Math.max(1, cw * scale);
     var visualH = Math.max(1, ch * scale);
     var stage = canvas.parentElement && canvas.parentElement.classList.contains('figure-preview-stage') ? canvas.parentElement : null;
+    var rail = figurePreviewHorizontalRail(vp);
+    var spacer = rail ? rail.querySelector('.figure-preview-hscroll-spacer') : null;
+
     canvas.setAttribute('data-view-scale', String(scale));
     canvas.setAttribute('data-fit-scale', String(fitScale));
     canvas.style.transform = 'scale(' + scale + ')';
@@ -33,11 +42,45 @@ function fitFigurePreviewCanvas() {
       stage.style.width = Math.ceil(visualW) + 'px';
       stage.style.height = Math.ceil(visualH) + 'px';
     }
-    vp.style.height = Math.ceil(Math.min(visualH + 2, availableHeight + 2)) + 'px';
-    vp.style.overflowX = visualW > availableWidth + 1 ? 'auto' : 'hidden';
-    vp.style.overflowY = visualH > availableHeight ? 'auto' : 'hidden';
+
+    // Vertical scrolling stays on the Figure viewport. Horizontal scrolling is
+    // owned by a separate rail below it so the native scrollbar can never cover
+    // the Figure's bottom edge or x-axis title.
+    var needsY = visualH > availableHeight + 1;
+    var viewportContentH = Math.min(visualH, availableHeight);
+    vp.style.height = Math.ceil(viewportContentH + 2) + 'px';
+    vp.style.overflowY = needsY ? 'auto' : 'hidden';
+    vp.style.overflowX = 'hidden';
+
+    // A vertical scrollbar can reduce the viewport's usable width. Re-read it
+    // after overflowY is applied before deciding whether the horizontal rail is
+    // necessary.
+    var contentWidth = Math.max(1, vp.clientWidth - 2);
+    var needsX = visualW > contentWidth + 1;
+    if (rail && spacer) {
+      rail.classList.toggle('is-active', needsX);
+      rail.style.width = Math.max(1, vp.clientWidth) + 'px';
+      spacer.style.width = Math.ceil(visualW) + 'px';
+      if (!needsX) {
+        rail.scrollLeft = 0;
+        vp.scrollLeft = 0;
+      } else {
+        // Browser clamps rail.scrollLeft automatically if the scale shrank.
+        vp.scrollLeft = rail.scrollLeft;
+      }
+    } else if (!needsX) {
+      vp.scrollLeft = 0;
+    }
   });
 }
+
+document.addEventListener('scroll', function(ev) {
+  var rail = ev.target;
+  if (!rail || !rail.classList || !rail.classList.contains('figure-preview-hscroll')) return;
+  var shell = rail.closest ? rail.closest('.figure-preview-shell') : null;
+  var vp = shell ? shell.querySelector('.figure-preview-viewport') : null;
+  if (vp) vp.scrollLeft = rail.scrollLeft;
+}, true);
 
 window.addEventListener('resize', function() {
   window.requestAnimationFrame(fitFigurePreviewCanvas);

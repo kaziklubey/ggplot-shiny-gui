@@ -93,10 +93,9 @@ shinyServer(function(input, output, session) {
   style_clipboard <- reactiveVal(NULL)
 
   # v3.73.0: one semantic Shared Label / Style Library per Project. Graph
-  # bindings live inside each canonical GraphState; Figure remains snapshot-
-  # independent unless its explicit Library sync switch is enabled.
+  # bindings live inside each canonical GraphState. Figure remains a frozen
+  # owner and receives Library values only through explicit Common Settings.
   shared_style_library <- reactiveVal(shared_style_default_library())
-  figure_shared_style_sync <- reactiveVal(FALSE)
   shared_style_graph_replay_pending <- reactiveVal(NULL)
 
   graph_meta <- reactiveVal(data.frame(
@@ -427,7 +426,6 @@ shinyServer(function(input, output, session) {
   # v3.72: Graphs newly assigned to Figure are explicit source imports.  While
   # a source is hydrating, keep only its id here; READY consumes the request
   # exactly once.  Existing Figure-owned snapshots are never auto-refreshed.
-  figure_pending_new_imports <- reactiveVal(character(0))
   # Canonical GraphState revisions and render-state revisions are different.
   # Only the latter wakes preview publication after a canonical commit.
   graph_render_state_revisions <- reactiveValues()
@@ -446,11 +444,9 @@ shinyServer(function(input, output, session) {
     suppressWarnings(as.integer(isolate(graph_render_state_revisions[[id]] %||% 0L)))
   }
 
-  # v3.72 Figure source lifecycle -------------------------------------------
-  # A Figure-owned Graph snapshot exists only while that Graph is referenced
-  # by the current Figure (main panel or enabled inset of a current panel).
-  # Removing the last reference ends Figure ownership; a later re-add is a
-  # fresh import from the current canonical/live Graph.
+  # Figure source ownership --------------------------------------------------
+  # Figure-owned GraphState and its derived assets outlive panel placement.
+  # Only deletion of the source Graph may cascade through Figure references.
   figure_referenced_graph_ids <- function(layout = NULL, overrides = NULL) {
     if (is.null(layout)) layout <- isolate(figure_layout_state())
     if (is.null(overrides)) overrides <- isolate(figure_override_drafts())
@@ -477,24 +473,25 @@ shinyServer(function(input, output, session) {
     unique(c(main_ids, inset_ids))
   }
 
-  figure_source_cache_ids <- function() {
-    unique(c(
-      names(isolate(figure_edit_states())),
-      names(isolate(figure_loaded_plots())),
-      names(isolate(figure_loaded_exports())),
-      names(isolate(figure_loaded_assets())),
-      names(isolate(figure_persisted_previews())),
-      names(isolate(figure_override_drafts())),
-      names(isolate(figure_inset_preview_cache()))
-    ))
-  }
-
-  figure_evict_source_state <- function(id, reason = "unreferenced") {
+  figure_delete_source_state <- function(id, reason = "graph-delete") {
     id <- as.character(id %||% "")[1]
     if (!nzchar(id)) return(invisible(FALSE))
     if (exists("cancel_figure_source_snapshot_jobs", mode = "function", inherits = TRUE)) {
       cancel_figure_source_snapshot_jobs(id, reason = reason)
     }
+    if (exists("drop_figure_source_snapshot_bookkeeping", mode = "function", inherits = TRUE)) {
+      drop_figure_source_snapshot_bookkeeping(id)
+    }
+
+    refs <- figure_remove_graph_references(
+      isolate(figure_layout_state()), isolate(figure_override_drafts()), id
+    )
+    figure_layout_state(refs$layout)
+    figure_override_drafts(refs$overrides)
+    requested_refs <- figure_remove_graph_references(
+      list(), isolate(figure_requested_overrides()), id
+    )
+    figure_requested_overrides(requested_refs$overrides)
 
     drop_named <- function(rv) {
       x <- isolate(rv())
@@ -508,9 +505,21 @@ shinyServer(function(input, output, session) {
     drop_named(figure_loaded_exports)
     drop_named(figure_loaded_assets)
     drop_named(figure_persisted_previews)
-    drop_named(figure_inset_preview_cache)
+    inset_cache <- isolate(figure_inset_preview_cache())
+    if (length(inset_cache)) {
+      keep <- vapply(names(inset_cache), function(owner_id) {
+        rec <- inset_cache[[owner_id]] %||% list()
+        !identical(owner_id, id) &&
+          !identical(as.character(rec$source_id %||% owner_id)[1], id)
+      }, logical(1))
+      figure_inset_preview_cache(inset_cache[keep])
+    }
     drop_named(figure_override_drafts)
     drop_named(figure_requested_overrides)
+
+    # Reorder undo owns a complete historical layout. Once a source Graph is
+    # deleted, that history is invalid and must never reintroduce its ID.
+    figure_reorder_undo(NULL)
 
     try(figure_plot_revisions[[id]] <- NULL, silent = TRUE)
     try(figure_snapshot_revisions[[id]] <- NULL, silent = TRUE)
@@ -524,40 +533,29 @@ shinyServer(function(input, output, session) {
     try(clear_figure_geometry_source_state(id), silent = TRUE)
     try(clear_figure_svg_cache(), silent = TRUE)
 
-    pending <- isolate(figure_pending_new_imports())
-    figure_pending_new_imports(setdiff(pending, id))
+    figure_requested_ids(setdiff(isolate(figure_requested_ids()), id))
+    load_revs <- isolate(figure_load_expected_revisions())
+    if (id %in% names(load_revs)) {
+      load_revs[[id]] <- NULL
+      figure_load_expected_revisions(load_revs)
+    }
+    if (identical(as.character(isolate(figure_selected_graph()) %||% "")[1], id)) {
+      figure_selected_graph("")
+      figure_selected_panel_key("")
+    }
 
     if (identical(as.character(isolate(figure_editing_graph()) %||% "")[1], id) &&
         exists("reset_figure_editors", mode = "function", inherits = TRUE)) {
       try(reset_figure_editors(clear_states = FALSE), silent = TRUE)
     }
-    diag_log("FIGURE-SOURCE-GC", paste0("evicted reason=", reason), id = id)
-    invisible(TRUE)
-  }
-
-  figure_gc_unreferenced_sources <- function(reason = "layout-change") {
-    keep <- figure_referenced_graph_ids()
-    stale <- setdiff(figure_source_cache_ids(), keep)
-    if (length(stale)) {
-      for (id in stale) figure_evict_source_state(id, reason = reason)
-    }
+    bump_figure_layout_ui()
     diag_log(
-      "FIGURE-SOURCE-GC",
-      paste0("keep={", paste(keep, collapse=","), "} evicted={", paste(stale, collapse=","), "} reason=", reason)
+      "FIGURE-SOURCE-DELETE",
+      paste0("cascade reason=", reason,
+             " main_refs=", refs$removed_main,
+             " inset_refs=", max(refs$removed_insets, requested_refs$removed_insets)),
+      id = id
     )
-    invisible(stale)
-  }
-
-  figure_mark_new_import <- function(id) {
-    id <- as.character(id %||% "")[1]
-    if (!nzchar(id)) return(invisible(FALSE))
-    figure_pending_new_imports(unique(c(isolate(figure_pending_new_imports()), id)))
-    invisible(TRUE)
-  }
-
-  figure_clear_new_import <- function(id) {
-    id <- as.character(id %||% "")[1]
-    figure_pending_new_imports(setdiff(isolate(figure_pending_new_imports()), id))
     invisible(TRUE)
   }
 
@@ -623,8 +621,6 @@ shinyServer(function(input, output, session) {
 
   project_bundle_pending_previews <- reactiveVal(list())
   project_bundle_pending_inset_previews <- reactiveVal(list())
-  project_bundle_pending_graph_previews <- reactiveVal(list())
-  project_legacy_graph_previews <- reactiveVal(list())
 
   # v3.3.49 experimental Figure renderer: vector preview snapshots are an
   # in-session display cache only. They are intentionally NOT reactive and are
@@ -1165,22 +1161,6 @@ shinyServer(function(input, output, session) {
     list(components = comp, plot = p, meta = ex, render_revision = rr)
   }
 
-  preserve_figure_inset_snapshot_before_main_replace <- function(id, persisted_rec) {
-    id <- as.character(id %||% "")[1]
-    if (!nzchar(id) || !is.list(persisted_rec) || !nzchar(persisted_rec$svg %||% "")) return(FALSE)
-    inset_cache <- isolate(figure_inset_preview_cache())
-    existing <- inset_cache[[id]]
-    if (is.list(existing) && nzchar(existing$svg %||% "")) return(FALSE)
-    # Main and Inset are independent Figure-owned snapshots. If an Inset is
-    # currently falling back to the packaged Figure preview, preserve that exact
-    # point-in-time asset before a Main edit invalidates the packaged fallback.
-    inset_cache[[id]] <- persisted_rec
-    figure_inset_preview_cache(inset_cache)
-    bump_figure_snapshot_revision(id)
-    diag_log("FIGURE-INSET", "preserved persisted fallback before Main snapshot replacement", id = id)
-    TRUE
-  }
-
   snapshot_ready_figure_editor <- function(id, state_now = NULL, payload = NULL) {
     id <- as.character(id %||% "")[1]
     if (!is.list(payload)) payload <- capture_ready_figure_editor_payload(id)
@@ -1204,8 +1184,6 @@ shinyServer(function(input, output, session) {
     # never win as a fallback. It will be regenerated from this live Figure copy
     # on the next Project save.
     persisted <- isolate(figure_persisted_previews())
-    old_persisted <- persisted[[id]]
-    preserve_figure_inset_snapshot_before_main_replace(id, old_persisted)
     persisted[[id]] <- NULL
     figure_persisted_previews(persisted)
 
@@ -1250,7 +1228,6 @@ shinyServer(function(input, output, session) {
 
   invalidate_figure_main_snapshot_for_import <- function(id) {
     persisted <- isolate(figure_persisted_previews())
-    preserve_figure_inset_snapshot_before_main_replace(id, persisted[[id]])
     persisted[[id]] <- NULL
     figure_persisted_previews(persisted)
     for (registry in list(figure_loaded_plots, figure_loaded_exports, figure_loaded_assets)) {
@@ -1603,28 +1580,7 @@ shinyServer(function(input, output, session) {
       rm(list = id, envir = graph_single_editor_visit_cache)
     }
 
-    # Remove Figure-owned snapshot references for the deleted Graph. There is
-    # no Graph SVG cache to invalidate in the state-replay architecture.
-    previews <- isolate(figure_persisted_previews())
-    previews[[id]] <- NULL
-    figure_persisted_previews(previews)
-
-    plots <- isolate(figure_loaded_plots()); plots[[id]] <- NULL; figure_loaded_plots(plots)
-    exports <- isolate(figure_loaded_exports()); exports[[id]] <- NULL; figure_loaded_exports(exports)
-    assets <- isolate(figure_loaded_assets()); assets[[id]] <- NULL; figure_loaded_assets(assets)
-    drafts <- isolate(figure_override_drafts()); drafts[[id]] <- NULL; figure_override_drafts(drafts)
-    try(figure_plot_revisions[[id]] <- NULL, silent = TRUE)
-    try(figure_snapshot_revisions[[id]] <- NULL, silent = TRUE)
-    commit_revs <- isolate(figure_commit_edit_revisions())
-    if (length(commit_revs) && id %in% names(commit_revs)) {
-      commit_revs[[id]] <- NULL
-      figure_commit_edit_revisions(commit_revs)
-    }
-    clear_figure_geometry_cache(id)
-    clear_figure_geometry_source_state(id)
-
-    figure_requested_ids(setdiff(isolate(figure_requested_ids()), id))
-    clear_figure_svg_cache()
+    figure_delete_source_state(id, reason = "source-graph-delete")
 
     meta <- meta[meta$id != id, , drop = FALSE]
     graph_meta(meta)
@@ -1676,6 +1632,9 @@ shinyServer(function(input, output, session) {
   # v3.73.2.29: typed external Settings Manager edits and explicit direct-state
   # Figure refresh. Sourced after Figure snapshot/workspace services exist.
   sys.source(file.path(getwd(), "R/server/graph/settings/server_graph_settings_value_runtime.R"), envir = environment())
+
+  # v4.0.1: Figure Common Settings owns the compact Figure-only target/quick-style/semantic UI.
+  sys.source(file.path(getwd(), "R/server/figure/server_figure_common_settings_runtime.R"), envir = environment())
 
   # v3.73.2.21: legacy/persisted Figure legend regeneration is an adapter
   # over the same single Figure value-replay renderer used by Main/Inset.

@@ -47,6 +47,12 @@ function figureViewZoomFactor() {
   return (isFinite(z) && z > 0) ? z : 1;
 }
 
+function figurePreviewHorizontalRail(vp) {
+  if (!vp || !vp.closest) return null;
+  var shell = vp.closest('.figure-preview-shell');
+  return shell ? shell.querySelector('.figure-preview-hscroll') : null;
+}
+
 function fitFigurePreviewCanvas() {
   var zoom = figureViewZoomFactor();
   var viewports = document.querySelectorAll('.figure-preview-viewport');
@@ -57,14 +63,17 @@ function fitFigurePreviewCanvas() {
     var ch = parseFloat(canvas.getAttribute('data-canvas-height')) || canvas.offsetHeight || 1;
     var availableWidth = Math.max(1, vp.clientWidth - 2);
     var availableHeight = Math.max(220, window.innerHeight * 0.68);
-    // Preview display is width-first.  A tall Figure scrolls vertically
-    // instead of being shrunk again just to satisfy the viewport-height cap.
+    // Preview display is width-first. A tall Figure scrolls vertically instead
+    // of shrinking the whole canvas again to satisfy the viewport-height cap.
     var fitScale = Math.min(1, availableWidth / cw);
     if (!isFinite(fitScale) || fitScale <= 0) fitScale = 1;
     var scale = fitScale * zoom;
     var visualW = Math.max(1, cw * scale);
     var visualH = Math.max(1, ch * scale);
     var stage = canvas.parentElement && canvas.parentElement.classList.contains('figure-preview-stage') ? canvas.parentElement : null;
+    var rail = figurePreviewHorizontalRail(vp);
+    var spacer = rail ? rail.querySelector('.figure-preview-hscroll-spacer') : null;
+
     canvas.setAttribute('data-view-scale', String(scale));
     canvas.setAttribute('data-fit-scale', String(fitScale));
     canvas.style.transform = 'scale(' + scale + ')';
@@ -73,23 +82,45 @@ function fitFigurePreviewCanvas() {
       stage.style.width = Math.ceil(visualW) + 'px';
       stage.style.height = Math.ceil(visualH) + 'px';
     }
-    vp.style.height = Math.ceil(Math.min(visualH + 2, availableHeight + 2)) + 'px';
-    vp.style.overflowX = visualW > availableWidth + 1 ? 'auto' : 'hidden';
-    vp.style.overflowY = visualH > availableHeight ? 'auto' : 'hidden';
+
+    // Vertical scrolling stays on the Figure viewport. Horizontal scrolling is
+    // owned by a separate rail below it so the native scrollbar can never cover
+    // the Figure's bottom edge or x-axis title.
+    var needsY = visualH > availableHeight + 1;
+    var viewportContentH = Math.min(visualH, availableHeight);
+    vp.style.height = Math.ceil(viewportContentH + 2) + 'px';
+    vp.style.overflowY = needsY ? 'auto' : 'hidden';
+    vp.style.overflowX = 'hidden';
+
+    // A vertical scrollbar can reduce the viewport's usable width. Re-read it
+    // after overflowY is applied before deciding whether the horizontal rail is
+    // necessary.
+    var contentWidth = Math.max(1, vp.clientWidth - 2);
+    var needsX = visualW > contentWidth + 1;
+    if (rail && spacer) {
+      rail.classList.toggle('is-active', needsX);
+      rail.style.width = Math.max(1, vp.clientWidth) + 'px';
+      spacer.style.width = Math.ceil(visualW) + 'px';
+      if (!needsX) {
+        rail.scrollLeft = 0;
+        vp.scrollLeft = 0;
+      } else {
+        // Browser clamps rail.scrollLeft automatically if the scale shrank.
+        vp.scrollLeft = rail.scrollLeft;
+      }
+    } else if (!needsX) {
+      vp.scrollLeft = 0;
+    }
   });
 }
 
-// Open another browser window on the same Shiny origin.  The server process
-// remains the same, while Shiny creates an independent session for the new
-// window.  Keeping the same origin also preserves the existing IndexedDB /
-// FileSystemHandle storage namespace used by Project save destinations.
-document.addEventListener('click', function(ev) {
-  var btn = ev.target && ev.target.closest ? ev.target.closest('#open_project_window_all') : null;
-  if (!btn) return;
-  ev.preventDefault();
-  var target = window.location.origin + window.location.pathname + window.location.search;
-  window.open(target, '_blank', 'noopener');
-});
+document.addEventListener('scroll', function(ev) {
+  var rail = ev.target;
+  if (!rail || !rail.classList || !rail.classList.contains('figure-preview-hscroll')) return;
+  var shell = rail.closest ? rail.closest('.figure-preview-shell') : null;
+  var vp = shell ? shell.querySelector('.figure-preview-viewport') : null;
+  if (vp) vp.scrollLeft = rail.scrollLeft;
+}, true);
 
 window.addEventListener('resize', function() {
   window.requestAnimationFrame(fitFigurePreviewCanvas);
@@ -511,6 +542,25 @@ document.addEventListener('pointerdown', ggplotGuiBrowserPatchMarkUserIntent, tr
 document.addEventListener('keydown', ggplotGuiBrowserPatchMarkUserIntent, true);
 document.addEventListener('input', ggplotGuiBrowserPatchMarkUserIntent, true);
 
+// Shared Style's linkage checkbox is rendered dynamically inside the persistent
+// Graph Editor. Workspace hide/show can unbind/rebind that checkbox and publish
+// a synthetic FALSE through Shiny even though the user never changed it. Route
+// only a trusted browser change into the Graph-owned binding state; ordinary
+// Shiny lifecycle echoes are deliberately ignored by the R binding observer.
+document.addEventListener('change', function(ev) {
+  if (!ev || ev.isTrusted !== true || !ev.target || !window.Shiny) return;
+  var id = String(ev.target.id || '');
+  if (!/^graph_editor_single-shared_style_enabled_[0-9a-f]+_ui\d+_ss\d+$/.test(id)) return;
+  var graphId = String(window.ggplotGuiClientEditingGraph || '');
+  if (!graphId || !window.ggplotGuiClientEditorReady) return;
+  Shiny.setInputValue('graph_editor_single-shared_style_enabled_user_change', {
+    graphId: graphId,
+    value: !!ev.target.checked,
+    controlId: id,
+    nonce: Date.now()
+  }, {priority:'event'});
+}, true);
+
 function ggplotGuiBrowserPatchHasUserIntent(key) {
   return ggplotGuiPatchStateHasUserIntent(window.ggplotGuiBrowserPatchPoc || {}, key);
 }
@@ -560,16 +610,25 @@ function ggplotGuiBrowserPatchQueue(key, value) {
   var st = window.ggplotGuiBrowserPatchPoc;
   var path = st.paths[key];
   if (!st.ready || !path || !st.graphId || !window.Shiny) return false;
+  var hasBaseValue = Object.prototype.hasOwnProperty.call(st.working || {}, key);
+  var baseValue = hasBaseValue ? st.working[key] : null;
   st.working[key] = value;
   var replaced = false;
   for (var i = 0; i < st.queue.length; i++) {
     if (st.queue[i].key === key) {
+      // Coalesce repeated edits of one queued control, but keep the value that
+      // existed before the first queued edit. The server uses that base value
+      // for path-local optimistic rebase if unrelated canonical state advances.
       st.queue[i].value = value;
       replaced = true;
       break;
     }
   }
-  if (!replaced) st.queue.push({key:key, path:path, value:value, retryCount:0});
+  if (!replaced) st.queue.push({
+    key:key, path:path, value:value,
+    hasBaseValue:hasBaseValue, baseValue:baseValue,
+    retryCount:0
+  });
   ggplotGuiBrowserPatchDrain();
   return true;
 }
@@ -589,6 +648,8 @@ function ggplotGuiBrowserPatchDrain() {
     key: patch.key,
     path: patch.path,
     value: patch.value,
+    hasBaseValue: !!patch.hasBaseValue,
+    baseValue: patch.hasBaseValue ? patch.baseValue : null,
     nonce: Date.now()
   }, {priority:'event'});
   return true;
@@ -610,7 +671,11 @@ $(document).on('shiny:inputchanged.browserPatchPoc', function(ev) {
   // event is prevented from reaching R. conditionalPanel visibility depends on
   // that client mirror (e.g. Bar must hide Line-only controls immediately).
   ggplotGuiBrowserDirectSyncClientInput(name, value, true);
-  ggplotGuiBrowserPatchSyncSizeAlias(st, 'graph_editor_single-', key, value, 'working');
+  // Alias-generated input events must be consumed before they are allowed to
+  // mirror back into the sibling control. Otherwise slider -> numeric mirroring
+  // can synchronously emit numeric inputchanged, which mirrors back to the
+  // slider and marks the original user event as suppressOnce before it reaches
+  // the canonical browser-patch queue.
   if (Object.prototype.hasOwnProperty.call(st.suppressOnce, key)) {
     var expected = st.suppressOnce[key];
     delete st.suppressOnce[key];
@@ -619,6 +684,7 @@ $(document).on('shiny:inputchanged.browserPatchPoc', function(ev) {
       return;
     }
   }
+  ggplotGuiBrowserPatchSyncSizeAlias(st, 'graph_editor_single-', key, value, 'working');
   // Browser-direct hydration can cause a binding to publish after the hydrate
   // handler has returned and after READY has been announced. Keep the target
   // value as a short-lived source marker so those delayed events never become
@@ -628,6 +694,8 @@ $(document).on('shiny:inputchanged.browserPatchPoc', function(ev) {
     ev.preventDefault();
     return;
   }
+
+
   // RC13: selectize/colour/numeric bindings may publish one or more delayed
   // values after READY. During a short post-hydration guard window, only a
   // trusted user interaction may become a revisioned patch. This is short
@@ -673,21 +741,36 @@ Shiny.addCustomMessageHandler('graph-browser-patch-result', function(msg) {
   st.revision = Number(msg.revision || st.revision || 0);
   if (msg.accepted) {
     if (msg.key) {
-      st.working[String(msg.key)] = msg.value;
-      ggplotGuiBrowserPatchSetControl(String(msg.key), msg.value);
+      var acceptedKey = String(msg.key);
+      var newerQueued = st.queue.some(function(item) { return String(item.key || '') === acceptedKey; });
+      // An ACK for an older edit must not visually rewind a newer optimistic
+      // edit of the same control that is already queued behind it.
+      if (!newerQueued) {
+        st.working[acceptedKey] = msg.value;
+        ggplotGuiBrowserPatchSetControl(acceptedKey, msg.value);
+      }
     }
   } else {
+    var retry = null;
+    if (String(msg.reason || '') === 'revision-mismatch' && Number(inflight.retryCount || 0) < 1) {
+      retry = {
+        key: inflight.key, path: inflight.path, value: inflight.value,
+        hasBaseValue: !!inflight.hasBaseValue, baseValue: inflight.baseValue,
+        retryCount: Number(inflight.retryCount || 0) + 1
+      };
+      st.queue.unshift(retry);
+    }
+    var pendingKeys = {};
+    st.queue.forEach(function(item) { pendingKeys[String(item.key || '')] = true; });
     var canonical = msg.canonicalValues || {};
     Object.keys(canonical).forEach(function(key) {
+      // A reject is a canonical resync, but queued user intents are still the
+      // browser's optimistic working copy. Never erase those unrelated pending
+      // selections while rebasing a different control.
+      if (pendingKeys[String(key)]) return;
       st.working[key] = canonical[key];
       ggplotGuiBrowserPatchSetControl(key, canonical[key]);
     });
-    if (String(msg.reason || '') === 'revision-mismatch' && Number(inflight.retryCount || 0) < 1) {
-      inflight.retryCount = Number(inflight.retryCount || 0) + 1;
-      st.queue.unshift({
-        key: inflight.key, path: inflight.path, value: inflight.value, retryCount: inflight.retryCount
-      });
-    }
   }
   st.inflight = null;
   ggplotGuiBrowserPatchDrain();
@@ -696,9 +779,9 @@ Shiny.addCustomMessageHandler('graph-browser-patch-result', function(msg) {
 // Data text uses shinyAce's native input transport instead of the generic
 // browser-patch queue. A successful canonical Data commit can still advance the
 // Graph render-state revision, so rebase the optimistic patch client without
-// touching controls or creating a fake patch sequence. Any already-inflight
-// patch retains its old baseRevision and will follow the existing one-retry
-// revision-mismatch path if necessary.
+// touching controls or creating a fake patch sequence. An already-inflight
+// patch retains its old baseRevision plus its path-local baseValue; the server
+// can therefore rebase it safely when only unrelated canonical paths changed.
 Shiny.addCustomMessageHandler('graph-browser-patch-rebase', function(msg) {
   msg = msg || {};
   var st = window.ggplotGuiBrowserPatchPoc;
@@ -1183,8 +1266,18 @@ Shiny.addCustomMessageHandler('graph-client-catalog', function(msg) {
     window.ggplotGuiPendingEditorActivation = null;
   }
 
-  window.ggplotGuiClientEditingGraph = String(msg.editing || '');
-  window.ggplotGuiClientEditingGraphName = String(msg.editingName || msg.editing || '');
+  // Graph catalog messages are metadata-only. Editor ownership is controlled
+  // exclusively by graph-client-edit-begin / graph-client-edit-ready /
+  // graph-editor-shell-clear. A catalog payload can be queued before an Editor
+  // retarget and arrive later; letting it overwrite the current editing owner
+  // can make the following canonical hydration look stale and get discarded.
+  // Keep the current owner, but refresh its display name from the new catalog.
+  var editingId = String(window.ggplotGuiClientEditingGraph || '');
+  if (editingId && catalog[editingId]) {
+    window.ggplotGuiClientEditingGraphName = String(catalog[editingId].name || editingId);
+  } else if (!editingId) {
+    window.ggplotGuiClientEditingGraphName = '';
+  }
   var selected = String(msg.selected || window.ggplotGuiClientSelectedGraph || '');
   if (selected && catalog[selected]) {
     window.ggplotGuiClientSelectedGraph = selected;
@@ -1448,7 +1541,9 @@ $(document).on('shiny:inputchanged.figureBrowserPatch', function(ev) {
     if (!key || !Object.prototype.hasOwnProperty.call(st.values || {}, key)) return;
     var value = ev.value;
     ggplotGuiBrowserDirectSyncClientInput(name, value, true);
-    ggplotGuiBrowserPatchSyncSizeAlias(st, prefix, key, value, 'values');
+    // Consume an alias-generated echo before any reverse alias synchronization.
+    // This keeps Figure Controls on the same one-way user-event contract as the
+    // Full Editor and prevents slider/numeric ping-pong from swallowing edits.
     if (Object.prototype.hasOwnProperty.call(st.suppressOnce || {}, key)) {
       var expected = st.suppressOnce[key];
       delete st.suppressOnce[key];
@@ -1457,6 +1552,7 @@ $(document).on('shiny:inputchanged.figureBrowserPatch', function(ev) {
         return;
       }
     }
+    ggplotGuiBrowserPatchSyncSizeAlias(st, prefix, key, value, 'values');
     if (st.hydrating) {
       ev.preventDefault();
       return;
@@ -1652,6 +1748,14 @@ Shiny.addCustomMessageHandler('project-close-reload', function(msg) {
 
 // RC7: retired fixed Global Preview subsystem removed. The persistent
 // graph_editor_single plotOutput is the sole Graph display surface.
+
+Shiny.addCustomMessageHandler('figure-collapse-workspace-controls', function(msg) {
+  document.querySelectorAll(
+    'details.figure-layout-section, details.figure-graph-sources-section, details.figure-control-drawer'
+  ).forEach(function(node) {
+    node.removeAttribute('open');
+  });
+});
 
 Shiny.addCustomMessageHandler('figure-editor-select', function(msg) {
   var host = document.getElementById('figure_graph_editor_host');
@@ -2058,6 +2162,22 @@ function ggplotGuiFigureSelectLayoutRow(row) {
 }
 window.ggplotGuiFigureSelectLayoutRow = ggplotGuiFigureSelectLayoutRow;
 
+// Figure Inspector subgroups use native <details>/<summary>, matching the
+// other working Figure drawers. The browser owns open/close immediately; R
+// receives only presentation state so renderUI replacement can restore it.
+document.addEventListener('toggle', function(e) {
+  var group = e.target;
+  if (!group || !group.matches ||
+      !group.matches('details.figure-inspector-group[data-figure-fold-key]')) return;
+  var key = String(group.getAttribute('data-figure-fold-key') || '');
+  if (!key) return;
+  Shiny.setInputValue('figure_inspector_fold', {
+    key: key,
+    collapsed: !group.open,
+    nonce: Date.now()
+  }, {priority: 'event'});
+}, true);
+
 $(document).on('click', '.figure-row-summary[data-figure-row]', function(e) {
   if ($(e.target).closest('input,select,button,.selectize-control').length) return;
   var row = parseInt($(this).attr('data-figure-row'), 10);
@@ -2086,7 +2206,7 @@ $(document).on('click', '.figure-grid-cell[data-figure-id]', function(e) {
   var folds = {};
   document.querySelectorAll('.figure-inspector-group[data-figure-fold-key]').forEach(function(group) {
     var foldKey = String(group.getAttribute('data-figure-fold-key') || '');
-    if (foldKey) folds[foldKey] = group.classList.contains('is-collapsed');
+    if (foldKey) folds[foldKey] = !group.open;
   });
   Shiny.setInputValue('figure_panel_clicked', {
     id: id,
