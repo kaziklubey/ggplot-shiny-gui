@@ -44,8 +44,3 @@ https://github.com/kaziklubey/ggplot-shiny-gui
 新しいバージョンがある場合は、`U`でReleaseページを開くか、Enterで現在のバージョンを起動できます。ネット接続がない場合やGitHub APIへ接続できない場合も、確認をスキップして通常起動します。
 
 更新確認を無効化する場合は、起動前に環境変数 `GGPLOT_GUI_SKIP_UPDATE_CHECK=1` を設定します。
-
-
-Graph Settings Managerでは `Graphだけ` / `Figureだけ` / `Graph + Figure` を選択できます。Figure側だけで最終調整しても元Graphは変更されません。
-
-
