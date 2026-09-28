@@ -1,5 +1,5 @@
 
-// v3.72.6+: report the actually loaded client asset version.  Static browser
+// +: report the actually loaded client asset version. Static browser
 // caching previously allowed a new R server to run against an older app_client.js,
 // which broke transaction ACKs and left the Editor permanently HYDRATING.
 (function() {
@@ -23,7 +23,7 @@
   }, {once: true});
 })();
 
-// v3.81 structured category ordering. Buttons publish only a role/variable/index
+// structured category ordering. Buttons publish only a role/variable/index
 // transition; category labels themselves never travel through delimited text.
 document.addEventListener('click', function(ev) {
   var btn = ev.target && ev.target.closest ? ev.target.closest('.category-order-move') : null;
@@ -141,7 +141,7 @@ Shiny.addCustomMessageHandler('fit-figure-preview', function(msg) {
 // Project restore: acknowledge only when the exact Mapping inputs for
 // the requested generation exist in the DOM and are bound by Shiny.
 // Server-side generation matching rejects late acks from replaced UI.
-// v3.52: keep only the progression-critical binding checker.  Earlier
+// keep only the progression-critical binding checker. Earlier
 // diagnostic-only sparse probes repeated the same DOM scan and sent extra
 // Shiny inputs while restore was already waiting on the terminal ACK.
 // Timing is now measured on the server, so that duplicate traffic is
@@ -191,12 +191,12 @@ Shiny.addCustomMessageHandler('stats-restore-browser-barrier', function(msg) {
 });
 
 // Browser-confirm the newly inserted Graph shell before graphServer is
-// created.  insertUI() returning on the server does not mean the DOM or
+// created. insertUI() returning on the server does not mean the DOM or
 // Shiny input bindings are ready in the client.
 var graphUiMountGenerations = {};
 var graphUiMountCleanups = {};
 
-// v4 RC7 live-only Graph workspace. The browser keeps Graph id/name metadata
+// live-only Graph workspace. The browser keeps Graph id/name metadata
 // only. No SVG/PNG Graph preview cache exists; one persistent Shiny plotOutput
 // displays the ggplot generated for the current canonical GraphState.
 window.ggplotGuiClientGraphCatalog = window.ggplotGuiClientGraphCatalog || {};
@@ -206,7 +206,7 @@ window.ggplotGuiClientEditingGraphName = window.ggplotGuiClientEditingGraphName 
 window.ggplotGuiClientEditorReady = window.ggplotGuiClientEditorReady || false;
 
 
-// v4.0 RC8 persistent level-control slot pools.
+// persistent level-control slot pools.
 // Each pool allocates ordinary browser controls in chunks of 50 and never
 // shrinks during the session. These controls are intentionally not Shiny input
 // bindings. Programmatic Graph/style hydration therefore cannot feed back as a
@@ -382,7 +382,7 @@ document.addEventListener('change', function(ev) {
   }, {priority:'event'});
 });
 
-// v4.0 RC11 browser working state. Full-Editor fixed controls are browser-owned
+// browser working state. Full-Editor fixed controls are browser-owned
 // while the Editor is READY. Their ordinary Shiny input messages are cancelled
 // and replaced by one revisioned patch channel. R remains the canonical
 // GraphState owner.
@@ -696,7 +696,7 @@ $(document).on('shiny:inputchanged.browserPatchPoc', function(ev) {
   }
 
 
-  // RC13: selectize/colour/numeric bindings may publish one or more delayed
+  // selectize/colour/numeric bindings may publish one or more delayed
   // values after READY. During a short post-hydration guard window, only a
   // trusted user interaction may become a revisioned patch. This is short
   // enough to avoid the old five-second Scatter suppression, while pointer/
@@ -715,7 +715,7 @@ $(document).on('shiny:inputchanged.browserPatchPoc', function(ev) {
       return;
     }
     // Choice/selectize hydration can publish transient values (for example an
-    // empty selection while options are rebuilt) after READY.  Treat a
+    // empty selection while options are rebuilt) after READY. Treat a
     // differing event as user input only when it is preceded by a trusted
     // browser interaction with this control; otherwise it is still hydration.
     var liveValue = ggplotGuiBrowserDirectControlValue('graph_editor_single-' + key);
@@ -792,9 +792,9 @@ Shiny.addCustomMessageHandler('graph-browser-patch-rebase', function(msg) {
 });
 
 
-// v3.64.0-lazyui1: presentation-only Editor memory.  This deliberately
+// presentation-only Editor memory. This deliberately
 // lives outside GraphState/Project serialization and disappears with the
-// browser/Shiny session.  The fixed Editor DOM itself is still reused.
+// browser/Shiny session. The fixed Editor DOM itself is still reused.
 window.ggplotGuiGraphEditorUiState = window.ggplotGuiGraphEditorUiState || {};
 window.ggplotGuiPendingEditorActivation = window.ggplotGuiPendingEditorActivation || null;
 
@@ -934,7 +934,7 @@ function ggplotGuiRestoreEditorUiState(graphId, forceTopKey) {
 
 function ggplotGuiSyncWorkspaceSectionBar(tabValue) {
   tabValue = String(tabValue || 'Plot');
-  // v3.73.1.1: Graph section ownership is workspace-global, not per Graph.
+  // Graph section ownership is workspace-global, not per Graph.
   // The internal Shiny tabset is the truth; this outer bar mirrors that state.
   window.ggplotGuiWorkspaceMainTab = tabValue;
   document.querySelectorAll('#graph_workspace_section_bar [data-graph-main-tab]').forEach(function(btn) {
@@ -1066,7 +1066,7 @@ function ggplotGuiUpdateEditorShell(selectedId, stateOverride) {
   }
 }
 
-// RC7: the Editor and live plot DOM are always the workspace surface. Graph
+// the Editor and live plot DOM are always the workspace surface. Graph
 // switches never substitute a cached preview or a second layout.
 function ggplotGuiPrepareReplayWorkspace(id) {
   id = String(id || window.ggplotGuiClientSelectedGraph || '');
@@ -1117,7 +1117,7 @@ function ggplotGuiRequestEditorActivation(id, sectionKey, source, targetInputId)
   targetInputId = String(targetInputId || '');
   if (!id || !window.Shiny) return false;
 
-  // Keep the requested section entirely client-side.  GraphState remains the
+  // Keep the requested section entirely client-side. GraphState remains the
   // canonical data/style owner; this is presentation-only activation memory.
   window.ggplotGuiPendingEditorActivation = {
     id: id,
@@ -1129,7 +1129,7 @@ function ggplotGuiRequestEditorActivation(id, sectionKey, source, targetInputId)
   ggplotGuiUpdateEditorShell(id);
 
   // If this target is already in-flight, a later section click only changes
-  // the pending section to reopen.  Do not start a second replay transaction.
+  // the pending section to reopen. Do not start a second replay transaction.
   var editingId = String(window.ggplotGuiClientEditingGraph || '');
   if (editingId === id && !window.ggplotGuiClientEditorReady) return false;
 
@@ -1177,7 +1177,7 @@ function ggplotGuiOpenGraphWorkspaceForSettingsJump(id) {
   if (!id) return false;
 
   // Make the requested Graph the browser-side selection before the workspace
-  // tab change.  The Graph workspace resume observer therefore sees the same
+  // tab change. The Graph workspace resume observer therefore sees the same
   // target even if Bootstrap publishes the tab change before graph_edit_select.
   window.ggplotGuiClientSelectedGraph = id;
   document.querySelectorAll('.graph-tab-btn').forEach(function(btn) {
@@ -1225,12 +1225,11 @@ window.ggplotGuiJumpToGraphSetting = function(id, sectionKey, inputId) {
   }
 
   // Preserve the requested section/input across the normal persistent-editor
-  // activation transaction.  graph-client-edit-ready consumes this record.
+  // activation transaction. graph-client-edit-ready consumes this record.
   return ggplotGuiRequestEditorActivation(id, sectionKey, 'settings-manager', inputId);
 };
 
 
-// Graph/Figure Settings Manager popout moved to graph_settings_popout.js in v3.73.2.29.
 
 window.ggplotGuiEditBrowsedGraph = function() {
   return ggplotGuiRequestEditorActivation(
@@ -1337,7 +1336,7 @@ function ggplotGuiBrowserDirectChoiceRecord(rec) {
 function ggplotGuiBrowserDirectNormalizeChoices(choices) {
   if (Array.isArray(choices)) return choices.map(ggplotGuiBrowserDirectChoiceRecord);
   if (!choices || typeof choices !== 'object') return [];
-  // Defensive compatibility with a named-object encoding.  Canonical RC11
+  // Defensive compatibility with a named-object encoding. Canonical RC11
   // payloads are arrays of {label,value}, but accepting an object prevents a
   // serializer/version difference from creating literal "undefined" options.
   return Object.keys(choices).map(function(key) {
@@ -1386,7 +1385,7 @@ function ggplotGuiBrowserDirectReplaceChoices(el, choices) {
     sz.clearOptions();
     records.forEach(function(rec) {
       // Shiny/selectize configurations have used both text and label as the
-      // presentation field over the app's lifetime.  Populate both so the
+      // presentation field over the app's lifetime. Populate both so the
       // dropdown can never render "undefined" solely from field-name drift.
       sz.addOption({text:rec.label, label:rec.label, value:rec.value});
     });
@@ -1488,15 +1487,15 @@ Shiny.addCustomMessageHandler('graph-state-browser-hydrate', function(msg) {
   var values = msg.values && typeof msg.values === 'object' ? msg.values : {};
   var choices = msg.choices && typeof msg.choices === 'object' ? msg.choices : {};
 
-  // Phase 1: replace every choice topology first.  Phase 2 then applies all
-  // selected values.  This prevents select/selectize from temporarily trying
+  // replace every choice topology first. Phase 2 then applies all
+  // selected values. This prevents select/selectize from temporarily trying
   // to select a value against the previous Graph's option set.
   Object.keys(choices).forEach(function(key) {
     var el = document.getElementById(prefix + String(key || ''));
     if (el) ggplotGuiBrowserDirectReplaceChoices(el, choices[key]);
   });
   Object.keys(values).forEach(function(key) {
-    // RC13.10: graph_main_tab is owned by Shiny's tabset input binding.
+    // graph_main_tab is owned by Shiny's tabset input binding.
     // Browser-direct scalar hydration must never write it; R restores it after
     // the direct value batch with updateTabsetPanel(), which changes the pane
     // and the Shiny input as one atomic tabset operation.
@@ -1711,7 +1710,7 @@ Shiny.addCustomMessageHandler('graph-client-edit-ready', function(msg) {
       window.ggplotGuiPendingEditorActivation = null;
     }
 
-    // RC7: canonical controls and the live plot share one persistent workspace.
+    // canonical controls and the live plot share one persistent workspace.
     // No preview layer is swapped in or out while the Shiny plot updates.
     if (stillSelected) {
       ggplotGuiRevealEditorWorkspace(id);
@@ -1746,7 +1745,7 @@ Shiny.addCustomMessageHandler('project-close-reload', function(msg) {
   window.location.reload();
 });
 
-// RC7: retired fixed Global Preview subsystem removed. The persistent
+// retired fixed Global Preview subsystem removed. The persistent
 // graph_editor_single plotOutput is the sole Graph display surface.
 
 Shiny.addCustomMessageHandler('figure-collapse-workspace-controls', function(msg) {
@@ -1838,7 +1837,7 @@ Shiny.addCustomMessageHandler('graph-ui-mount-check', function(msg) {
     graphUiMountGenerations[key] = null;
   }
 
-  // No polling/timer fallback.  Inspect once at the next frame and thereafter
+  // No polling/timer fallback. Inspect once at the next frame and thereafter
   // only when Shiny reports that an input binding has completed.
   if (window.jQuery) {
     boundHandler = function(evt) {
@@ -1942,7 +1941,7 @@ Shiny.addCustomMessageHandler('figure-label-overlay-update', function(msg) {
   label.style.top = y + 'px';
 });
 
-// v3.3.48: Layout editor uses plain HTML controls. Commit only
+// Layout editor uses plain HTML controls. Commit only
 // explicit user changes to the R-side Figure state. This avoids Shiny
 // dynamic-input initialization feeding old values back into state.
 function clampFigureNumberInput(el, fallback) {
@@ -1958,8 +1957,8 @@ function clampFigureNumberInput(el, fallback) {
   return value;
 }
 
-// RC13: Figure layout numeric controls are a browser-side working copy while
-// the user is spinning/typing.  Only the latest value for each field is sent
+// Figure layout numeric controls are a browser-side working copy while
+// the user is spinning/typing. Only the latest value for each field is sent
 // after a short quiet period, so native spinner-arrow holds do not enqueue a
 // full geometry/autofit pass for every intermediate value. Structural edits
 // flush this queue before they mutate the Figure topology.
@@ -2074,8 +2073,8 @@ $(document).on('input change', '.figure-column-ratio-edit', function() {
   sendFigureColumnRatioEdit(this, true);
 });
 
-// v3.3.69: native number-input spinners use min=80 when the value is
-// empty.  For an Auto field, prime the control from the Graph-side panel
+// native number-input spinners use min=80 when the value is
+// empty. For an Auto field, prime the control from the Graph-side panel
 // size (normally 600x600) before the browser applies the first step.
 $(document).on('mousedown', '.figure-graph-width-edit,.figure-graph-height-edit', function(e) {
   if (String(this.value || '').trim() !== '') return;
@@ -2115,7 +2114,7 @@ $(document).on('change', '.figure-row-basis-edit', function() {
   });
 });
 
-// Phase 9: structural controls live inside a dynamic renderUI, so do not
+// structural controls live inside a dynamic renderUI, so do not
 // make their lifecycle depend on Shiny actionButton bindings. Route all
 // Row/Panel add/remove clicks through the stable delegated edit channel.
 $(document).on('click', '.figure-layout-structure-action', function(e) {
@@ -2143,7 +2142,7 @@ $(document).on('change', '.figure-panel-graph-edit', function() {
   });
 });
 
-// RC13.1: Figure Layout is one persistent DOM. Row selection is a local
+// Figure Layout is one persistent DOM. Row selection is a local
 // presentation operation; the server only records the selected Row and never
 // recreates the Layout renderUI merely because selection moved.
 function ggplotGuiFigureSelectLayoutRow(row) {
@@ -2186,7 +2185,7 @@ $(document).on('click', '.figure-row-summary[data-figure-row]', function(e) {
   Shiny.setInputValue('figure_row_clicked', {row: row, nonce: Date.now()}, {priority: 'event'});
 });
 
-// v3.3.47 Figure Editor: click-to-select and drag trial with stable commit.
+// Figure Editor: click-to-select and drag trial with stable commit.
 // Drag positions use each object's owning coordinate contract; free legends
 // are persisted relative to their owner Graph display frame.
 $(document).on('click', '.figure-grid-cell[data-figure-id]', function(e) {
@@ -2198,8 +2197,8 @@ $(document).on('click', '.figure-grid-cell[data-figure-id]', function(e) {
   if (isFinite(row)) ggplotGuiFigureSelectLayoutRow(row);
   $('.figure-grid-cell').removeClass('selected');
   $(this).addClass('selected');
-  // v3.49.1: snapshot the current Inspector fold presentation state
-  // into the same panel-selection event.  This removes the race between
+  // snapshot the current Inspector fold presentation state
+  // into the same panel-selection event. This removes the race between
   // the separate figure_inspector_fold round-trip and renderUI replacement.
   // No observer/presence probe is needed: read only the DOM that exists at
   // the explicit panel click boundary.
@@ -2239,7 +2238,7 @@ Shiny.addCustomMessageHandler('figure-inspector-inset-geometry', function(msg) {
   });
 });
 
-// v3.73.1.6: server-owned selection follows a reordered Graph/Asset to its
+// server-owned selection follows a reordered Graph/Asset to its
 // destination slot. This is presentation-only; no input echo is emitted.
 Shiny.addCustomMessageHandler('figure-select-panel', function(msg) {
   var key = msg ? String(msg.key || '') : '';
@@ -2376,7 +2375,7 @@ Shiny.addCustomMessageHandler('figure-select-panel', function(msg) {
   document.addEventListener('pointercancel', finishDrag, true);
 })();
 
-// v3.4.0-alpha1: free-canvas Panel move/resize experiment.
+// free-canvas Panel move/resize experiment.
 // Row layout remains untouched. Geometry is committed to the same cell
 // identity so switching modes does not duplicate Figure content.
 (function() {
@@ -2457,7 +2456,7 @@ Shiny.addCustomMessageHandler('figure-select-panel', function(msg) {
   document.addEventListener('pointercancel', finishPanelDrag, true);
 })();
 
-// v3.3.57 diagnostic: confirm the stable inline Figure interaction bridge is active.
+// diagnostic: confirm the stable inline Figure interaction bridge is active.
 $(function() {
   try {
     Shiny.setInputValue('figure_interaction_ready', {nonce: Date.now()}, {priority: 'event'});
@@ -2489,9 +2488,9 @@ Shiny.addCustomMessageHandler('open-graph-parameter-section', function(msg) {
   }, 80);
 });
 
-// v3.64.0-lazyui1: the single persistent Editor stays mounted while
-// browsing.  A top-level section click promotes selected_graph_id to the
-// editing target only when needed.  The first click is consumed by the
+// the single persistent Editor stays mounted while
+// browsing. A top-level section click promotes selected_graph_id to the
+// editing target only when needed. The first click is consumed by the
 // sync transaction; graph-client-edit-ready reopens the requested section
 // together with that Graph's session-only fold memory.
 $(document).on('click', '#graph_panels .graph-module details.control-section > summary', function(e) {
@@ -2506,10 +2505,10 @@ $(document).on('click', '#graph_panels .graph-module details.control-section > s
     var ready = !!window.ggplotGuiClientEditorReady;
 
     // When the selected Graph already owns a READY Editor this is an ordinary
-    // <details> toggle.  Do not interfere with native control interaction.
+    // <details> toggle. Do not interfere with native control interaction.
     if (selectedId && selectedId === editingId && ready) return;
 
-    // Browse mode deliberately exposes only section summaries.  The first
+    // Browse mode deliberately exposes only section summaries. The first
     // click is the explicit activation request for the selected Graph; consume
     // the native toggle so stale controls from the previous owner are never
     // exposed while SYNC/HYDRATING is in flight.
@@ -2669,7 +2668,7 @@ Shiny.addCustomMessageHandler('set-follow-state', function(msg) {
   var el = document.getElementById(msg.id);
   if (el) {
     el.setAttribute('data-follow', msg.value);
-    // v3.3.76: restored/duplicated modules can receive sticky_plot after
+    // restored/duplicated modules can receive sticky_plot after
     // their DOM was already mounted. Apply immediately instead of
     // waiting for the next scroll/style redraw.
     var module = el.closest ? el.closest('.graph-module') : null;
@@ -2679,7 +2678,7 @@ Shiny.addCustomMessageHandler('set-follow-state', function(msg) {
   }
 });
 
-// v3.3.75: Graph switching can reveal an already-bound module without a
+// Graph switching can reveal an already-bound module without a
 // new shiny:value event. Recompute scale/sticky geometry explicitly so a
 // duplicated Graph follows scroll immediately instead of only after the
 // next style/font edit forces a redraw.
@@ -2981,7 +2980,7 @@ Shiny.addCustomMessageHandler('refresh-visible-graph-ui', function(msg) {
         tx.onerror = function() { reject(tx.error); };
       });
     } catch (e) {
-      // Best effort only.
+    // Best effort only.
     }
   }
 
@@ -3079,7 +3078,7 @@ Shiny.addCustomMessageHandler('refresh-visible-graph-ui', function(msg) {
       throw new Error('Project保存データが空、または短すぎます。');
     }
 
-    // v3.3.69: new Project saves are .ggplotpack ZIP containers.
+    // new Project saves are .ggplotpack ZIP containers.
     // Accept the standard PK signatures used by ZIP archives and reject
     // accidental HTML/error payloads before overwriting an existing file.
     var head = new Uint8Array(await blob.slice(0, 4).arrayBuffer());
@@ -3379,7 +3378,7 @@ Shiny.addCustomMessageHandler('refresh-visible-graph-ui', function(msg) {
               );
             }
           } catch (e) {
-            // IndexedDB failure should not block saving.
+          // IndexedDB failure should not block saving.
           }
         }
 
@@ -3599,7 +3598,7 @@ Shiny.addCustomMessageHandler('refresh-visible-graph-ui', function(msg) {
       setProjectNameInputValue(msg.name || '');
     });
 
-  
+
 
     function setProjectUiInert(locked) {
       var root = document.querySelector('body > .container-fluid');
@@ -3693,13 +3692,13 @@ Shiny.addCustomMessageHandler('refresh-visible-graph-ui', function(msg) {
         progressBar.removeAttribute('aria-valuenow');
       }
       if (progressText) progressText.textContent = 'Projectファイルを確認しています…';
-      // Do not make the app inert from the raw file-input change event.
-      // Shiny still has to consume/upload the selected file at this point;
-      // disabling the surrounding UI here can race the fileInput binding
-      // and leave the client overlay visible without ever delivering
-      // upload_project_all to the server.  The server calls
-      // begin_project_load_lock() as soon as the upload arrives, and its
-      // project-load-overlay message applies inert at that safe point.
+    // Do not make the app inert from the raw file-input change event.
+    // Shiny still has to consume/upload the selected file at this point;
+    // disabling the surrounding UI here can race the fileInput binding
+    // and leave the client overlay visible without ever delivering
+    // upload_project_all to the server. The server calls
+    // begin_project_load_lock() as soon as the upload arrives, and its
+    // project-load-overlay message applies inert at that safe point.
     });
 
     Shiny.addCustomMessageHandler('reset-project-save-handle', function(msg) {
@@ -3710,4 +3709,4 @@ Shiny.addCustomMessageHandler('refresh-visible-graph-ui', function(msg) {
     });
   }
 })();
-    
+

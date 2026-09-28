@@ -1,4 +1,4 @@
-// v3.73.2.30 — external Graph/Figure Settings Manager companion window.
+// external Graph/Figure Settings Manager companion window.
 // The child window has no Shiny bindings and owns no Graph/Figure state. It
 // mirrors server-owned values, keeps only local selection/draft UI state, and
 // sends explicit Graph / Figure / Graph+Figure writes back to the main session.

@@ -1,7 +1,7 @@
 shinyServer(function(input, output, session) {
 
   # ------------------------------------------------------------------
-  # v3.3.56 diagnostic timeline (Graph + Figure responsibility separation experiment)
+  # diagnostic timeline (Graph + Figure responsibility separation experiment)
   # ------------------------------------------------------------------
   diag_t0 <- proc.time()[["elapsed"]]
   diag_log <- function(tag, ..., id = NULL) {
@@ -34,7 +34,7 @@ shinyServer(function(input, output, session) {
       )
     )
   }
-  # v3.57: graphServer is byte-compiled once in global.R during app startup.
+  # graphServer is byte-compiled once in global.R during app startup.
   # Reuse the same compiled closure for source Graphs and Figure editors.
   graph_server_runtime <- if (exists("graphServerCompiled", inherits = TRUE) && is.function(graphServerCompiled)) {
     graphServerCompiled
@@ -92,7 +92,7 @@ shinyServer(function(input, output, session) {
   # Project Aでコピー -> Project Bで貼り付け ができる。
   style_clipboard <- reactiveVal(NULL)
 
-  # v3.73.0: one semantic Shared Label / Style Library per Project. Graph
+  # one semantic Shared Label / Style Library per Project. Graph
   # bindings live inside each canonical GraphState. Figure remains a frozen
   # owner and receives Library values only through explicit Common Settings.
   shared_style_library <- reactiveVal(shared_style_default_library())
@@ -102,50 +102,50 @@ shinyServer(function(input, output, session) {
     id = "g001", name = "Graph 1", stringsAsFactors = FALSE
   ))
   active_graph <- reactiveVal("g001")
-  # v4 RC6: active_graph is an R-side semantic mirror of browser selection while
+  # active_graph is an R-side semantic mirror of browser selection while
   # editing_graph_id is the Graph currently owned by the singleton Editor. They
   # may differ only transiently during an ACK-gated switch or failure fallback.
   editing_graph_id <- reactiveVal("")
 
-  # v3.61.0: Graph workspace owns exactly one reusable editor DOM/module.
+  # Graph workspace owns exactly one reusable editor DOM/module.
   # Graph identity is data (editing_graph_id), never module namespace identity.
   graph_single_editor_id <- "graph_editor_single"
   graph_single_editor_wrapper_id <- "panel_graph_editor_single"
   graph_single_editor_module <- reactiveVal(NULL)
   graph_single_editor_mode <- reactiveVal("IDLE")      # IDLE / REPLAY / RENDERING / READY / STALE
   graph_single_editor_loading <- reactiveVal(FALSE)
-  # v3.73.1 Editor-first selection may change while the singleton Editor is
+  # Editor-first selection may change while the singleton Editor is
   # still hydrating. Keep only the latest requested target and drain it after
   # the current ACK-gated transaction reaches READY; never interrupt/commit a
   # partially restored owner.
   graph_single_pending_target <- reactiveVal(NULL)
   graph_single_editor_generation <- reactiveVal(0L)
-  # v3.72.10: the persistent Editor may publish only while it still owns the
+  # the persistent Editor may publish only while it still owns the
   # canonical GraphState revision it was synchronized from. External canonical
   # updates (for example Figure -> Graph Apply) invalidate this lease so stale
   # browser state cannot overwrite a newer Registry revision on tab switch or
   # a delayed live callback.
   graph_single_editor_lease <- reactiveVal(NULL)
-  # v3.66.3: transaction-level render gate for the persistent Editor.  Closed
+  # transaction-level render gate for the persistent Editor. Closed
   # for the entire REPLAY transaction, opened exactly once after the
   # READY editor state has been accepted against the canonical revision. New sessions start closed so the
   # pristine shell does not draw a throw-away default Plot before g001 attach.
   graph_single_render_gate <- reactiveVal(FALSE)
-  # v3.73.2.18: normal Graph switches use the permanently mounted live plot.
+  # normal Graph switches use the permanently mounted live plot.
   # When Plot is visible, keep the transaction loading until the browser reports
   # completion of the new plot output; no cached/live bind or authorize handshake.
   graph_single_live_render_wait <- reactiveVal(NULL)
   graph_single_default_state <- reactiveVal(NULL)
-  # v3.73.2.3: the first capture happens before every dynamic browser control
+  # the first capture happens before every dynamic browser control
   # has reported its normalized default. Finalize the reusable new-Graph
   # template once the startup Graph reaches READY.
   graph_single_default_state_finalized <- reactiveVal(FALSE)
-  # v3.72.7: lightweight per-Graph editor-visit metadata.  This deliberately
+  # lightweight per-Graph editor-visit metadata. This deliberately
   # stores revisions only -- never Graph DOM, Shiny modules, prepared data or
   # ggplot objects -- so revisits can be diagnosed/optimized without memory
   # growing with the number of editor instances.
   graph_single_editor_visit_cache <- new.env(parent = emptyenv())
-  # v3.73.2.18: presentation state now belongs to canonical GraphState. This
+  # presentation state now belongs to canonical GraphState. This
   # lightweight server store mirrors the latest browser panel-open snapshot so
   # ordinary GraphState commits can include it without keeping per-Graph DOM.
   graph_editor_ui_panel_store <- reactiveVal(list())
@@ -304,20 +304,20 @@ shinyServer(function(input, output, session) {
   # operations. There is no hidden per-Graph materialization lifecycle.
 
   # Figure PreviewはExportとは独立した準備queueを持つ。
-  # v3.3.46: Preview中心Figure Editor試作。Layout state一本化 + click/drag編集。
+  # Preview中心Figure Editor試作。Layout state一本化 + click/drag編集。
   # 読み込んだplot/export情報はsnapshotとして保持し、Graph側の編集では自動更新しない。
   figure_queue <- reactiveVal(character(0))
   figure_load_pending <- reactiveVal(FALSE)
   figure_load_target_ids <- reactiveVal(character(0))
   # F1-5b: Inset source refresh is explicit and independent from the main
-  # Figure Graph load action.  Store only the currently requested asynchronous
+  # Figure Graph load action. Store only the currently requested asynchronous
   # Inset source here; the shared Graph materialization machinery remains the
   # single authority for making a dormant Graph READY.
   figure_inset_refresh_target <- reactiveVal(list(owner_id = "", source_id = ""))
-  # Explicit Main-Graph refresh for the currently selected Figure panel.  This
+  # Explicit Main-Graph refresh for the currently selected Figure panel. This
   # is intentionally separate from both bulk Figure loading and Inset refresh.
   figure_panel_refresh_target <- reactiveVal(list(id = "", key = ""))
-  # Explicit Figure-side Inset snapshots.  Unlike the retired Graph SVG cache, this
+  # Explicit Figure-side Inset snapshots. Unlike the retired Graph SVG cache, this
   # cache changes only when the user presses the Inset update action.
   figure_inset_preview_cache <- reactiveVal(list())
   figure_requested_ids <- reactiveVal(character(0))
@@ -337,25 +337,25 @@ shinyServer(function(input, output, session) {
   figure_snapshot_revisions <- reactiveValues()
   figure_requested_width <- reactiveVal(1600)
   figure_requested_height <- reactiveVal(1000)
-  # v3.3.68: auto-fit derives the effective Figure canvas from occupied Graph content.
+  # auto-fit derives the effective Figure canvas from occupied Graph content.
   figure_requested_size_mode <- reactiveVal("auto")
   # Figure alignment policy. The explicit contract chooses panel vs panel+axis
   # as the anchor and whether an attached outer legend participates in spacing.
   figure_requested_size_basis <- reactiveVal("panel_legend")
-  # Compatibility owner for older saved projects. v3.73.2.50 retires Graph-title
+  # Compatibility owner for older saved projects. retires Graph-title
   # alignment from the active UI; Figure panel labels have an independent band.
   figure_requested_title_align <- reactiveVal("none")
-  # v3.4.0-alpha1: Row layout remains the stable default; free layout uses the
+  # Row layout remains the stable default; free layout uses the
   # same cell identities and persists independent free-canvas geometry.
   figure_requested_layout_mode <- reactiveVal("row")
-  # v3.4.0-alpha2: auto-fit recomputation policy. live follows every geometry
+  # auto-fit recomputation policy. live follows every geometry
   # change; manual recomputes only on Refit; lock freezes the last geometry.
   figure_requested_autofit_policy <- reactiveVal("live")
   figure_autofit_revision <- reactiveVal(0L)
   # Increment only when an override can change measured/layout geometry.
   # STYLE_ONLY edits redraw the source but do not force Auto-fit measurement.
   figure_geometry_revision <- reactiveVal(0L)
-  # v3.72.9: Project cache-first bootstrap must not synchronously remeasure every
+  # Project cache-first bootstrap must not synchronously remeasure every
   # Figure source before the persisted Graph/Figure SVGs have reached the browser.
   # While TRUE, figure_source_sizes() uses persisted snapshot metadata only.
   # Exact gtable geometry is promoted lazily when the Figure workspace is opened.
@@ -397,14 +397,14 @@ shinyServer(function(input, output, session) {
   figure_editor_epoch <- reactiveVal(1L)
   figure_editor_mount_generation <- reactiveVal(0L)
   figure_editor_mount_pending <- reactiveVal(list(id = "", editor_id = "", wrapper_id = "", generation = 0L))
-  # v3.60.0: Figure owns one reusable controls-only Graph editor. Panel
+  # Figure owns one reusable controls-only Graph editor. Panel
   # selection and editor ownership are independent; selecting a panel never
   # mounts/loads the heavy editor. The fixed editor is loaded only by explicit
   # Graph-settings edit intent.
   figure_editing_graph <- reactiveVal("")
   figure_single_editor_loading <- reactiveVal(FALSE)
   figure_single_editor_show_when_ready <- reactiveVal(TRUE)
-  # State currently being replayed by the one Figure renderer.  This may be a
+  # State currently being replayed by the one Figure renderer. This may be a
   # temporary source GraphState (Inset/refresh) that must never be committed to
   # Figure-owned editable state.
   figure_single_editor_target_state <- reactiveVal(NULL)
@@ -423,9 +423,9 @@ shinyServer(function(input, output, session) {
   # caches only; Graph/Figure state remains authoritative. Keys always use the
   # current session Graph IDs after Project ID remapping.
   figure_persisted_previews <- reactiveVal(list())
-  # v3.72: Graphs newly assigned to Figure are explicit source imports.  While
+  # Graphs newly assigned to Figure are explicit source imports. While
   # a source is hydrating, keep only its id here; READY consumes the request
-  # exactly once.  Existing Figure-owned snapshots are never auto-refreshed.
+  # exactly once. Existing Figure-owned snapshots are never auto-refreshed.
   # Canonical GraphState revisions and render-state revisions are different.
   # Only the latter wakes preview publication after a canonical commit.
   graph_render_state_revisions <- reactiveValues()
@@ -559,7 +559,7 @@ shinyServer(function(input, output, session) {
     invisible(TRUE)
   }
 
-  # v4 RC7: Graph catalog publication is metadata-only. Graph switching never
+  # Graph catalog publication is metadata-only. Graph switching never
   # transports or caches SVG/PNG preview bytes; the persistent live plot output
   # is the only Graph display surface.
   publish_client_graph_catalog <- function(reason = "update", selected = NULL) {
@@ -616,13 +616,13 @@ shinyServer(function(input, output, session) {
   })
 
 
-  # v3.73.2.18: fixed Global Preview cached/live router retired. The one
+  # fixed Global Preview cached/live router retired. The one
   # persistent Editor owns the only live Graph plot output.
 
   project_bundle_pending_previews <- reactiveVal(list())
   project_bundle_pending_inset_previews <- reactiveVal(list())
 
-  # v3.3.49 experimental Figure renderer: vector preview snapshots are an
+  # experimental Figure renderer: vector preview snapshots are an
   # in-session display cache only. They are intentionally NOT reactive and are
   # never serialized into Project files. The logical Figure state remains the
   # source of truth, so a cache miss can always be regenerated from the ggplot.
@@ -637,15 +637,15 @@ shinyServer(function(input, output, session) {
     invisible(NULL)
   }
 
-  # Phase 11: cache only the measured source geometry, never the authored
-  # Graph/Figure state.  Layout-only edits can invalidate figure_source_sizes()
+  # cache only the measured source geometry, never the authored
+  # Graph/Figure state. Layout-only edits can invalidate figure_source_sizes()
   # many times even though the underlying Graph snapshot + geometry-affecting
-  # override are unchanged.  Reusing this small immutable metadata avoids
+  # override are unchanged. Reusing this small immutable metadata avoids
   # repeated figure_plot_for_scale()/ggplotGrob() work while preserving the
   # existing downstream target-box fitting semantics.
   figure_geometry_cache <- new.env(parent = emptyenv())
-  # Phase 12 (11.1): geometry cache invalidation is independent from ordinary
-  # Figure snapshot refreshes.  A panel click / explicit Figure reload may
+  # geometry cache invalidation is independent from ordinary
+  # Figure snapshot refreshes. A panel click / explicit Figure reload may
   # legitimately take a fresh snapshot without changing the canonical GraphState.
   # Keep a small semantic source-state mirror so only real GraphState changes
   # advance the geometry-source revision.
@@ -680,7 +680,7 @@ shinyServer(function(input, output, session) {
     invisible(NULL)
   }
 
-  # F1-4 removed the transition-time detach snapshot helpers.  Legacy
+  # F1-4 removed the transition-time detach snapshot helpers. Legacy
   # snapshot fields remain loadable, but layer geometry is derived directly
   # from the current source-side plot state.
 
@@ -688,7 +688,7 @@ shinyServer(function(input, output, session) {
     z <- modifyList(figure_default_override(), ov %||% list())
     app <- modifyList(figure_default_appearance_override(), z$appearance %||% list())
     # Keep this field set aligned with figure_override_change_class()'s
-    # GRAPH_GEOMETRY classification.  Pure layer style / slot geometry must
+    # GRAPH_GEOMETRY classification. Pure layer style / slot geometry must
     # not evict an otherwise reusable source-gtable measurement.
     sig <- list(
       legend = as.character(z$legend %||% "inherit")[1],
@@ -710,7 +710,7 @@ shinyServer(function(input, output, session) {
       if (!is.finite(z)) fallback else z
     }
     # figure_plot_for_scale(..., scale=1) depends on the source export/device
-    # dimensions, not the Row/Panel target rectangle.  Target fitting stays
+    # dimensions, not the Row/Panel target rectangle. Target fitting stays
     # downstream, so layout structural changes can safely reuse this base
     # geometry measurement.
     source_sig <- paste(
@@ -742,7 +742,7 @@ shinyServer(function(input, output, session) {
     if (is.null(anchor)) return(NULL)
 
     # F1-4g: a free legend is an overlay and must not reserve empty source-side
-    # layout space.  Measure the owner Graph from a legend-free body, while
+    # layout space. Measure the owner Graph from a legend-free body, while
     # retaining a mapped source legend bbox solely for initial detach/AutoCanvas.
     rendered <- anchor
     if (figure_legend_is_detached(ov)) {
@@ -758,7 +758,7 @@ shinyServer(function(input, output, session) {
       }
     }
 
-    # Store geometry metadata only.  Never retain a derived ggplot in this
+    # Store geometry metadata only. Never retain a derived ggplot in this
     # cache: Figure source state and plot ownership remain outside the cache.
     keep <- c(
       "width", "height", "panel_left", "panel_top", "panel_width", "panel_height",
@@ -770,7 +770,7 @@ shinyServer(function(input, output, session) {
     measured
   }
 
-  # v3.3.46: Figure Editor uses an explicit layout state as the single source
+  # Figure Editor uses an explicit layout state as the single source
   # of truth. Dynamic inputs only edit this state; they no longer determine
   # Row/Panel counts themselves. This avoids renderUI <-> input feedback loops.
   figure_layout_state <- reactiveVal(figure_default_layout_state())
@@ -782,7 +782,7 @@ shinyServer(function(input, output, session) {
   figure_inspector_syncing <- reactiveVal(FALSE)
   figure_inspector_sync_generation <- reactiveVal(0L)
   # Per-source, per-commit-field edit revisions. A value-only comparison cannot
-  # distinguish A -> B -> A while a commit is pending, so alpha4 records intent.
+  # distinguish A -> B -> A while a commit is pending, so the browser-intent layer records intent.
   figure_commit_edit_revisions <- reactiveVal(list())
   # Structural UI is regenerated only when rows/panels/graph assignments change.
   # Numeric edits (row height / Figure-wide column ratio) update state without
@@ -804,7 +804,7 @@ shinyServer(function(input, output, session) {
   }
 
   sync_figure_inspector <- function() {
-    # alpha4: synchronization is acknowledged by a hidden generation input that
+    # synchronization is acknowledged by a hidden generation input that
     # is created with the rebuilt Inspector. Server flush count is not evidence
     # that the browser has registered the new inputs. Old generations can never
     # release a newer synchronization guard.
@@ -949,13 +949,12 @@ shinyServer(function(input, output, session) {
     invisible(TRUE)
   }
 
-  # v3.4.0 alpha6 GraphState phase 1:
+  # GraphState phase 1:
   # `graph_state_cache` is now treated as the canonical current GraphState
-  # registry, not merely an eviction/load snapshot.  Existing storage shape
+  # registry, not merely an eviction/load snapshot. Existing storage shape
   # is intentionally preserved for .ggplotpack compatibility.
-  #
   # A remounted Shiny namespace can briefly report NULL for inputs whose DOM
-  # binding has not reappeared yet.  NULL is therefore treated as "not yet
+  # binding has not reappeared yet. NULL is therefore treated as "not yet
   # observed" during live commits and the last canonical value is retained.
   # Explicit user clears from select/text inputs arrive as "" (or another
   # concrete value), so they are still committed normally.
@@ -969,7 +968,7 @@ shinyServer(function(input, output, session) {
     prev_names <- names(previous) %||% character(0)
     if (!length(cand_names)) return(candidate)
 
-    # Only preserve an explicitly present NULL field.  Do not resurrect names
+    # Only preserve an explicitly present NULL field. Do not resurrect names
     # that are absent from the candidate: named collections such as statistics
     # recipes/styles must still be able to delete entries intentionally.
     for (nm in cand_names) {
@@ -1023,7 +1022,6 @@ shinyServer(function(input, output, session) {
     invisible(TRUE)
   }
 
-  # v3.70.0 source split: server_figure_controls_runtime
   sys.source(file.path(getwd(), "R/server/figure/server_figure_lifecycle_runtime.R"), envir = environment())
   sys.source(file.path(getwd(), "R/server/figure/server_figure_controls_runtime.R"), envir = environment())
 
@@ -1057,31 +1055,18 @@ shinyServer(function(input, output, session) {
 
     list(
       svg = svg,
-      meta = list(
-        width = rendered$width,
-        height = rendered$height,
-        panel_left = rendered$panel_left,
-        panel_top = rendered$panel_top,
-        panel_width = rendered$panel_width,
-        panel_height = rendered$panel_height,
-        panel_bbox = rendered$panel_bbox,
-        facet_bbox = rendered$facet_bbox,
-        axis_outer_bbox = rendered$axis_outer_bbox,
-        content_outer_bbox = rendered$content_outer_bbox,
-        title_bbox = rendered$title_bbox,
-        legend_bbox = rendered$legend_bbox,
-        legend_visual_bbox = rendered$legend_visual_bbox %||% rendered$legend_bbox,
-        legend_outside_bbox = rendered$legend_outside_bbox,
-        legend_outside_visual_bbox = rendered$legend_outside_visual_bbox %||% rendered$legend_outside_bbox,
-        geometry_source = rendered$geometry_source %||% "unknown",
-        reference_res = export_meta$reference_res %||% 120
+      meta = figure_render_geometry_meta(
+        rendered,
+        reference_res = export_meta$reference_res %||% 120,
+        include_geometry_source = TRUE,
+        include_reference_res = TRUE
       ),
       state = state,
       render_revision = suppressWarnings(as.integer(render_revision %||% NA_integer_))
     )
   }
 
-  # Graph SVG publication/cache lifecycle retired in v3.73.2.18. Temporary
+  # Graph SVG publication/cache lifecycle retired. Temporary
   # vector consumers (Figure Inset / Statistics) call
   # graph_preview_record_from_plot() directly and retain the result in their
   # own ownership domain only.
@@ -1089,10 +1074,9 @@ shinyServer(function(input, output, session) {
   # ------------------------------------------------------------------
   # Lazy module creation
   # ------------------------------------------------------------------
-  # v3.67.0 source split: server_graph_editor_runtime
   sys.source(file.path(getwd(), "R/server/graph/server_graph_editor_runtime.R"), envir = environment())
 
-  # v4 RC7: every Graph selection retargets the one persistent live Editor.
+  # every Graph selection retargets the one persistent live Editor.
   # There is no browser-local/cached Graph preview selection mode.
   sys.source(file.path(getwd(), "R/server/graph/server_graph_selection_runtime.R"), envir = environment())
 
@@ -1192,7 +1176,7 @@ shinyServer(function(input, output, session) {
     }
     if (is.list(state_now)) refresh_figure_geometry_source_revision(id, state_now)
 
-    # v3.41: Graph appearance now belongs to the editable Figure GraphState.
+    # Graph appearance now belongs to the editable Figure GraphState.
     # Neutralize the deprecated Appearance override after a valid editable
     # snapshot exists, without touching Figure-owned legend placement/crop/inset.
     drafts_now <- isolate(figure_override_drafts())
@@ -1266,21 +1250,20 @@ shinyServer(function(input, output, session) {
     reload_visible_figure_editor_after_snapshot(ids, reason)
   }
 
-  # v4.0 RC3: Figure controls-only single Editor lifecycle is isolated here so
+  # Figure controls-only single Editor lifecycle is isolated here so
   # server.R does not own mount/replay/queue orchestration inline.
   sys.source(file.path(getwd(), "R/server/figure/server_figure_editor_lifecycle_runtime.R"), envir = environment())
 
-  # v3.67.0 source split: server_graph_workspace_runtime
   sys.source(file.path(getwd(), "R/server/graph/server_graph_workspace_runtime.R"), envir = environment())
 
-  # v3.73.0: central semantic style Library. Kept outside graphServer so Graphs
+  # central semantic style Library. Kept outside graphServer so Graphs
   # never synchronize directly with each other.
   sys.source(file.path(getwd(), "R/server/style/server_shared_style_runtime.R"), envir = environment())
-  # v3.73.2.29: cross-Graph/Figure settings browser plus focused canonical
+  # cross-Graph/Figure settings browser plus focused canonical
   # Graph batch helpers. Figure writes are sourced later after Figure services.
   sys.source(file.path(getwd(), "R/server/graph/settings/server_graph_settings_manager_runtime.R"), envir = environment())
   sys.source(file.path(getwd(), "R/server/graph/settings/server_graph_settings_batch_runtime.R"), envir = environment())
-  # v4.0 RC5 PoC retained: browser-owned working values for three style controls
+  # PoC retained: browser-owned working values for three style controls
   # use a single patch channel into canonical GraphState. RC7 deliberately does
   # not return a separate preview; the persistent live plot reacts normally.
   sys.source(file.path(getwd(), "R/server/graph/server_graph_browser_patch_poc_runtime.R"), envir = environment())
@@ -1474,8 +1457,8 @@ shinyServer(function(input, output, session) {
     }
   }, ignoreInit = TRUE)
 
-  # v3.65.2-activation-layout1: deletion remains structurally identical,
-  # but warn when the Graph is currently referenced by Figure content.  This
+  # deletion remains structurally identical,
+  # but warn when the Graph is currently referenced by Figure content. This
   # is advisory only; the existing sanitizer is still the final safety net.
   figure_graph_reference_summary <- function(id) {
     id <- as.character(id %||% "")[1]
@@ -1616,31 +1599,27 @@ shinyServer(function(input, output, session) {
     removeModal()
   })
 
-  # v3.70.0 source split: server_project_io_runtime
   sys.source(file.path(getwd(), "R/server/figure/server_figure_inset_persistence_runtime.R"), envir = environment())
   sys.source(file.path(getwd(), "R/server/project/server_project_io_runtime.R"), envir = environment())
 
-  # v3.70.0 source split: server_export_prepare_runtime
   sys.source(file.path(getwd(), "R/server/export/server_export_prepare_runtime.R"), envir = environment())
 
-  # v3.73.2.22: direct GraphState-to-snapshot service; no Figure editor replay.
+  # direct GraphState-to-snapshot service; no Figure editor replay.
   sys.source(file.path(getwd(), "R/server/figure/server_figure_source_snapshot_runtime.R"), envir = environment())
 
-  # v3.70.0 source split: server_figure_workspace_runtime
   sys.source(file.path(getwd(), "R/server/figure/server_figure_workspace_runtime.R"), envir = environment())
 
-  # v3.73.2.29: typed external Settings Manager edits and explicit direct-state
+  # typed external Settings Manager edits and explicit direct-state
   # Figure refresh. Sourced after Figure snapshot/workspace services exist.
   sys.source(file.path(getwd(), "R/server/graph/settings/server_graph_settings_value_runtime.R"), envir = environment())
 
   # v4.0.1: Figure Common Settings owns the compact Figure-only target/quick-style/semantic UI.
   sys.source(file.path(getwd(), "R/server/figure/server_figure_common_settings_runtime.R"), envir = environment())
 
-  # v3.73.2.21: legacy/persisted Figure legend regeneration is an adapter
+  # legacy/persisted Figure legend regeneration is an adapter
   # over the same single Figure value-replay renderer used by Main/Inset.
   sys.source(file.path(getwd(), "R/server/figure/server_figure_legend_reactivity_runtime.R"), envir = environment())
 
-  # v3.70.0 source split: server_graph_export_runtime
   sys.source(file.path(getwd(), "R/server/export/server_graph_export_runtime.R"), envir = environment())
 
 })

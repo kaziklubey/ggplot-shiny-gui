@@ -369,7 +369,7 @@
   border: 1px solid #d9d9d9;
   border-radius: 8px;
   background: #fafafa;
-  /* v3.73.1.7: Figure workflow sections host floating controls (notably
+  /* Figure workflow sections host floating controls (notably
      selectize/dropdown menus).  Section chrome must never clip those menus;
      scrolling/clipping belongs only to dedicated panes such as the Figure
      drawer body and plot viewport. */
@@ -763,7 +763,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  /* v3.3.66: the panel itself no longer owns clipping. */
+  /* the panel itself no longer owns clipping. */
   overflow: visible;
 }
 .figure-grid-cell.empty {
@@ -834,7 +834,7 @@
   font-size: 12px;
 }
 
-/* v3.3.47 Figure Editor UI + drag stability */
+/* Figure Editor UI + drag stability */
 .figure-editor-v346 .figure-config-section {
   margin-bottom: 12px;
 }
@@ -1023,7 +1023,7 @@
   align-items: flex-end;
   gap: 6px;
 }
-/* v3.43: Figure editing uses a left-to-right drawer.  The Figure canvas
+/* Figure editing uses a left-to-right drawer.  The Figure canvas
    remains visible on the right while the editor scrolls independently.
    Each major heading and the Graph module's own control sections can be
    folded vertically inside the drawer. */
@@ -1206,8 +1206,8 @@
   }
 }
 
-/* v3.3.48 Figure Editor stabilization */
-/* v3.3.49 major experiment: cached vector preview layer */
+/* Figure Editor stabilization */
+/* major experiment: cached vector preview layer */
 .figure-svg-snapshot {
   display: block;
   width: 100%;
@@ -1443,10 +1443,10 @@
   }
 }
 
-/* v3.51 Graph Preview: cached SVG and live plot share one stable stage.
+/* Graph Preview: cached SVG and live plot share one stable stage.
    The cached layer overlays the live layer instead of participating in
    normal flow, so both representations can never stack vertically. */
-/* v3.54: the singleton stage is fixed under graph_panels and never moves
+/* the singleton stage is fixed under graph_panels and never moves
    between Graph DOM trees. Each Graph contributes only a visual anchor.
    The stage is positioned over the active anchor while cached/live inner
    content is swapped. This keeps the outer Preview UI genuinely reused. */
@@ -1904,7 +1904,7 @@
 
 
 /* ============================================================
-   v3.73.0 Figure workflow + Shared Label / Style Library
+   Figure workflow + Shared Label / Style Library
    ============================================================ */
 .figure-workflow-v373 {
   --figure-step-accent: #4a789b;
@@ -1987,8 +1987,8 @@
   margin-bottom: 4px;
 }
 .figure-common-target-count {
-  margin-left: 4px;
-  font-size: 11px;
+  margin-left: 5px;
+  font-size: 12px;
 }
 .figure-common-subsection {
   margin-top: 8px;
@@ -1996,36 +1996,39 @@
   border-top: 1px solid #dfe5e9;
 }
 .figure-common-inline-heading {
-  margin-bottom: 3px;
+  margin-bottom: 5px;
   color: #3d596d;
+  font-size: 14px;
+  line-height: 1.35;
 }
 .figure-common-quick-help {
-  margin: 0 0 7px 0;
-  font-size: 10px;
+  margin: 0 0 9px 0;
+  font-size: 12px;
+  line-height: 1.4;
 }
 .figure-common-quick-card-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 7px;
+  gap: 9px;
   align-items: start;
 }
 .figure-common-quick-card {
   min-width: 0;
-  padding: 7px 8px;
+  padding: 9px 10px;
   border: 1px solid #e1e7eb;
   border-radius: 7px;
   background: #fbfcfd;
 }
 .figure-common-quick-card-title {
-  margin-bottom: 5px;
+  margin-bottom: 7px;
   color: #496579;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
 }
 .figure-common-quick-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 5px 7px;
+  gap: 7px 9px;
 }
 .figure-common-field {
   min-width: 0;
@@ -2036,14 +2039,14 @@
   margin-bottom: 0;
 }
 .figure-common-field label {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 600;
   color: #5c6871;
 }
 .figure-common-field input,
 .figure-common-field select,
 .figure-common-field .selectize-input {
-  font-size: 11px;
+  font-size: 13px;
 }
 .figure-common-custom-font {
   margin-top: 6px;
@@ -2057,14 +2060,14 @@
   margin-top: 8px;
 }
 .figure-common-apply-row .text-muted {
-  font-size: 10px;
+  font-size: 12px;
 }
 .figure-common-drawer-launchers {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 6px;
-  margin-top: 9px;
-  padding-top: 9px;
+  gap: 7px;
+  margin-top: 11px;
+  padding-top: 11px;
   border-top: 1px solid #dfe5e9;
 }
 .figure-common-drawer-launchers .btn:first-child {
@@ -2079,7 +2082,7 @@
   font-size: 12px;
 }
 .figure-common-target-card {
-  padding: 7px 8px;
+  padding: 9px 10px;
   border: 1px solid #dfe5e9;
   border-radius: 7px;
   background: #fff;
@@ -2089,18 +2092,19 @@
   justify-content: space-between;
   gap: 8px;
   align-items: baseline;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
+  font-size: 14px;
 }
 .figure-common-target-heading > span {
   color: #7b878f;
-  font-size: 10px;
+  font-size: 12px;
 }
 .figure-common-target-card .form-group {
   margin-bottom: 0;
 }
 .figure-common-target-card .checkbox-inline {
-  margin-right: 5px;
-  font-size: 11px;
+  margin-right: 7px;
+  font-size: 13px;
 }
 
 /* Large Common Settings workspaces remain in the same Shiny session. */
@@ -2425,7 +2429,7 @@
   }
 }
 
-/* v3.73.2.26 — external Graph Settings Manager launcher */
+/* external Graph Settings Manager launcher */
 .graph-settings-manager-popout-toolbar {
   display: flex;
   align-items: center;
@@ -2440,7 +2444,7 @@
   font-size: 11px;
 }
 
-/* v3.73.2.25 — Figure Graph Settings Manager */
+/* Figure Graph Settings Manager */
 .graph-settings-manager-details {
   margin: 10px 0 14px;
   border: 1px solid #d9d9d9;
@@ -2524,7 +2528,7 @@
   transition: outline-color 0.35s ease;
 }
 
-/* v3.73.2.28 — Graph Settings Manager comparison status */
+/* Graph Settings Manager comparison status */
 .graph-settings-manager-diff-row .graph-settings-manager-setting {
   box-shadow: inset 3px 0 0 #e6a23c;
 }
@@ -2545,7 +2549,7 @@
   vertical-align: middle;
 }
 
-/* v3.73.2.43 Graph Editor information architecture refresh.
+/* Graph Editor information architecture refresh.
    Presentation only: existing Shiny input ids/state ownership are unchanged. */
 .graph-editor-primary-section > summary {
   background: #f4f7fb;
@@ -2618,7 +2622,7 @@
   background: #f7f7f7;
 }
 
-/* v4.0 RC6 browser-local Graph selection. The selected Graph's preview is
+/* browser-local Graph selection. The selected Graph's preview is
    browser-owned display cache while the persistent Editor remains attached to
    its previous READY owner. Selecting a Graph never exposes stale controls. */
 .graph-browser-local-image {
@@ -2643,7 +2647,7 @@
   padding: 20px;
 }
 
-/* v4.0 RC8 persistent level-control slot pools. Slots are ordinary browser
+/* persistent level-control slot pools. Slots are ordinary browser
    controls (not Shiny input bindings), allocated in chunks and reused. */
 .graph-slot-pool-empty {
   font-style: italic;
