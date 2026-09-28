@@ -1,5 +1,5 @@
 # R/figure/figure_asset.R — Figure asset registry helpers
-# v3.4.0-alpha1: internal Graphs + external SVG/raster assets.
+# internal Graphs + external SVG/raster assets.
 
 figure_make_internal_asset <- function(id, comp = NULL, plot = NULL, meta = NULL) {
   comp <- comp %||% list()
@@ -94,7 +94,7 @@ figure_asset_source_choices <- function(meta, external_assets = list()) {
   c(g, e)
 }
 
-# v3.4.0-alpha2 metadata for imported external graphs and separately imported legends.
+# metadata for imported external graphs and separately imported legends.
 figure_decorate_external_asset <- function(asset, role = c("generic","external_graph","legend"),
                                            legend_mode = c("included","separate","none"),
                                            legend_asset_id = "", parent_asset_id = "") {

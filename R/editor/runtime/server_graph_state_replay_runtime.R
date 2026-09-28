@@ -1,8 +1,8 @@
-# v3.73.2.18: normal Graph state replay for the one persistent Editor.
-# Sourced inside graphServer after data/style/statistics runtimes are installed.
-# This runtime is the only GraphState-to-Editor hydration path. It uses one
-# value batch plus one browser completion barrier—no staged restore, semantic
-# comparison, retry, or per-Graph DOM/module instances.
+  # normal Graph state replay for the one persistent Editor.
+  # Sourced inside graphServer after data/style/statistics runtimes are installed.
+  # This runtime is the only GraphState-to-Editor hydration path. It uses one
+  # value batch plus one browser completion barrier—no staged restore, semantic
+  # comparison, retry, or per-Graph DOM/module instances.
 
   graph_capture_editor_ui_snapshot <- function() {
     if (!graph_editor_profile_has(editor_profile, "full_shell")) {
@@ -34,8 +34,8 @@
     if (identical(color, "__fixed__")) color <- ""
 
     # Keep saved values as short-lived seeds while ordinary observers process
-    # the same replay.  Unlike the old path, the replay itself now sends the
-    # target Graph's choice lists together with the selected values.  A switch
+    # the same replay. Unlike the old path, the replay itself now sends the
+    # target Graph's choice lists together with the selected values. A switch
     # therefore never asks the browser to select a value against the previous
     # Graph's choices (which could coerce Color/Shape/ID/etc. to empty).
     if (graph_editor_profile_has(editor_profile, "reshape_controls")) {
@@ -190,7 +190,7 @@
     values$reshape_y_name <- graph_state_scalar((cfg$reshape %||% list())$y_name, "Value")
     snap <- graph_ui_snapshot_normalize(cfg$ui_snapshot)
     # graph_main_tab is intentionally excluded from browser-direct scalar
-    # hydration.  Shiny's tabset binding owns the pane + input transition and
+    # hydration. Shiny's tabset binding owns the pane + input transition and
     # is restored after this direct value batch with updateTabsetPanel().
     values$sticky_plot <- isTRUE(snap$selections$sticky_plot %||% FALSE)
     values$reshape_columns <- as.character((cfg$reshape %||% list())$columns %||% character(0))
@@ -389,7 +389,7 @@
     snapshot <- graph_ui_snapshot_normalize(cfg$ui_snapshot)
 
     transaction_new_graph <- isTRUE((transaction %||% list())$new_graph)
-    # A genuinely new Graph owns a pristine canonical template.  The persistent
+    # A genuinely new Graph owns a pristine canonical template. The persistent
     # Editor DOM may still display the previous Graph, so delta replay against
     # attached_state_seed() is the wrong optimization boundary here: any stale
     # browser control omitted from the delta can visually inherit the old Graph.
@@ -467,9 +467,9 @@
       graph_replay_selected(snapshot, "graph_main_tab", "Plot")[[1]]
     } else NULL
 
-    # The Full Editor is one persistent DOM.  Apply its target-derived values
+    # The Full Editor is one persistent DOM. Apply its target-derived values
     # and choices locally in the browser and release the canonical render on
-    # the same server flush.  There is no per-input transport, binding scan,
+    # the same server flush. There is no per-input transport, binding scan,
     # ACK or READY retry. Figure Controls use the same transport in RC12, but
     # retain their separate Figure-owned base state and lifecycle gate.
     if (isTRUE(browser_direct)) {
@@ -495,7 +495,7 @@
         if (!is.null(main_tab_target) && length(main_tab_target) == 1L && nzchar(main_tab_target)) {
           # Do not emulate tab selection by mutating browser scalar/input state.
           # The native Shiny tabset updater changes the Bootstrap pane and the
-          # graph_main_tab input through one binding-owned operation.  This is
+          # graph_main_tab input through one binding-owned operation. This is
           # queued after the direct hydration message in the same outbound
           # flush, so Statistics can observe the real active tab and recalc.
           updateTabsetPanel(session, "graph_main_tab", selected = main_tab_target)

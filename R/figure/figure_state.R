@@ -1,6 +1,6 @@
 # R/figure/figure_state.R — Figure responsibility module
-# v3.4.0-alpha4: differential audit hardening for Figure state ownership / commit / geometry.
-# v3.3.78 remains the golden/stable baseline.
+# differential audit hardening for Figure state ownership / commit / geometry.
+# remains the golden/stable baseline.
 
 figure_make_cell <- function(row, col, id = "", width = 1, source_type = "internal_graph", source_id = NULL,
                              graph_width = NA_real_, graph_height = NA_real_,
@@ -26,7 +26,7 @@ figure_make_cell <- function(row, col, id = "", width = 1, source_type = "intern
     free_width = suppressWarnings(as.numeric(free_width)[1]),
     free_height = suppressWarnings(as.numeric(free_height)[1]),
     z_index = suppressWarnings(as.numeric(z_index)[1]),
-    # Panel labels are slot-owned.  Source/content swaps must never move A/B/C/D
+    # Panel labels are slot-owned. Source/content swaps must never move A/B/C/D
     # or their label geometry with the Graph/Asset content.
     panel_label = { z <- as.character(panel_label %||% ""); if (!length(z) || is.na(z[[1]])) "" else z[[1]] },
     panel_label_auto = isTRUE(panel_label_auto),
@@ -59,7 +59,7 @@ figure_num_or <- function(x, fallback = NA_real_, lo = -Inf, hi = Inf) {
 
 figure_reindex_layout <- function(st) {
   if (is.null(st) || !is.list(st) || !length(st)) return(list())
-  # v3.80.8: Figure-wide column ratios are canonical layout metadata. Cell
+  # Figure-wide column ratios are canonical layout metadata. Cell
   # `width` values are maintained only as a derived compatibility mirror for
   # older project/state consumers. Preserve the metadata before list slicing.
   saved_column_ratios <- attr(st, "column_ratios", exact = TRUE)
@@ -100,7 +100,7 @@ figure_reindex_layout <- function(st) {
         z_index = figure_num_or(cell$z_index, cc + (r - 1L) * 12L),
         panel_label = as.character(cell$panel_label %||% "")[1],
         panel_label_auto = if (is.null(cell$panel_label_auto)) TRUE else isTRUE(cell$panel_label_auto),
-        # alpha2 stored these on the source override.  During migration prefer
+        # stored these on the source override. During migration prefer
         # slot values when present; old projects get stable slot defaults.
         label_size = figure_num_or(cell$label_size, 18, 1, Inf),
         top_gutter = figure_num_or(cell$top_gutter, 48, 0, Inf),
@@ -115,7 +115,7 @@ figure_reindex_layout <- function(st) {
     out[[r]] <- list(row = r, height = hh, ncol = nc, size_basis = basis_override, cells = cells)
   }
 
-  # v3.80.8 Fixed Canvas contract: column ratios are one Figure-wide vector.
+  # Fixed Canvas contract: column ratios are one Figure-wide vector.
   # New state stores that vector as layout metadata. Legacy Projects that only
   # have per-cell widths migrate deterministically from the first existing Row.
   # Cell widths remain a derived mirror so old project payloads can still cross
@@ -183,7 +183,7 @@ figure_sanitize_layout <- function(st, meta, auto_fill = FALSE, external_assets 
 
 
 figure_normalize_legend_title_mode <- function(x) {
-  # Backward compatibility: alpha1/alpha2 stored a logical checkbox.
+  # Backward compatibility: older saved Figure schemas stored a logical checkbox.
   if (is.logical(x) && length(x)) return(if (isTRUE(x[[1]])) "show" else "hide")
   z <- as.character(x %||% "inherit")[1]
   if (!length(z) || is.na(z) || !z %in% c("inherit", "show", "hide")) z <- "inherit"
@@ -200,13 +200,13 @@ figure_apply_slot_label_to_override <- function(ov, slot) {
     for (nm in fields) if (!is.null(slot[[nm]])) ov[[nm]] <- slot[[nm]]
   }
 
-  # RC13.4: slot payloads can legitimately arrive from a fresh/default Figure
-  # with optional scalars represented as zero-length vectors.  The source
+  # slot payloads can legitimately arrive from a fresh/default Figure
+  # with optional scalars represented as zero-length vectors. The source
   # override was normalized before the Slot merge, so copying character(0) or
   # numeric(0) here could reintroduce invalid values and make downstream scalar
   # predicates such as `if (nzchar(ov$panel_label))` fail during editable PPTX
-  # drawing.  Re-normalize only the Slot-owned label fields at this ownership
-  # boundary.  Canonical Figure/Graph state is not mutated.
+  # drawing. Re-normalize only the Slot-owned label fields at this ownership
+  # boundary. Canonical Figure/Graph state is not mutated.
   normalized <- figure_slot_label_payload(ov)
   for (nm in setdiff(names(normalized), "panel_label_auto")) ov[[nm]] <- normalized[[nm]]
   ov
@@ -238,8 +238,8 @@ figure_slot_label_payload <- function(cell) {
 figure_strip_slot_label_fields_from_override <- function(ov) {
   ov <- ov %||% list()
   if (!is.list(ov)) ov <- list()
-  # alpha3 contract: Panel label text/style/placement belong to the Slot, never
-  # to the Graph/Asset source override.  Remove legacy alpha1/alpha2 copies at
+  # contract: Panel label text/style/placement belong to the Slot, never
+  # to the Graph/Asset source override. Remove legacy stored copies at
   # persistence and migration boundaries so Swap/Shift cannot carry them.
   ov[c(
     "panel_label", "label_size", "top_gutter", "label_mode", "label_anchor",
@@ -294,7 +294,7 @@ figure_default_inset <- function() {
 
 figure_default_override <- function(id = NULL) {
   list(
-    # Panel label state is Slot-owned in alpha3 and is intentionally absent
+    # Panel label state is Slot-owned in the current schema and is intentionally absent
     # from source-keyed overrides. Render helpers add normalized label defaults
     # only after the current Slot payload is known.
     legend = "inherit", legend_title = "inherit", legend_gap = 8,
@@ -328,8 +328,8 @@ figure_default_override <- function(id = NULL) {
 }
 
 
-# Reset only Figure-owned free-placement coordinates.  Content, crop, style,
-# layout order and mode choices remain untouched.  Detached legends re-arm the
+# Reset only Figure-owned free-placement coordinates. Content, crop, style,
+# layout order and mode choices remain untouched. Detached legends re-arm the
 # source-position bootstrap so "reset" means the same position as immediately
 # after entering free mode, not a hard-coded canvas coordinate.
 figure_reset_slot_free_positions <- function(cell) {

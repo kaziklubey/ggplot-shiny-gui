@@ -1,7 +1,7 @@
-# v4.0 RC11 browser working state.
-# Browser = optimistic working copy; R GraphState registry = canonical truth.
-# Fixed Full-Editor controls are hydrated locally and user changes travel over
-# one revisioned patch input. Figure Controls keep their separate replay path.
+  # browser working state.
+  # Browser = optimistic working copy; R GraphState registry = canonical truth.
+  # Fixed Full-Editor controls are hydrated locally and user changes travel over
+  # one revisioned patch input. Figure Controls keep their separate replay path.
 
   graph_browser_patch_explicit_paths <- c(
     project_name = "project_name",
@@ -39,7 +39,7 @@
   }
 
 
-  # RC13: dependent browser topology only needs a full local re-hydration when
+  # dependent browser topology only needs a full local re-hydration when
   # choices/visibility topology can change. Ordinary numeric/text/color edits
   # already live in the browser working copy and are ACKed directly; replaying
   # all 134 controls on every spinner step only creates avoidable browser work.

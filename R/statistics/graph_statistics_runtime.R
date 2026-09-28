@@ -1,5 +1,5 @@
-# Statistics owns analysis recipes/data preparation and its own recipe replay.
-# It does not participate in GraphState hydration or persistent-Editor ownership.
+  # Statistics owns analysis recipes/data preparation and its own recipe replay.
+  # It does not participate in GraphState hydration or persistent-Editor ownership.
 
   # ============================================================
   # Graph-linked Statistics (experimental)
@@ -22,7 +22,7 @@
 
   # A stable browser snapshot can intentionally differ from the stored recipe
   # when dynamic controls present an inferred/default value for an empty saved
-  # field (for example Subject / ID).  Remember that post-restore presentation
+  # field (for example Subject / ID). Remember that post-restore presentation
   # state so the generic save observer does not mistake it for a user edit.
   stats_post_restore_baseline <- reactiveVal(NULL)
 
@@ -50,7 +50,7 @@
     paste0("analysis_", as.integer(Sys.time()), "_", sample.int(99999, 1))
   }
 
-  # v3.58.3.4: derive the next default Analysis label from the largest
+  # derive the next default Analysis label from the largest
   # existing numeric suffix. This prevents duplicate visible names even when
   # add events arrive rapidly. User-entered names are never rewritten.
   stats_next_default_name <- function(rr = isolate(stats_recipes())) {
@@ -73,7 +73,7 @@
       type = "anova",
       data_source = "graph",
       custom_data = "",
-      # Data preparation belongs to each Analysis.  The default is the original
+      # Data preparation belongs to each Analysis. The default is the original
       # Graph dataset as entered by the user; Plot reshape is a separate recipe.
       transform_type = "as_is",
       transform_columns = character(0),
@@ -128,10 +128,10 @@
 
     out <- stats_default_recipe(name = stats_scalar_chr(r$name, fallback_name))
 
-    # v3.72.27 migration: historical graph-source analyses implicitly consumed
+    # migration: historical graph-source analyses implicitly consumed
     # Plot dat(), so a saved Plot Wide→Long configuration also changed the
-    # Statistics input table.  Convert that hidden dependency once into an
-    # explicit Analysis-local transform recipe.  New analyses default to raw.
+    # Statistics input table. Convert that hidden dependency once into an
+    # explicit Analysis-local transform recipe. New analyses default to raw.
     has_explicit_transform <- !is.null(r$transform_type)
     if (!has_explicit_transform && identical(stats_scalar_chr(r$data_source, "graph"), "graph")) {
       lr <- legacy_reshape %||% list()
@@ -249,7 +249,7 @@
 
   stats_transform_recipe <- reactive({
     # During recipe restore the stored Analysis is authoritative; browser inputs
-    # can still contain the preceding Analysis for several flushes.  In this
+    # can still contain the preceding Analysis for several flushes. In this
     # guarded phase the recipe collection is allowed to be a reactive source so
     # an Analysis switch can immediately rebuild from its canonical recipe.
     if (isTRUE(stats_canonical_context_active())) {
@@ -263,8 +263,8 @@
       )))
     }
 
-    # Normal Statistics editing is browser-input driven.  Keep the saved recipe
-    # only as an isolated fallback for inputs that have not bound yet.  A
+    # Normal Statistics editing is browser-input driven. Keep the saved recipe
+    # only as an isolated fallback for inputs that have not bound yet. A
     # stats_recipes() write must not invalidate the analysis data pipeline: that
     # would rebuild the dynamic mapping UI, resend inputs, save again, and keep
     # the debounced Result output permanently pending.
@@ -1270,10 +1270,9 @@
     pending_stats_ui_restore(NULL)
   }, ignoreInit = TRUE)
 
-  # v3.58.2: Statistics recipes store only the analysis *recipe* (design,
-  # variables, data source, options).  Calculated test results are deliberately
+  # Statistics recipes store only the analysis *recipe* (design,
+  # variables, data source, options). Calculated test results are deliberately
   # not serialized; opening Statistics recalculates them from the selected Analysis dataset.
-  #
   # Keep the pending recipe until the Statistics tab is active, then replay it
   # exactly once. Graph ownership/value replay is handled by the outer Editor.
   observe({

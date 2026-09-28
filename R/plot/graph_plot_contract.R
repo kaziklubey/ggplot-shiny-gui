@@ -2,7 +2,7 @@
 # Graph plot-type contract
 # ============================================================
 # Plot-type metadata belongs here rather than being repeated across UI,
-# mapping and state code.  Builders still live in R/plot/runtime/graph_plot_runtime.R;
+# mapping and state code. Builders still live in R/plot/runtime/graph_plot_runtime.R;
 # this file only defines stable capabilities and compatibility rules.
 
 graph_plot_type_specs <- function() {

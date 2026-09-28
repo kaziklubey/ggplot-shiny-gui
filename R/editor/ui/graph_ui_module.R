@@ -5,7 +5,7 @@
 
 # Persistent browser-owned slot pool for level-dependent controls.
 # The pool DOM is stable: the browser preallocates slots in fixed-size chunks
-# and only changes labels/values/visibility.  These controls are intentionally
+# and only changes labels/values/visibility. These controls are intentionally
 # not Shiny input bindings; one namespaced event channel carries user edits.
 graph_slot_pool_ui <- function(ns, pool_id, kind, empty_text = "", chunk = 50L) {
   tags$div(
@@ -25,7 +25,7 @@ graph_svg_viewport_text <- function(svg) {
   svg <- as.character(svg %||% "")
   if (!nzchar(svg) || !grepl("<svg\\b", svg, perl = TRUE)) return(svg)
   # Keep the original viewBox but make scaling deterministic inside the browser
-  # viewport.  Width/height are controlled by CSS; preserveAspectRatio prevents
+  # viewport. Width/height are controlled by CSS; preserveAspectRatio prevents
   # stretching and keeps all artwork inside the panel.
   if (!grepl("preserveAspectRatio\\s*=", svg, perl = TRUE, ignore.case = TRUE)) {
     svg <- sub("<svg\\b", "<svg preserveAspectRatio=\"xMidYMid meet\"", svg, perl = TRUE)
@@ -47,7 +47,7 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
   if (!is.finite(cached_ratio) || cached_ratio <= 0) cached_ratio <- 1
   cached_svg_view <- graph_svg_viewport_text(cached_svg)
   # Saved SVG pixel dimensions describe the plot device, not the desired
-  # on-screen size.  Keep the preview comfortably inside the browser viewport;
+  # on-screen size. Keep the preview comfortably inside the browser viewport;
   # the live Shiny plot uses the same visual-height cap in ui.R JavaScript.
   cached_viewport_style <- sprintf(
     paste0(
@@ -58,9 +58,9 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
   )
 
   # ------------------------------------------------------------------
-  # v3.3.55 UI/state separation
+  # UI/state separation
   # ------------------------------------------------------------------
-  # UI is now a pure view of saved Graph state.  Creating this UI does not
+  # UI is now a pure view of saved Graph state. Creating this UI does not
   # create graphServer() and therefore must not run data processing / ggplot.
   # The same DOM is kept when the server is later hydrated, avoiding the
   # former cache-only UI -> second live UI replacement.
@@ -343,7 +343,7 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
             `data-ui-section` = "data",
             tags$summary("1. Data"),
             div(class = "section-body",
-          
+
               p("Excel等から、1行目を列名にしたタブ区切りデータを貼り付けてください。"),
               aceEditor(
                 "text",
@@ -430,7 +430,7 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                       choices = c("使わない（固定）" = "")
                     )
                   ),
-                  # v3.63.0-editor-shell1: plot-specific Mapping controls are
+                  # plot-specific Mapping controls are
                   # permanently mounted. conditionalPanel only changes visibility;
                   # the Shiny input bindings survive Graph/plot-type switches.
                   conditionalPanel(
@@ -1527,7 +1527,7 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                 ),
                 selectInput("legend_merge_mode", "同じ変数の凡例", choices = c("自動で統合" = "auto", "別々に表示" = "separate"), selected = "auto"),
                 # Hidden compatibility input: preserves the old Color+Shape
-                # merge/split preference when loading pre-v3.73.2.40 projects.
+                # merge/split preference when loading pre- projects.
                 tags$div(
                   style = "display:none;",
                   checkboxInput("legend_merge_colour_shape", "legacy", TRUE)
@@ -1632,14 +1632,14 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
             id = ns("graph_main_tab"),
             tabPanel("Plot",
               br(),
-              # v3.73.2.18: the Graph workspace owns one fixed persistent live
+              # the Graph workspace owns one fixed persistent live
               # plot anchor. Graph identity is replayed into the same Editor;
               # no cached/live Graph preview stage participates in switching.
               div(
                 id = ns("preview_anchor"),
                 class = "graph-live-plot-anchor",
                 `data-graph-id` = id,
-                # v3.73.2.18: the normal Graph workspace owns one permanently
+                # the normal Graph workspace owns one permanently
                 # mounted live output. Background/source graphUI instances stay
                 # output-free and are used only as state/figure materializers.
                 if (identical(id, "graph_editor_single")) uiOutput("plot_container")

@@ -1,7 +1,7 @@
 # ============================================================
 # Canonical state diff helpers
 # ============================================================
-# Pure helpers used only for diagnostics/contracts.  They do not mutate Shiny
+# Pure helpers used only for diagnostics/contracts. They do not mutate Shiny
 # state and are safe to call from Graph/Figure transaction boundaries.
 
 app_state_diff_paths <- function(old, new, prefix = "", max_depth = 32L) {
@@ -26,7 +26,7 @@ app_state_diff_paths <- function(old, new, prefix = "", max_depth = 32L) {
 
     an <- names(a) %||% character(0)
     bn <- names(b) %||% character(0)
-    # Unnamed lists are treated as one leaf.  State collections whose element
+    # Unnamed lists are treated as one leaf. State collections whose element
     # identity matters should use names; recursing by numeric position would
     # produce noisy diagnostics for recipes/style vectors.
     if (!length(an) && !length(bn)) return(if (nzchar(path)) path else "<root>")

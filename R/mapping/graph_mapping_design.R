@@ -1,7 +1,7 @@
 # ============================================================
-# Mapping semantics / visual-design helpers (v3.80)
+# Mapping semantics / visual-design helpers ()
 # ============================================================
-# Pure functions only.  These helpers are shared by live Graph rendering,
+# Pure functions only. These helpers are shared by live Graph rendering,
 # direct-state Figure/export rendering, diagnostics and development stress tests.
 # They do not own Shiny inputs or canonical state.
 
@@ -82,9 +82,9 @@ graph_stable_track_order <- function(data, vars) {
   unique(as.character(tab$.track_key__[ord]))
 }
 
-# Facet-local stable-track plan.  Stable positions are shared across all X
+# Facet-local stable-track plan. Stable positions are shared across all X
 # levels *within the same facet*, while structurally absent tracks from another
-# facet do not reserve empty horizontal slots in this panel.  This preserves the
+# facet do not reserve empty horizontal slots in this panel. This preserves the
 # missing-cell invariant without shifting a whole facet away from its X tick.
 graph_stable_track_plan <- function(data, vars, facetvar = "") {
   vars <- graph_mapping_clean_vars(data, vars)
@@ -137,10 +137,10 @@ graph_centered_slot_offset <- function(slot_i, slot_n, slot_width, spacing = 1) 
 }
 
 
-# Line series grouping is separate from visual aesthetics.  Auto mode uses only
+# Line series grouping is separate from visual aesthetics. Auto mode uses only
 # mappings that distinguish multiple observations at the same X (within facet),
 # so a Phase/Color that changes *along* X can change appearance without cutting
-# the line.  Legacy mode remains an explicit escape hatch rather than a hidden
+# the line. Legacy mode remains an explicit escape hatch rather than a hidden
 # compatibility branch.
 graph_line_series_vars <- function(data, xvar, candidates, facetvar = "",
                                    mode = "auto", explicit_var = "") {

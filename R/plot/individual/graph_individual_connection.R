@@ -1,12 +1,10 @@
 # Pure individual-trajectory semantics shared by Line / Bar / Scatter.
-#
 # The key distinction is between:
-#   * subject identity: the ID column;
-#   * connection direction: one variable that changes within ID;
-#   * series boundaries: other within-ID variables that coexist at the same
-#     connection value and therefore describe parallel trajectories;
-#   * facet boundary: connections never cross panels.
-#
+# * subject identity: the ID column;
+# * connection direction: one variable that changes within ID;
+# * series boundaries: other within-ID variables that coexist at the same
+# connection value and therefore describe parallel trajectories;
+# * facet boundary: connections never cross panels.
 # Visual aesthetics are not series boundaries merely because they are mapped.
 # A Color/Shape/Linetype variable may itself be the repeated-measure direction.
 

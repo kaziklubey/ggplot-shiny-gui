@@ -15,7 +15,7 @@
     max(180, min(1400, z))
   })
 
-  # v3.3.45: Plot横幅/縦幅はpanel（軸に囲まれた領域）の寸法として固定する。
+  # Plot横幅/縦幅はpanel（軸に囲まれた領域）の寸法として固定する。
   # Legendやタイトル等はpanel外側へ追加され、Legendを消しても軸長は変わらない。
   panel_sized_plot <- reactive({
     p <- make_plot()
@@ -57,13 +57,13 @@
         class = "plot-follow",
         `data-follow` = "true",
         uiOutput("plot_note"),
-        # v3.58.1: Preview scrolling/zooming belongs to the graph viewport only.
+        # Preview scrolling/zooming belongs to the graph viewport only.
         # Graph書式 remains a sibling below the viewport so it follows the Graph
         # section/sticky behavior, but never participates in preview zoom/scroll.
         div(
           id = session$ns("plot_viewport"),
           class = "graph-preview-viewport",
-          # v3.58.2: the viewport is only the clipping/scrolling window.  The
+          # the viewport is only the clipping/scrolling window. The
           # native Graph keeps its own geometry inside a scale canvas, while a
           # spacer reserves the *displayed* geometry after browser zoom.
           div(
@@ -189,12 +189,12 @@
     graph_draw_plot_safely(p)
 
     # The completed Plot belongs to the semantic target released by the render
-    # revision boundary.  Do not re-read browser inputs here: dynamic controls
+    # revision boundary. Do not re-read browser inputs here: dynamic controls
     # can disappear between make_plot() completion and renderPlot publication.
     last_render_state(isolate(plot_last_built_render_state()))
     plot_render_revision(as.integer(isolate(plot_render_revision()) %||% 0L) + 1L)
 
-    # v3.51: do not manipulate cached/live DOM here. The browser switches the
+    # do not manipulate cached/live DOM here. The browser switches the
     # stable preview stage only after the plot <img> has actually loaded. The
     # image has already been drawn by app_draw_static_plot(); returning NULL
     # deliberately prevents Shiny from constructing a ggplot coordmap that the
@@ -219,7 +219,7 @@
   execOnResize = FALSE
   )
 
-  # v3.72.27: Statistics no longer renders or owns a Plot reference.
+  # Statistics no longer renders or owns a Plot reference.
   # It consumes the original dataset plus its Analysis-local preparation recipe.
 
   last_valid_data_view <- reactiveVal(NULL)

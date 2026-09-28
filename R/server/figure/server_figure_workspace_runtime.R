@@ -1,4 +1,3 @@
-# v3.70.0: extracted from server.R; sourced into the same server function environment.
 
   # ------------------------------------------------------------------
   # Figure workspace / lazy preparation
@@ -6,24 +5,14 @@
   figure_collect_live_layout <- function(meta) {
     figure_sanitize_layout(figure_layout_state(), meta, auto_fill = FALSE, external_assets = isolate(figure_external_assets()))
   }
-  # v3.3.56: figure_layout_rects moved to its Figure module.
-  # v3.3.56: figure_override_for moved to its Figure module.
-  # v3.3.56: figure_apply_plot_override moved to its Figure module.
-  # v3.3.56: figure_label_band moved to its Figure module.
 
   # Figureでは元Graphのpanel寸法を正本として扱う。Legend overrideをかけても
   # panelサイズは変えず、必要ならセルへ収まる倍率だけpanel寸法へ適用する。
-  # v3.3.56: figure_plot_for_scale moved to its Figure module.
-  # v3.3.56: figure_plot_spec_for_rect moved to its Figure module.
-  # v3.3.56: figure_plot_offsets moved to its Figure module.
 
 
   # Panel label is positioned relative to the actual rendered plot geometry.
   # plot_axis uses the measured panel-left edge (the Y-axis side), instead of an
   # approximate percentage of the whole plot image.
-  # v3.3.56: figure_label_position moved to its Figure module.
-  # v3.3.56: figure_plot_panel_zone moved to its Figure module.
-  # v3.3.56: figure_legend_handle_position moved to its Figure module.
 
 
   # Release the restore seed only after all four browser inputs visibly match
@@ -61,7 +50,7 @@
     }
   })
 
-  # v3.73.2.3: a legend transition may need one lazy Figure-owned
+  # a legend transition may need one lazy Figure-owned
   # materialization before the new override can be displayed safely. Keep the
   # requested/display state frozen for only those pending source ids while the
   # authored draft continues to accept edits. The materializer releases the
@@ -123,9 +112,9 @@
     }), use.names = FALSE))
     ids <- ids[nzchar(ids)]
 
-    # v3.4.0-alpha1: Panel labels are position-owned, not Graph-owned.
+    # Panel labels are position-owned, not Graph-owned.
     # Swapping Graphs therefore keeps A/B/C/D on the Figure positions.
-    # Panel labels are slot-owned.  Use the row-major slot ordinal rather than
+    # Panel labels are slot-owned. Use the row-major slot ordinal rather than
     # the number of currently occupied cells so Shift through a blank cannot
     # create duplicate automatic labels (for example two "E" panels).
     slot_index <- 0L
@@ -173,10 +162,10 @@
       figure_selected_panel_key("")
     }
 
-    # Phase 8: Row height and Figure-wide column ratios are Fixed-canvas-only
-    # inputs.  In Auto fit they do not participate in geometry, so strip them
+    # Row height and Figure-wide column ratios are Fixed-canvas-only
+    # inputs. In Auto fit they do not participate in geometry, so strip them
     # from the *derived geometry request* while keeping the authored values in
-    # figure_layout_state().  This prevents a Fixed-only edit from invalidating
+    # figure_layout_state(). This prevents a Fixed-only edit from invalidating
     # the entire Auto-fit geometry/preview pipeline.
     layout_for_geometry <- layout
     if (identical(size_mode, "auto")) {
@@ -550,10 +539,10 @@
     }
   })
 
-  # v3.3.69: source dimensions for content-driven geometry.  Auto Figure
+  # source dimensions for content-driven geometry. Auto Figure
   # sizing is anchored to the Graph-side *plot panel* dimensions, while the
   # full visual box (axes/titles/outside legend) is retained for the Figure
-  # bounding box.  This keeps equal 600x600 panels visually equal even when
+  # bounding box. This keeps equal 600x600 panels visually equal even when
   # one Graph has a right/top legend.
   figure_source_sizes <- reactive({
     figure_geometry_revision()
@@ -602,7 +591,7 @@
       geometry_revision <- figure_geometry_source_revisions[[id]] %||% 0L
       bootstrap_deferred <- isTRUE(isolate(figure_geometry_bootstrap_deferred()))
       workspace_dormant <- !figure_workspace_is_active()
-      # v3.72.13: hidden Figure UI is allowed to remain materialized, but source
+      # hidden Figure UI is allowed to remain materialized, but source
       # gtable measurement is a Figure-workspace responsibility. While Graph is
       # active, use persisted/cached metadata only so Graph selection/editor
       # hydration does not compete with Figure geometry work.
@@ -842,7 +831,7 @@
     geo
   })
 
-  # v3.4.0-alpha2: optional Auto-fit freeze. Fixed canvas always remains live.
+  # optional Auto-fit freeze. Fixed canvas always remains live.
   figure_geometry_manual <- eventReactive(figure_autofit_revision(), {
     isolate(figure_geometry_live())
   }, ignoreInit = FALSE)
@@ -949,21 +938,20 @@
   # ------------------------------------------------------------------
   # Figure Preview rendering
   # ------------------------------------------------------------------
-  # v3.3.48 performance experiment:
+  # performance experiment:
   # - The outer canvas depends only on layout/canvas geometry.
   # - Each occupied cell owns its own reactive plot spec and UI output.
   # - A legend/style override increments only that Graph's revision, therefore
-  #   only that Panel is rebuilt.
+  # only that Panel is rebuilt.
   # - Label text/position/size are browser overlays and are updated through a
-  #   custom message without re-running ggplot at all.
+  # custom message without re-running ggplot at all.
   # This is an intermediate step toward the future SVG-layer editor while
   # keeping the current ggplot/grob export path intact.
 
   # Experimental vector preview ------------------------------------------------
   # The ggplot remains authoritative; this SVG is only a browser display cache.
-  # v3.3.50 embeds the generated SVG inline in the panel DOM. Layout-only edits
+  # embeds the generated SVG inline in the panel DOM. Layout-only edits
   # reuse the cached source SVG and only change CSS geometry.
-  # v3.3.56: figure_plot_svg_text moved to its Figure module.
 
   figure_live_base_asset <- function(id, p_raw, ov, ex, snapshot_revision, plot_revision) {
     if (is.null(p_raw)) return(NULL)
@@ -1026,17 +1014,9 @@
         )
       }
     }
-    body_meta <- if (is.list(body_rendered)) list(
-      width=body_rendered$width, height=body_rendered$height,
-      panel_left=body_rendered$panel_left, panel_top=body_rendered$panel_top,
-      panel_width=body_rendered$panel_width, panel_height=body_rendered$panel_height,
-      panel_bbox=body_rendered$panel_bbox, facet_bbox=body_rendered$facet_bbox,
-      axis_outer_bbox=body_rendered$axis_outer_bbox, content_outer_bbox=body_rendered$content_outer_bbox,
-      title_bbox=body_rendered$title_bbox,
-      legend_bbox=body_rendered$legend_bbox, legend_visual_bbox=body_rendered$legend_visual_bbox,
-      legend_outside_bbox=body_rendered$legend_outside_bbox,
-      legend_outside_visual_bbox=body_rendered$legend_outside_visual_bbox
-    ) else NULL
+    body_meta <- if (is.list(body_rendered)) {
+      figure_render_geometry_meta(body_rendered, fallback_legend_visual = FALSE)
+    } else NULL
 
     ans <- list(
       signature = sig,
@@ -1049,33 +1029,17 @@
       legend_guide_box = if (is.list(legend_asset)) legend_asset$guide_box_name %||% "" else "",
       legend_guide_candidates = if (is.list(legend_asset)) legend_asset$guide_box_candidates %||% NA_integer_ else NA_integer_,
       plot = rendered$plot,
-      meta = list(
-        width = rendered$width,
-        height = rendered$height,
-        panel_left = rendered$panel_left,
-        panel_top = rendered$panel_top,
-        panel_width = rendered$panel_width,
-        panel_height = rendered$panel_height,
-        panel_bbox = rendered$panel_bbox,
-        facet_bbox = rendered$facet_bbox,
-        axis_outer_bbox = rendered$axis_outer_bbox,
-        content_outer_bbox = rendered$content_outer_bbox,
-        title_bbox = rendered$title_bbox,
-        legend_bbox = rendered$legend_bbox,
-        legend_visual_bbox = rendered$legend_visual_bbox %||% rendered$legend_bbox,
-        legend_outside_bbox = rendered$legend_outside_bbox,
-        legend_outside_visual_bbox = rendered$legend_outside_visual_bbox %||% rendered$legend_outside_bbox,
-        legend_state = rendered$legend_state %||% "unknown",
-        geometry_source = rendered$geometry_source %||% "unknown",
-        reference_res = ex$reference_res %||% 120
+      meta = figure_render_geometry_meta(
+        rendered,
+        reference_res = ex$reference_res %||% 120,
+        include_legend_state = TRUE,
+        include_geometry_source = TRUE,
+        include_reference_res = TRUE
       )
     )
     assign(key, ans, envir = figure_svg_cache)
     ans
   }
-  # v3.3.56: figure_fit_cached_geometry moved to its Figure module.
-  # v3.3.56: figure_persisted_spec_for_rect moved to its Figure module.
-  # v3.3.56: figure_build_cell_ui moved to its Figure module.
 
   # Create one output pair per occupied layout cell. Re-running this observer on
   # a structural layout change simply rebinds the currently visible cell keys;
@@ -1103,7 +1067,7 @@
         plot_output_id <- paste0("figure_cell_plot_", rect$key)
 
         spec_r <- reactive({
-          # v3.73.1.6 reorder ownership guard: output ids are slot-keyed and
+          # reorder ownership guard: output ids are slot-keyed and
           # therefore reused after Shift/Swap. A stale closure from the former
           # owner must never paint into a slot that now belongs to another source.
           current_owner <- figure_layout_source_at_key(figure_requested_layout(), rect$key)
@@ -1226,7 +1190,7 @@
           sp$id <- id
           sp$rect <- rect
 
-          # v3.3.67 diagnostics: Graph target size is independent from the
+          # diagnostics: Graph target size is independent from the
           # Panel allocation. NA means legacy Auto sizing.
           gw <- suppressWarnings(as.numeric(rect$graph_width %||% NA_real_)[1])
           gh <- suppressWarnings(as.numeric(rect$graph_height %||% NA_real_)[1])
@@ -1235,7 +1199,7 @@
             if (is.finite(gh)) round(gh, 1) else "Auto"
           )
 
-          # v3.3.66 diagnostics: distinguish the Figure panel frame from the
+          # diagnostics: distinguish the Figure panel frame from the
           # fitted plot frame. Log once per geometry so layout edits remain
           # readable instead of flooding the console.
           frame_key <- paste0(
@@ -1554,7 +1518,6 @@
   # ------------------------------------------------------------------
   # Export writers
   # ------------------------------------------------------------------
-  # v3.3.56: figure_draw_to_device() moved to R/export/figure_export.R.
 
   write_figure_export <- function(path, format) {
     layout <- isolate(figure_requested_layout())
@@ -1563,7 +1526,7 @@
     gap_y <- isolate(figure_requested_gap_y())
     mode <- isolate(figure_requested_size_mode())
 
-    # v3.3.70: Preview geometry is the single source of truth for Figure export.
+    # Preview geometry is the single source of truth for Figure export.
     # Previously Auto-fit export rebuilt its own source-size table from cached
     # metadata, which could omit panel_width/panel_height and current legend
     # overrides. That produced a different canvas/rect allocation than Preview.

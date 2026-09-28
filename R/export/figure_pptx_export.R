@@ -1,14 +1,12 @@
 # R/export/figure_pptx_export.R — editable PowerPoint Figure export via officer + rvg
-#
 # The PowerPoint export deliberately bypasses SVG. rvg records the completed
 # Figure drawing directly as DrawingML, so PowerPoint receives editable Office
 # shapes rather than having to reinterpret an SVG with nested transforms/clips.
-#
 # WYSIWYG sizing rule:
-#   Figure Preview/normal SVG use reference_res = 120 px/in. The PPTX slide is
-#   therefore created at exactly canvas_px / 120 inches. This preserves the same
-#   physical text/line/point proportions instead of redrawing a large Figure on
-#   a standard 10x7.5-in slide (which would make text appear too large).
+# Figure Preview/normal SVG use reference_res = 120 px/in. The PPTX slide is
+# therefore created at exactly canvas_px / 120 inches. This preserves the same
+# physical text/line/point proportions instead of redrawing a large Figure on
+# a standard 10x7.5-in slide (which would make text appear too large).
 
 # Shared PowerPoint infrastructure lives in R/export/pptx_editable_export.R so Graph
 # and Figure exports use the same slide sizing and DrawingML flattening rules.

@@ -1,6 +1,6 @@
 # ============================================================
 # Pure Graph data transforms
-# v3.72.27: one transform engine shared by Plot Data and Statistics recipes.
+# one transform engine shared by Plot Data and Statistics recipes.
 # ============================================================
 
 # A transform recipe is presentation/analysis state only. It never reads

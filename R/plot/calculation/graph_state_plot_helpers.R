@@ -55,7 +55,7 @@ graph_appearance_value <- function(key, fallback = "") {
 legend_title_value <- function(key, default_title) {
     st <- legend_titles()
     z <- st[[key]]
-    # Empty text is an intentional "no title" value.  Earlier builds treated
+    # Empty text is an intentional "no title" value. Earlier builds treated
     # an empty string as missing and silently restored the default variable
     # name, so users could not actually remove a legend title.
     if (is.null(z) || !length(z)) {

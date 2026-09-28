@@ -1,5 +1,5 @@
 # R/figure/layout/figure_layout_tracks.R — shared Fixed-Canvas row/column track allocator
-# v3.80.8: Fixed layout has one Figure-wide column model and one row model.
+# Fixed layout has one Figure-wide column model and one row model.
 # Figure-wide column ratios are canonical layout metadata. Per-cell `width`
 # values are a derived compatibility mirror maintained by figure_reindex_layout.
 

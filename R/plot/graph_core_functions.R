@@ -1,7 +1,7 @@
 # ============================================================
 # Canonical reusable Graph functions
 # ============================================================
-# These functions are intentionally non-reactive.  They accept explicit input
+# These functions are intentionally non-reactive. They accept explicit input
 # and return explicit output so future changes can be made/tested independently
 # from Shiny observers and Graph lifecycle transactions.
 
@@ -78,9 +78,9 @@ graph_default_palette <- function(n, preset = "okabe_ito") {
   )
   if (n <= length(base)) return(base[seq_len(n)])
 
-  # Fixed publication palettes contain eight canonical colours.  Repeating the
+  # Fixed publication palettes contain eight canonical colours. Repeating the
   # first colours for level 9+ makes categories genuinely indistinguishable, so
-  # v3.80 keeps the canonical eight and extends with non-identical hue colours.
+  # keeps the canonical eight and extends with non-identical hue colours.
   pool <- scales::hue_pal()(max(24L, n * 3L))
   pool <- pool[!toupper(pool) %in% toupper(base)]
   out <- c(base, pool)

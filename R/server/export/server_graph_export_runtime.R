@@ -1,5 +1,5 @@
-# v3.73.2.36: Graph export renders directly from canonical GraphState.
-# Bulk/current export never creates hidden graphUI/graphServer instances.
+  # Graph export renders directly from canonical GraphState.
+  # Bulk/current export never creates hidden graphUI/graphServer instances.
 
   graph_export_sync_visible_owner <- function(ids) {
     owner <- graph_single_owner()

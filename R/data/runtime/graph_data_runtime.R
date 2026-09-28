@@ -1,5 +1,4 @@
-# v3.69.0: extracted from R/editor/graph_module.R; sourced into graphServer local environment.
-# Section: DATA-BEGIN
+  # Section: DATA-BEGIN
 
 
   # ============================================================
@@ -33,7 +32,7 @@
       return(validate_editor_raw_data(plan$raw))
     }
 
-    # v4.0.1-data-canonical-bootstrap1: once a Graph owns the persistent Editor,
+    # once a Graph owns the persistent Editor,
     # Data is read only from the accepted canonical GraphState attachment. The one
     # exception is the pristine startup bootstrap before any GraphState has been
     # attached: the default Graph template must be capturable from the mounted Ace
@@ -52,7 +51,7 @@
   })
 
 
-  # v4.0.1-mapping-style-canonical1: Data text is the one Full-Editor field that does
+  # Data text is the one Full-Editor field that does
   # not use the generic browser-patch queue. shinyAce owns browser -> Shiny
   # rate policy; once input$text settles, send that single value to the outer
   # canonical GraphState owner. Plot/Data View continue to read only the accepted
@@ -91,11 +90,11 @@
   reshape_warning <- reactiveVal(NULL)
 
   # When an incompatible Wide→Long selection is auto-disabled once, the next
-  # manual enable enters an edit/recovery mode.  In that mode the transform may
+  # manual enable enters an edit/recovery mode. In that mode the transform may
   # stay invalid (and the raw data continues to be used), but the checkbox is
-  # not immediately forced OFF again.  This keeps the column checklist visible
+  # not immediately forced OFF again. This keeps the column checklist visible
   # long enough for the user to repair mixed-type selections such as numeric +
-  # character columns.  Recovery ends as soon as a valid transform succeeds.
+  # character columns. Recovery ends as soon as a valid transform succeeds.
   reshape_edit_recovery <- reactiveVal(FALSE)
 
   # Short-lived value seed used only while canonical GraphState replay updates
@@ -129,11 +128,11 @@
     )
   })
 
-  # v3.73.2.18: reshape_columns is permanently mounted in R/editor/ui/graph_ui_module.R.
+  # reshape_columns is permanently mounted in R/editor/ui/graph_ui_module.R.
   # Its choices are updated in place; no server-rendered duplicate UI exists.
 
-  # v3.62.0-fixedref1: reshape_columns is a persistent input in the fixed
-  # Graph Editor DOM.  Only choices/selection change; the input binding itself
+  # reshape_columns is a persistent input in the fixed
+  # Graph Editor DOM. Only choices/selection change; the input binding itself
   # is never destroyed when another Graph becomes the editor target.
   observe({
     if (!isTRUE(editor_has_reshape_controls)) return()
@@ -229,8 +228,8 @@
   })
 
   # Incompatible selected columns (for example numeric phase2 + character
-  # phase) are not a valid wide measurement selection.  The first failure is
-  # auto-disabled so Mapping can continue on raw data.  If the user enables the
+  # phase) are not a valid wide measurement selection. The first failure is
+  # auto-disabled so Mapping can continue on raw data. If the user enables the
   # transform again, keep the panel open in recovery mode instead of repeatedly
   # closing it before the offending column selection can be edited.
   observe({
@@ -241,7 +240,7 @@
     enabled <- isTRUE(graph_reshape_value("enabled", input$reshape_wide))
 
     # Do not clear recovery while the checkbox is OFF: the next manual enable
-    # needs that grace period.  A successful enabled transform ends recovery.
+    # needs that grace period. A successful enabled transform ends recovery.
     if (is.null(msg) || !nzchar(msg)) {
       if (enabled && isTRUE(reshape_edit_recovery())) {
         reshape_edit_recovery(FALSE)
@@ -293,9 +292,9 @@
     }
   })
 
-  # v3.62.0-fixedref1: X/Y/Color/Shape/ID/Facet are persistent selectInputs
-  # created once by R/editor/ui/graph_ui_module.R.  This observer only updates choices and
-  # selected values.  Switching Graphs therefore does not replace the Mapping
+  # X/Y/Color/Shape/ID/Facet are persistent selectInputs
+  # created once by R/editor/ui/graph_ui_module.R. This observer only updates choices and
+  # selected values. Switching Graphs therefore does not replace the Mapping
   # DOM or its Shiny input bindings.
   observe({
     # Full Editor choice topology is owned by one browser-direct hydration
@@ -361,7 +360,7 @@
     updateSelectInput(session, "facetvar", choices = c("なし" = "", cols), selected = selected_facet)
   }, priority = 110)
 
-  # v3.63.0-editor-shell1: linetype/group controls also live permanently in
+  # linetype/group controls also live permanently in
   # R/editor/ui/graph_ui_module.R. Keep only their choices/selected values in sync.
   observe({
     if (graph_editor_profile_has(editor_profile, "full_shell")) return()
@@ -417,7 +416,7 @@
     )
   }, priority = 109)
 
-  # v3.73.2.18: Mapping controls are all permanently mounted in
+  # Mapping controls are all permanently mounted in
   # R/editor/ui/graph_ui_module.R. The old mapping_ui / plot_specific_mapping_ui renderUI
   # copies were dead outputs and are intentionally removed.
 
@@ -525,7 +524,7 @@
     if (!pt %in% c("line", "scatter")) restore_linetype_seed(NULL)
   })
 
-  # v3.73.2.18: groupvar is one persistent Mapping input for line/bar/box.
+  # groupvar is one persistent Mapping input for line/bar/box.
   # The old line-only position_var_ui remount was removed.
 
   # Browser-direct controls are resolved through one canonical read boundary.
@@ -770,7 +769,7 @@
     if (isTRUE(restoring_style_state())) return()
 
     # Shared Style applies level_labels() before renderUI can replace these
-    # dynamic text inputs.  Without this one-epoch guard, an old DOM default
+    # dynamic text inputs. Without this one-epoch guard, an old DOM default
     # such as "Pre" can be read against the new default "Pre Common" and be
     # incorrectly stored as an explicit legend-only override.
     sync_epoch <- as.integer(shared_style_ui_epoch() %||% 0L)
@@ -897,7 +896,7 @@
         z <- as.character(z)[1]
         old_raw <- branch[[lv]]
         # Same rule for level labels: the generated input displays the original
-        # level by default.  Missing -> original-level is semantically unchanged
+        # level by default. Missing -> original-level is semantically unchanged
         # and must not become a post-READY state mutation/redraw.
         if (is.null(old_raw) && identical(z, as.character(lv)[1])) next
         old <- if (is.null(old_raw)) "" else as.character(old_raw)[1]

@@ -1,5 +1,4 @@
 # R/export/export_text_normalization.R — export-only text compatibility normalization
-#
 # Canonical GraphState/FigureState and on-screen text remain byte-for-byte as
 # entered by the user. Only external editable/vector export payloads are
 # normalized here. RC13.3 intentionally starts with one confirmed compatibility

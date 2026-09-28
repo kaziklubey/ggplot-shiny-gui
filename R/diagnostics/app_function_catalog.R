@@ -1,7 +1,7 @@
 # ============================================================
 # Maintainer-facing function catalog
 # ============================================================
-# This is metadata, not a dispatcher.  It identifies canonical entry points
+# This is metadata, not a dispatcher. It identifies canonical entry points
 # that new work should extend/reuse rather than bypassing with new ad-hoc logic.
 
 app_function_catalog <- function() {

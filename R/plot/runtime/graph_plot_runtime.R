@@ -1,7 +1,7 @@
   # ============================================================
   # Plot builder
   # ============================================================
-  
+
   # Y-axis tick sequence helper
   y_break_values <- function(ymin, ymax) {
     manual_y_break_values(
@@ -12,7 +12,7 @@
   }
 
 make_plot <- reactive({
-    # v3.66.3: persistent single-Editor Graph switches are one render
+    # persistent single-Editor Graph switches are one render
     # transaction. Do not rebuild while the outer owner is HYDRATING/SYNCING.
     # Opening this gate at READY invalidates make_plot once with the completed
     # canonical state.
@@ -28,7 +28,7 @@ make_plot <- reactive({
     # not directly invalidate this expensive reactive.
     build_rev <- plot_build_revision()
 
-    # v3.72.7: gate reopen may invalidate this reactive even when the final
+    # gate reopen may invalidate this reactive even when the final
     # RenderState is identical to the last successful plot. Reuse that single
     # completed object instead of rebuilding ggplot. This is one-object cache
     # only; it does not grow with Graph count.

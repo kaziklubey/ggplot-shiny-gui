@@ -1,4 +1,4 @@
-# v3.73.2.21: Figure legend regeneration reuses the one persistent Figure
+# Figure legend regeneration reuses the one persistent Figure
 # value-replay renderer. No second hidden graphServer/UI is created.
 
 figure_legend_materializer_expected <- reactiveVal(list())

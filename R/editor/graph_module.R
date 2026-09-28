@@ -41,7 +41,7 @@ graphServer <- function(id, style_clipboard = NULL, diag_log = NULL, ui_preseede
     style_clipboard <- reactiveVal(NULL)
   }
 
-  # Shared Label / Style Library is session/project state.  Only the persistent
+  # Shared Label / Style Library is session/project state. Only the persistent
   # interactive Graph Editor receives the live project reactive/callback;
   # the persistent Graph Editor and Figure snapshot editor use this isolated
   # fallback so they remain read-only with respect to the central Library.
@@ -60,7 +60,7 @@ graphServer <- function(id, style_clipboard = NULL, diag_log = NULL, ui_preseede
     statistics_plot_preview <- function() NULL
   }
 
-  # v3.66.3: external transaction-level render gate. The ordinary Graph module
+  # external transaction-level render gate. The ordinary Graph module
   # defaults to open; the persistent single Editor receives a reactiveVal from
   # server.R that stays closed throughout HYDRATING/SYNC and opens only after
   # the canonical READY snapshot has been committed. This prevents intermediate
@@ -77,7 +77,7 @@ graphServer <- function(id, style_clipboard = NULL, diag_log = NULL, ui_preseede
     on_data_text_commit <- NULL
   }
 
-  # v3.73.2.18: normal Graph switches replay one saved GraphState into this
+  # normal Graph switches replay one saved GraphState into this
   # persistent Editor. These transaction values exist before data/style observers
   # are installed so those observers can cheaply suppress auto-default work while
   # a replay batch is crossing the browser.
@@ -126,7 +126,7 @@ graphServer <- function(id, style_clipboard = NULL, diag_log = NULL, ui_preseede
   sys.source(file.path(getwd(), "R/editor/runtime/graph_helpers_runtime.R"), envir = environment())
   sys.source(file.path(getwd(), "R/editor/runtime/graph_browser_patch_bridge_runtime.R"), envir = environment())
 
-  # RC12: Figure Controls use the same browser working-copy model as the Full
+  # Figure Controls use the same browser working-copy model as the Full
   # Editor. Their frozen Figure-owned GraphState remains the base; only the
   # profile-owned values below are overlaid. One namespaced patch input carries
   # user edits, so hydration never has to replay 14 bound inputs through Shiny.
@@ -191,7 +191,7 @@ graphServer <- function(id, style_clipboard = NULL, diag_log = NULL, ui_preseede
   # ============================================================
   # Runtime components
   # ============================================================
-  # v3.67.0: graphServer remains the owner environment.  Large, self-contained
+  # graphServer remains the owner environment. Large, self-contained
   # runtime sections are sourced into this exact local environment so this is a
   # source-organization refactor only: no reactive ownership or dependency is
   # changed by the split.
@@ -385,7 +385,7 @@ graphServer <- function(id, style_clipboard = NULL, diag_log = NULL, ui_preseede
     }),
 
 
-    # Project persistence stores only reproducible Statistics recipes.  Results
+    # Project persistence stores only reproducible Statistics recipes. Results
     # are deliberately excluded and are recalculated when Statistics is opened.
     statistics_recipes = reactive({
       if (graph_editor_profile_has(editor_profile, "statistics")) {
@@ -402,7 +402,7 @@ graphServer <- function(id, style_clipboard = NULL, diag_log = NULL, ui_preseede
     }),
 
     # Outer persistent-Editor transaction calls this exactly once after it has
-    # accepted the Registry canonical state for the current Graph.  This keeps
+    # accepted the Registry canonical state for the current Graph. This keeps
     # the module's attached safety snapshot and the pending render target on
     # the same accepted state before render_gate is opened.
     accept_canonical = function(state, reason = "outer-ready-accept", seed_render = TRUE) {

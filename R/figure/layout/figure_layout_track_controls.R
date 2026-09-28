@@ -1,5 +1,5 @@
 # R/figure/layout/figure_layout_track_controls.R — Figure-wide Fixed track controls
-# v3.80.8.1: shared column ratios have one UI owner in the top-level Layout card.
+# shared column ratios have one UI owner in the top-level Layout card.
 
 figure_shared_column_ratio_controls <- function(layout) {
   ratios <- figure_shared_column_ratios(layout)

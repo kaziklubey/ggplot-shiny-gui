@@ -1,5 +1,5 @@
 # R/figure/layout/figure_layout_plot.R — Figure plot overrides and rendered plot geometry helpers
-# v3.80.6-refactor1: split from figure_layout.R.
+# split from figure_layout.R.
 
 figure_override_for <- function(id, overrides = list()) {
   raw_override <- overrides[[id]] %||% list()
@@ -35,7 +35,7 @@ figure_override_for <- function(id, overrides = list()) {
   ov$legend_free_anchor <- "graph"
   if (!ov$legend %in% c("inherit", "none", "right", "left", "top", "bottom", "free")) ov$legend <- "inherit"
   ov$legend_title <- figure_normalize_legend_title_mode(ov$legend_title)
-  # RC13.5: every optional Figure scalar is normalized to length one at the
+  # every optional Figure scalar is normalized to length one at the
   # render/export boundary. `%||%` handles NULL but intentionally does not
   # replace character(0)/numeric(0), which can appear transiently during the
   # first Figure materialization. Keep those transport details out of all
@@ -189,9 +189,9 @@ figure_apply_y_range_override <- function(p, app) {
   ymin <- suppressWarnings(as.numeric(app$ymin %||% NA_real_)[1])
   ymax <- suppressWarnings(as.numeric(app$ymax %||% NA_real_)[1])
   if (!is.finite(ymin) && !is.finite(ymax)) return(p)
-  # Partial range semantics depend on Graph-side auto-range rules.  alpha3 keeps
+  # Partial range semantics depend on Graph-side auto-range rules. The current path keeps
   # a one-sided override as pending state rather than silently inventing the
-  # other side.  Graph commit remains unsupported until Graph-side range
+  # other side. Graph commit remains unsupported until Graph-side range
   # semantics can be represented exactly.
   if (!is.finite(ymin) || !is.finite(ymax) || ymin >= ymax) return(p)
 
@@ -281,7 +281,7 @@ figure_label_band <- function(ov) {
 }
 
 figure_plot_for_scale <- function(p_raw, ov, ex, scale = 1) {
-  # RC13.5: export metadata is another asynchronous boundary. A partially
+  # export metadata is another asynchronous boundary. A partially
   # materialized Figure snapshot can carry zero-length numeric fields even
   # though the metadata list itself already exists. Collapse every device scalar
   # to length one before it can reach an `if (...)` or graphics device.
@@ -299,26 +299,23 @@ figure_plot_for_scale <- function(p_raw, ov, ex, scale = 1) {
   scale <- scalar_num(scale, 1)
   if (scale <= 0) scale <- 1
 
-  # Phase 10: do not serialize/unserialize the Graph-owned ggplot here.
-  #
+  # do not serialize/unserialize the Graph-owned ggplot here.
   # The previous all-object deep copy recursively duplicated layer/data
   # environments and became catastrophically expensive as a session aged
   # (tens of seconds per Figure geometry measurement on the Windows runtime).
-  #
   # Keep p_raw as an immutable source value and rely on the mutation sites below
   # to detach only the reference-like components they actually change:
-  #   * figure_apply_layer_style_override() clones every layer with ggproto()
-  #     before changing aes_params.
-  #   * figure_apply_y_range_override() clones the coordinate ggproto before
-  #     changing its limits.
-  #   * theme/labs/legend/fixed-panel changes use ggplot `+`, which returns the
-  #     derived Figure plot rather than editing GraphState or p_raw in place.
+  # * figure_apply_layer_style_override() clones every layer with ggproto()
+  # before changing aes_params.
+  # * figure_apply_y_range_override() clones the coordinate ggproto before
+  # changing its limits.
+  # * theme/labs/legend/fixed-panel changes use ggplot `+`, which returns the
+  # derived Figure plot rather than editing GraphState or p_raw in place.
   # Top-level `$<-` assignments in those helpers also trigger ordinary R
-  # copy-on-modify before the cloned component is installed.  Therefore the
+  # copy-on-modify before the cloned component is installed. Therefore the
   # Figure path must never add a new direct mutation of a Graph-owned ggproto
   # without cloning that component first.
-  #
-  # Start from a ggplot-native no-op addition rather than a raw alias.  ggplot's
+  # Start from a ggplot-native no-op addition rather than a raw alias. ggplot's
   # `+` path creates the derived plot container without recursively serializing
   # the data/layer environments; reference-like components remain shared only
   # until (and unless) the guarded helpers above need to mutate them.
@@ -368,7 +365,7 @@ figure_graph_target_box <- function(rect, ov) {
   explicit_h <- is.finite(gh) && gh > 0
 
   # Auto-fit geometry has already converted the Graph-side panel target into
-  # the full visual box.  Do not cap that visual box again by graph_width /
+  # the full visual box. Do not cap that visual box again by graph_width /
   # graph_height, otherwise a right legend or axis decoration would shrink the
   # data panel a second time.
   if (isTRUE(rect$auto_fit) || isTRUE(rect$basis_fit)) {
@@ -379,9 +376,9 @@ figure_graph_target_box <- function(rect, ov) {
     return(list(
       width = cw,
       height = ch,
-      # v3.3.78: Auto-fit may still have an explicit per-Graph width/height.
+      # Auto-fit may still have an explicit per-Graph width/height.
       # Keep that fact here so cached/live SVG fitting is allowed to scale
-      # above 1x.  v3.3.77 incorrectly forced explicit=FALSE, which made
+      # above 1x. incorrectly forced explicit=FALSE, which made
       # figure_fit_cached_geometry()/figure_plot_spec_for_rect() cap the
       # asset at its natural size even though the layout box grew.
       explicit = explicit_w || explicit_h,
@@ -445,7 +442,7 @@ figure_plot_offsets <- function(rect, fit, ov) {
   if (!is.finite(panel_w) || panel_w <= 0) panel_w <- total_w
   if (!is.finite(panel_h) || panel_h <= 0) panel_h <- total_h
 
-  # Axis-basis auto layout can provide an explicit SVG offset.  This is the
+  # Axis-basis auto layout can provide an explicit SVG offset. This is the
   # shared-gutter contract: the plot panel stays at its Graph-side scale while
   # multiline axis titles only add reserved space around it.
   content_left <- suppressWarnings(as.numeric(rect$content_left %||% NA_real_)[1])
@@ -537,7 +534,7 @@ figure_legend_handle_position <- function(rect, sp, ov) {
 
 
 # -----------------------------------------------------------------------------
-# v3.4.0-alpha1 experimental free-canvas geometry
+# experimental free-canvas geometry
 # -----------------------------------------------------------------------------
 
 figure_crop_css <- function(ov) {
@@ -551,12 +548,10 @@ figure_crop_css <- function(ov) {
 
 
 # F1-4h: basis-aware Fixed Canvas geometry.
-#
 # Fixed Canvas keeps the canvas and Row/column slot rectangles fixed, but it
 # must not independently contain each Graph's complete visual bbox. Doing so
 # makes a Graph with a right/left/top/bottom legend use a smaller data-panel
 # scale than a legend-free Graph in the same Row.
-#
 # Build the Row's natural, basis-normalised footprints first (the same contract
 # used by Auto Canvas), then apply one secondary fit factor to every occupied
 # Graph in that Row so those footprints fit their fixed slots. The selected

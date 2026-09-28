@@ -1,5 +1,4 @@
-# v3.69.0: extracted from R/editor/graph_module.R; sourced into graphServer local environment.
-# Section: HELPERS-BEGIN
+  # Section: HELPERS-BEGIN
 
 
   # ============================================================
@@ -23,13 +22,12 @@
   default_linetypes <- graph_default_linetypes()
   default_shapes <- graph_default_shapes()
 
-  # Dynamic style controls live inside one persistent Editor DOM.  The same
+  # Dynamic style controls live inside one persistent Editor DOM. The same
   # variable/level names (for example Group/CTL) can occur in several Graphs,
   # so a globally stable input id would let the browser retain Graph A's
   # colourInput value and report it while Graph B is being rebuilt.
-  #
   # Keep the semantic part stable, but namespace the browser input id by the
-  # current dynamic-style UI generation.  style_restore_epoch is incremented
+  # current dynamic-style UI generation. style_restore_epoch is incremented
   # exactly when those renderUI controls are intentionally rebuilt, therefore
   # stale inputs from the previous Graph become unreachable without retaining
   # per-Graph DOM/modules.
@@ -72,7 +70,7 @@
   legend_item_labels <- reactiveVal(list())
   level_labels <- reactiveVal(list())
 
-  # v3.73.0: project-level Shared Label / Style Library bindings are Graph
+  # project-level Shared Label / Style Library bindings are Graph
   # metadata, while the concrete display/style values above remain the render
   # authority. Binding is explicit; no name-based auto matching is performed.
   shared_style_binding <- reactiveVal(shared_style_default_binding())
@@ -90,9 +88,9 @@
   # rebuild unrelated colour/shape/linetype controls.
   shared_style_binding_ui_epoch <- reactiveVal(0L)
   # Dynamic legend-item text inputs show the ordinary condition display name
-  # as a placeholder when no legend-only override exists.  When Shared Style
+  # as a placeholder when no legend-only override exists. When Shared Style
   # changes that ordinary display name, the old DOM value can remain visible
-  # for one reactive turn.  Remember which Shared-Style sync epoch the legend
+  # for one reactive turn. Remember which Shared-Style sync epoch the legend
   # observer has consumed so that transient value is never materialised as an
   # explicit legend-only override.
   legend_item_shared_sync_seen <- reactiveVal(0L)
@@ -109,7 +107,7 @@
   legend_title_value <- function(key, default_title) {
     st <- legend_titles()
     z <- st[[key]]
-    # Empty text is an intentional "no title" value.  Earlier builds treated
+    # Empty text is an intentional "no title" value. Earlier builds treated
     # an empty string as missing and silently restored the default variable
     # name, so users could not actually remove a legend title.
     if (is.null(z) || !length(z)) {

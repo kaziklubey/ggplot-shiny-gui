@@ -1,4 +1,4 @@
-# v3.73.2.22: Figure-owned snapshots calculated directly from GraphState.
+# Figure-owned snapshots calculated directly from GraphState.
 figure_source_snapshot_queue <- reactiveVal(character(0))
 figure_source_snapshot_jobs <- reactiveVal(list())
 figure_source_snapshot_active_job <- reactiveVal("")

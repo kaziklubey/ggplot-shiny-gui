@@ -1,5 +1,5 @@
 # R/figure/layout/figure_layout_fixed_alignment.R — shared-anchor placement inside Fixed tracks
-# v3.80.7: Fixed Canvas keeps per-Graph fit scales, then uses the spare space in
+# Fixed Canvas keeps per-Graph fit scales, then uses the spare space in
 # each shared track to align the selected rendered anchor (panel or panel+axis).
 
 figure_fixed_alignment_num <- function(x, fallback = NA_real_) {

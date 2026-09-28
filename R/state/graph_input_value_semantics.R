@@ -1,7 +1,7 @@
-# v4.0 RC13.8 — browser numeric input semantic contract.
+# browser numeric input semantic contract.
 # Shared by Full Editor and Figure Controls; canonical GraphState stays server-owned.
 
-# v4.0 RC13.8: numeric browser edits are normalized by control semantics,
+# numeric browser edits are normalized by control semantics,
 # never by the incidental R storage type of the currently saved value. Older
 # Projects can contain whole-number values as integer (for example bar_width =
 # 1L); a continuous control must still preserve a later 0.9/0.7 edit as double.

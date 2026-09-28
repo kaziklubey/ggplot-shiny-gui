@@ -1,5 +1,5 @@
   # ------------------------------------------------------------------
-  # v3.61.0 Graph single editor
+  # Graph single editor
   # ------------------------------------------------------------------
   graph_single_mark_editor_visit <- function(id, generation = NULL) {
     id <- as.character(id %||% "")[1]
@@ -482,11 +482,11 @@
       }
     )
     graph_single_editor_module(mod)
-    # Do not capture the reusable new-Graph default here.  At moduleServer return
+    # Do not capture the reusable new-Graph default here. At moduleServer return
     # the persistent controls exist on the server, but their data-dependent
     # Mapping defaults (X/Y/ID etc.) have not completed the first Shiny flush.
     # R/server/graph/server_graph_workspace_runtime.R performs the one authoritative capture
-    # on startup-post-bind.  Capturing here used to make that later capture a
+    # on startup-post-bind. Capturing here used to make that later capture a
     # no-op because capture_graph_single_default_state() is intentionally
     # write-once.
     mod
@@ -546,7 +546,7 @@
       return(invisible(TRUE))
     }
 
-    # RC7: there is no cached/live preview lifecycle and no browser image ACK.
+    # there is no cached/live preview lifecycle and no browser image ACK.
     # Once canonical values are accepted, expose the persistent controls and open
     # the render gate. Shiny's existing plotOutput then publishes the ggplot into
     # the same DOM when ready; the previous image may remain visible meanwhile.
@@ -561,7 +561,7 @@
     invisible(TRUE)
   }
 
-  # v3.73.2.18: normal Graph switches no longer test structural
+  # normal Graph switches no longer test structural
   # compatibility. Every canonical state with a UI snapshot uses state replay.
 
   graph_single_load <- function(id, new_graph = FALSE) {
@@ -595,7 +595,7 @@
       return(invisible(TRUE))
     }
 
-    # v3.63.1-editor-shell2: switch editor ownership before publishing the
+    # switch editor ownership before publishing the
     # previous Graph commit. registry_commit() can trigger a preview-catalog
     # update; if editing_graph_id still points at the old Graph, that catalog
     # can arrive after graph-client-edit-begin and visually snap the shell back
@@ -636,9 +636,9 @@
     session$sendCustomMessage("graph-client-edit-begin", list(id = id, newGraph = isTRUE(new_graph), single = TRUE))
     diag_log("GRAPH-SINGLE-EDITOR", paste0("load-request previous=", if (nzchar(old_id)) old_id else "<none>", " mode=REPLAY"), id = id)
 
-    # v3.64.0-lazyui1: "pristine" is defined by missing canonical GraphState,
-    # not by the caller's new_graph flag.  This includes the startup g001, which
-    # already exists in graph_meta() but has never owned the Editor.  Never fall
+    # "pristine" is defined by missing canonical GraphState,
+    # not by the caller's new_graph flag. This includes the startup g001, which
+    # already exists in graph_meta() but has never owned the Editor. Never fall
     # through to an incidental shell-state commit for such a Graph.
     st <- target_state_early
     if (!is.list(st)) {
@@ -647,7 +647,7 @@
       if (!nzchar(old_id)) capture_graph_single_default_state("load-pristine")
       st <- isolate(graph_single_default_state())
     }
-    # On the very first activation, the shell is still pristine.  If the earlier
+    # On the very first activation, the shell is still pristine. If the earlier
     # post-bind capture did not fire, this is the last safe moment to snapshot
     # defaults before any Graph owns the editor.
     if (!is.list(st) && !nzchar(old_id)) {
@@ -680,7 +680,7 @@
       return(invisible(FALSE))
     }
 
-    # The Editor DOM is already bootstrapped.  Legacy/current GraphState is
+    # The Editor DOM is already bootstrapped. Legacy/current GraphState is
     # normalized into a replayable UI snapshot in R before touching browser
     # controls; Project load never hydrates the Editor to discover choices.
     prepared_st <- graph_state_prepare_replay_snapshot(st)
@@ -721,7 +721,7 @@
       )
     } else {
       # After the one persistent Editor has been created, Graph ownership is
-      # value-only.  Do not rebuild/hydrate the DOM for Project load or legacy
+      # value-only. Do not rebuild/hydrate the DOM for Project load or legacy
       # state; a failed replay is an activation error, not a restore request.
       graph_single_editor_loading(FALSE)
       graph_single_editor_mode("IDLE")
@@ -787,7 +787,7 @@
   }, priority = 100)
 
 
-  # v3.73.2.18: normal Graph renders are live-only. Do not generate or
+  # normal Graph renders are live-only. Do not generate or
   # publish a Graph SVG after every successful render. Figure/Inset/Project
   # compatibility paths materialize vector snapshots explicitly when requested.
 

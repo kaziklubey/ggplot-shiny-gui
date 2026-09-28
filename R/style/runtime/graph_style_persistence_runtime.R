@@ -1,8 +1,8 @@
-# v3.73.2.37 Phase 2.03 — active Graph style persistence.
-# Legacy staged Project restore/remount/retry machinery was removed.
-# Editor-local transaction primitives are initialized before runtime sourcing in
-# R/editor/runtime/graph_editor_primitives_runtime.R. This file owns only generic style
-# import/export/copy/paste behavior.
+  # Active Graph style persistence.
+  # Legacy staged Project restore/remount/retry machinery was removed.
+  # Editor-local transaction primitives are initialized before runtime sourcing in
+  # R/editor/runtime/graph_editor_primitives_runtime.R. This file owns only generic style
+  # import/export/copy/paste behavior.
 
   # ============================================================
   # Settings save / load
@@ -23,8 +23,8 @@
       legend_item_labels = legend_item_labels(),
       level_labels = level_labels(),
       shared_library = shared_style_binding(),
-      # v3.64.2-format-export1: axis range is part of the rendered Graph
-      # formatting and should travel with Graph書式.  Axis/title text remains
+      # axis range is part of the rendered Graph
+      # formatting and should travel with Graph書式. Axis/title text remains
       # Graph-specific content and is intentionally not copied here.
       axes = list(
         ymin = graph_label_value("ymin", input$ymin %||% ""),
@@ -136,7 +136,7 @@
         facet_spacing_x = graph_appearance_value("facet_spacing_x", input$facet_spacing_x)
       )
     )
-    # RC5 browser-patch PoC: generic style copy/download must see the same
+    # browser-patch PoC: generic style copy/download must see the same
     # canonical accepted values as Project state, even though the ordinary
     # Shiny input mirror for the three PoC controls is intentionally stale.
     graph_apply_browser_patch_style_overlay(cfg)
@@ -243,7 +243,7 @@
 
     rc <- list()
     if (!is.null(cfg$raw_group_colors) && length(cfg$raw_group_colors)) {
-      # v3.1+: variable -> level -> color. Legacy flat level -> color is migrated.
+      # +: variable -> level -> color. Legacy flat level -> color is migrated.
       first_val <- cfg$raw_group_colors[[1]]
       if (is.list(first_val) && !is.null(names(first_val))) {
         rc <- parse_style_tree(cfg$raw_group_colors, "color")
@@ -292,9 +292,9 @@
     level_labels(ll)
 
     # Full-Editor Graph switching hydrates fixed controls directly in the
-    # persistent browser DOM.  The R-side reactive trees above still have to be
+    # persistent browser DOM. The R-side reactive trees above still have to be
     # replaced because they are canonical render inputs and feed the persistent
-    # slot pools.  Bound scalar controls, however, must not also receive an
+    # slot pools. Bound scalar controls, however, must not also receive an
     # update*Input batch: that duplicate transport was the source of the old
     # browser barrier and of late replay events being mistaken for user edits.
     if (!isTRUE(hydrate_bound_controls)) {
@@ -484,7 +484,7 @@
       }
       if (!is.null(a$sticky_plot)) updateCheckboxInput(session, "sticky_plot", value = isTRUE(a$sticky_plot))
     } else {
-      # Very old/partial GraphStates can lack appearance entirely.  Do not let
+      # Very old/partial GraphStates can lack appearance entirely. Do not let
       # the persistent Editor inherit these newly-added legend controls from
       # the previously visited Graph.
       updateCheckboxInput(session, "x_tick_labels_show", value = TRUE)

@@ -1,6 +1,6 @@
-# v4.0 RC5 PoC — bridge between browser-owned working values and the existing
-# graphServer runtime.  Browser values are never canonical here: the outer
-# server owns the canonical GraphState and exposes only accepted overrides.
+  # PoC — bridge between browser-owned working values and the existing
+  # graphServer runtime. Browser values are never canonical here: the outer
+  # server owns the canonical GraphState and exposes only accepted overrides.
 
   graph_browser_patch_path_contract <- function(state = NULL) {
     paths <- c(

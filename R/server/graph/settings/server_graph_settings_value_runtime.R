@@ -1,6 +1,6 @@
-# v3.73.2.29 — direct value editing / explicit Figure refresh from the external
-# Graph Settings Manager.  GraphState and Figure-owned GraphState remain
-# separate owners. No automatic Graph -> Figure following is introduced.
+  # direct value editing / explicit Figure refresh from the external
+  # Graph Settings Manager. GraphState and Figure-owned GraphState remain
+  # separate owners. No automatic Graph -> Figure following is introduced.
 
   graph_settings_manager_feedback <- function(ok, message, path = "", scope = "", value = NULL) {
     payload <- list(

@@ -1,6 +1,6 @@
 # ============================================================
 # Dynamic Style GraphState migration — pure helpers
-# v3.73.2.20: canonicalize deterministic per-level Style defaults before
+# canonicalize deterministic per-level Style defaults before
 # replaying a saved GraphState into the one persistent Editor.
 # ============================================================
 
@@ -16,7 +16,7 @@ graph_style_canonical_base_size <- function(x, default = 13) {
   as.numeric(z[[1]])
 }
 
-# v3.81.1 style schema 6. Keep style migration pure so Project load can
+# style schema 6. Keep style migration pure so Project load can
 # canonicalize every dormant Graph before any Editor replay. This prevents the
 # first visible replay from producing a false live edit solely because current
 # controls materialize newer style metadata/defaults.

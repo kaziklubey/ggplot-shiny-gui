@@ -1,5 +1,5 @@
 # R/figure/layout/figure_layout_core.R — Figure geometry primitives and measurements
-# v3.80.6-refactor1: split from figure_layout.R without changing state ownership.
+# split from figure_layout.R without changing state ownership.
 
 figure_layout_rects <- function(layout, canvas_w, canvas_h, gap_x = 12, gap_y = 12) {
   # Public Figure geometry entry point. Fixed/seed/export callers all use the
@@ -132,12 +132,12 @@ figure_crop_render_geometry <- function(rect, sp, ov = list()) {
 }
 
 figure_natural_graph_size <- function(cell, source_size = NULL, ov = list(), basis = "panel_legend") {
-  # v3.3.70 geometry contract:
+  # geometry contract:
   # - source_size$panel_width/panel_height are Graph Axes UI Plot横幅/Plot縦幅
-  #   (the axis-enclosed ggplot panel; authoritative plot size).
+  # (the axis-enclosed ggplot panel; authoritative plot size).
   # - source_size$width/height are the measured outer visual box including
-  #   axes/titles/legend/margins. Auto-fit allocates this visual box while
-  #   preserving the panel size through a single common scale factor.
+  # axes/titles/legend/margins. Auto-fit allocates this visual box while
+  # preserving the panel size through a single common scale factor.
   # - cell graph_width/graph_height are optional Figure-side panel targets.
   bw <- suppressWarnings(as.numeric(source_size$width %||% source_size$plot_width_px %||% 600)[1])
   bh <- suppressWarnings(as.numeric(source_size$height %||% source_size$plot_height_px %||% 600)[1])
@@ -166,7 +166,7 @@ figure_natural_graph_size <- function(cell, source_size = NULL, ov = list(), bas
   # enlarge the allocated footprint, but it never changes Graph scale.
   # Explicit Figure-side Graph width/height override Auto independently.
   # If only one dimension is explicit, the other remains Auto and follows the
-  # same aspect-preserving scale.  Do NOT silently constrain an explicit width
+  # same aspect-preserving scale. Do NOT silently constrain an explicit width
   # by the Graph-side default Plot height (or vice versa).
   sc <- 1
   if (has_w && has_h) {
@@ -203,10 +203,10 @@ figure_natural_graph_size <- function(cell, source_size = NULL, ov = list(), bas
   )
 }
 
-# v3.73.2.51: Auto Figure rows share one horizontal column-track model.
+# Auto Figure rows share one horizontal column-track model.
 # A wide attached legend (or any other horizontal decoration) in a lower Row
 # may enlarge its own column, but it must not move the start of the next column
-# relative to Rows above it.  Keep each Graph's natural content placement and
+# relative to Rows above it. Keep each Graph's natural content placement and
 # absorb the difference as empty space at the right edge of the narrower cell.
 # This is deliberately a layout-only pass: Graph/Figure snapshot ownership and
 # source geometry remain unchanged.

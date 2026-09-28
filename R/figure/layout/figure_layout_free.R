@@ -1,5 +1,5 @@
 # R/figure/layout/figure_layout_free.R — Free layout policy
-# v3.80.6-refactor1: split from figure_layout.R.
+# split from figure_layout.R.
 
 figure_seed_free_geometry <- function(layout, row_rects = list(), min_width = 120, min_height = 120) {
   st <- figure_reindex_layout(layout)

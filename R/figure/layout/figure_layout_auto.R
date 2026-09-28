@@ -1,8 +1,8 @@
 # R/figure/layout/figure_layout_auto.R — Auto Row layout policy
-# v3.80.6-refactor1: Auto layout is orchestration plus focused geometry helpers.
+# Auto layout is orchestration plus focused geometry helpers.
 # No Figure/Graph ownership changes are introduced here.
 
-# v3.73.2.51: Auto Figure rows share one horizontal column-track model.
+# Auto Figure rows share one horizontal column-track model.
 # A wide attached legend (or any other horizontal decoration) in a lower Row
 # may enlarge its own column, but it must not move the start of the next column
 # relative to Rows above it. Keep each Graph's natural content placement and

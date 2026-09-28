@@ -1,13 +1,11 @@
-# v4.0.1 — Figure Common Settings runtime.
-#
-# Responsibilities:
-# - choose already-imported Figure GraphStates as Figure-only bulk targets;
-# - apply a compact set of frequently used appearance values in one snapshot
-#   rebuild per target (rather than one rebuild per property);
-# - edit Figure-owned semantic level bindings and explicitly materialize the
-#   current Shared Style Library into those frozen Figure GraphStates.
-#
-# This runtime never seeds FigureState from GraphState and never writes GraphState.
+  # v4.0.1 — Figure Common Settings runtime.
+  # Responsibilities:
+  # - choose already-imported Figure GraphStates as Figure-only bulk targets;
+  # - apply a compact set of frequently used appearance values in one snapshot
+  # rebuild per target (rather than one rebuild per property);
+  # - edit Figure-owned semantic level bindings and explicitly materialize the
+  # current Shared Style Library into those frozen Figure GraphStates.
+  # This runtime never seeds FigureState from GraphState and never writes GraphState.
 
   figure_common_available_ids <- reactive({
     figure_layout_state()
@@ -53,8 +51,8 @@
     tagList(
       div(
         class = "figure-common-target-toolbar",
-        actionButton("figure_common_targets_all", "すべて選択", class = "btn-xs btn-default"),
-        actionButton("figure_common_targets_none", "すべて解除", class = "btn-xs btn-default"),
+        actionButton("figure_common_targets_all", "すべて選択", class = "btn-sm btn-default"),
+        actionButton("figure_common_targets_none", "すべて解除", class = "btn-sm btn-default"),
         tags$span(
           class = "text-muted figure-common-target-count",
           paste0(length(current), " / ", length(ids), " Graph")

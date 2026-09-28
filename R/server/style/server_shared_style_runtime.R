@@ -1,6 +1,6 @@
-# v3.73.0 — project-level Shared Label / Style Library runtime.
-# Central Library mediates semantic style changes. Graphs never message each
-# other directly; canonical GraphState remains the only per-Graph authority.
+  # project-level Shared Label / Style Library runtime.
+  # Central Library mediates semantic style changes. Graphs never message each
+  # other directly; canonical GraphState remains the only per-Graph authority.
 
   shared_style_prune_binding_to_library <- function(binding, library) {
     b <- shared_style_normalize_binding(binding)
@@ -280,7 +280,7 @@
     item$kind <- kind
     if (identical(kind, "level")) {
       item$color <- input$shared_style_edit_color %||% item$color
-      # Current Graph rendering has one categorical colour tree, so v3.73.0
+      # Current Graph rendering has one categorical colour tree, so
       # intentionally keeps portable Color/Fill definitions in lockstep.
       item$fill <- item$color
       item$shape <- input$shared_style_edit_shape %||% item$shape

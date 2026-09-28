@@ -1,5 +1,5 @@
-# v4 RC7: Graph selection directly retargets the one persistent live Editor.
-# Latest-wins queue protects canonical value replay during rapid switching.
+  # Graph selection directly retargets the one persistent live Editor.
+  # Latest-wins queue protects canonical value replay during rapid switching.
 
   graph_selection_valid_id <- function(id) {
     id <- as.character(id %||% "")[1]
@@ -29,7 +29,7 @@
 
       # Latest-selection-wins queue. Do not interrupt the current Graph value
       # replay because graph_single_load() snapshots the outgoing owner and a
-      # mid-replay switch could publish a partial state.  v3.74.3 releases a
+      # mid-replay switch could publish a partial state. releases a
       # superseded target immediately after canonical acceptance, before its
       # final live-render/browser-image-complete cycle.
       graph_single_pending_target(list(
@@ -56,7 +56,7 @@
   }
 
   # Drain a queued explicit Editor activation after the previous singleton Editor has
-  # released its loading flag. For a superseded target v3.74.3 can release at
+  # released its loading flag. For a superseded target can release at
   # canonical acceptance (before final live render); otherwise release occurs at
   # ordinary READY/abort. No polling or timer is involved.
   observe({
@@ -90,7 +90,7 @@
       identical(as.character(isolate(graph_single_editor_mode()) %||% ""), "STALE")
 
     # Figure -> Graph Apply intentionally invalidates the current Editor owner.
-    # Reconcile only that same stale owner.  Merely returning to Graph must not
+    # Reconcile only that same stale owner. Merely returning to Graph must not
     # replay a different selected Graph.
     if (isTRUE(stale_owner)) {
       diag_log("EDITOR-ACTIVATION", "Graph workspace resumed with stale current owner; canonical resync", id = id)
@@ -111,7 +111,7 @@
       return(invisible(TRUE))
     }
 
-    # v4 RC7: returning to Graph always exposes the selected canonical Graph in
+    # returning to Graph always exposes the selected canonical Graph in
     # the one persistent live Editor.
     request_graph_editor(id, source = "workspace-resume", new_graph = FALSE)
     invisible(TRUE)

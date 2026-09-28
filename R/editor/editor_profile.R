@@ -41,7 +41,7 @@ graph_editor_profile <- function(name = c("full", "figure_controls")) {
       style = TRUE,
       preview = FALSE
     ),
-    # RC12: Figure owns a browser working copy over its frozen snapshot. The
+    # Figure owns a browser working copy over its frozen snapshot. The
     # initial mount still checks the four structural bindings below, while
     # ordinary Figure selection/reselection has no per-input replay barrier.
     replay_required_inputs = character(0),

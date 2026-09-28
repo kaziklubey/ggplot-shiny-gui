@@ -1,5 +1,4 @@
 # R/export/pptx_editable_export.R — shared editable PowerPoint helpers
-#
 # rvg emits editable DrawingML as a grouped shape (<p:grpSp>). PowerPoint can
 # normally ungroup that object, but the GUI's PowerPoint export is intended to
 # make low-level plot elements directly selectable where possible. After the
@@ -219,7 +218,7 @@ pptx_flatten_editable_groups <- function(path, label_prefix = "ggplot-editable-"
   td <- tempfile("pptx_flatten_")
   dir.create(td, recursive = TRUE, showWarnings = FALSE)
   on.exit(try(unlink(td, recursive = TRUE, force = TRUE), silent = TRUE), add = TRUE)
-  # Validate the officer-generated package before unpacking.  The postprocessor
+  # Validate the officer-generated package before unpacking. The postprocessor
   # must never turn a valid PPTX into a merely ZIP-readable but Office-invalid
   # archive.
   pptx_validate_package_structure(path)

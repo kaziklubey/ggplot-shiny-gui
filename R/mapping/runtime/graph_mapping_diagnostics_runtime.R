@@ -1,5 +1,5 @@
-# v3.80 Mapping/visual-density diagnostics.
-# Derived UI only: no diagnostic result is persisted into GraphState.
+  # Mapping/visual-density diagnostics.
+  # Derived UI only: no diagnostic result is persisted into GraphState.
 
   output$position_mapping_notice_ui <- renderUI({
     d <- tryCatch(dat(), error = function(e) NULL)

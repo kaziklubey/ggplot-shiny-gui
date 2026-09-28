@@ -1,6 +1,6 @@
 # ============================================================
 # Figure controls-only single Editor lifecycle
-# v4.0 RC3: one transaction owner for mount -> replay -> READY.
+# one transaction owner for mount -> replay -> READY.
 # Sourced inside the server session environment.
 # ============================================================
 

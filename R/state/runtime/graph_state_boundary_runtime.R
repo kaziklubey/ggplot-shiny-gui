@@ -1,5 +1,4 @@
-# v3.73.2.7: explicit state boundaries for the one persistent Graph Editor.
-#
+# explicit state boundaries for the one persistent Graph Editor.
 # The outer persistent-Editor transaction owns Graph switching and READY
 # arbitration. Once that transaction opens render_gate, the attached canonical
 # GraphState has already been accepted. Plot revision therefore releases that
@@ -66,7 +65,7 @@ graph_seed_render_target <- function(state, reason = "attach") {
 
 graph_accept_attached_canonical <- function(state, reason = "outer-ready-accept", seed_render = TRUE) {
   if (!is.list(state)) return(invisible(FALSE))
-  # The outer transaction is the single canonical acceptance boundary.  Once
+  # The outer transaction is the single canonical acceptance boundary. Once
   # accepted, update both module-local representations together so the first
   # render cannot use an older pre-acceptance attachment (for example the
   # provisional startup Mapping defaults).
@@ -156,9 +155,9 @@ install_graph_render_revision_runtime <- function() {
     graph_release_attached_render_target("accepted-canonical")
   }, priority = 110)
 
-  # RC13: ordinary live edits are rendered from the already-debounced canonical
-  # commit boundary in graph_state_runtime.R.  That boundary updates
-  # attached_state_seed() first, then releases one render revision.  Keeping a
+  # ordinary live edits are rendered from the already-debounced canonical
+  # commit boundary in graph_state_runtime.R. That boundary updates
+  # attached_state_seed() first, then releases one render revision. Keeping a
   # second immediate project_settings() observer here would rebuild for every
   # numeric spinner/color step and could draw from the pre-commit attachment.
   # Graph/Figure attach transactions remain immediate through the pending-target

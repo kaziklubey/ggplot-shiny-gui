@@ -1,11 +1,10 @@
-# v3.69.0: extracted from R/editor/graph_module.R; sourced into graphServer local environment.
-# Section: STYLE-UI-BEGIN
+  # Section: STYLE-UI-BEGIN
 
 
   # ============================================================
   # Independent Color / Linetype / Shape appearance editors
   # ============================================================
-  # v4.0-rc8: Color / Linetype / Shape use persistent browser slot pools.
+  # Color / Linetype / Shape use persistent browser slot pools.
   # No per-level Shiny inputs are created or rebound when Graph/mapping changes.
   observe({
     style_restore_epoch()
@@ -44,7 +43,7 @@
     if (!nzchar(v) || !length(lev)) return()
 
     # Browser-direct editors do not write palette_preset back to the Shiny
-    # input mirror.  The apply action must therefore use the same accepted
+    # input mirror. The apply action must therefore use the same accepted
     # canonical / Figure-owned working state as the derived Appearance UI.
     preset <- as.character(graph_appearance_value(
       "palette_preset", input$palette_preset %||% "okabe_ito"
@@ -408,7 +407,7 @@
     style_restore_epoch(isolate(style_restore_epoch()) + 1L)
   })
 
-  # One event channel handles all persistent slot-pool user edits.  Programmatic
+  # One event channel handles all persistent slot-pool user edits. Programmatic
   # pool hydration never enters Shiny input bindings, so it cannot be mistaken
   # for a live user edit during Graph replay.
   observeEvent(input$graph_slot_pool_event, {

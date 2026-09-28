@@ -1,5 +1,5 @@
-# Figure workspace activation owns geometry only. Displaying the workspace is
-# never permission to import GraphState into Figure-owned state.
+  # Figure workspace activation owns geometry only. Displaying the workspace is
+  # never permission to import GraphState into Figure-owned state.
 
   figure_workspace_is_active <- function() {
     isTRUE(isolate(figure_workspace_active()))

@@ -89,7 +89,7 @@ app_font_available <- function(family) {
   fam %in% as.character(app_font_catalog$families %||% character(0))
 }
 
-# Canonical font helpers.  The UI stores a selector mode plus an optional
+# Canonical font helpers. The UI stores a selector mode plus an optional
 # custom family, while ggplot ultimately needs one effective family string.
 # Keep the two concepts separate so Selectize binding/default materialisation
 # cannot create a false render-state change.
@@ -285,8 +285,8 @@ measure_plot_geometry_px <- function(p, reference_res = 120, fallback_width = 60
     title_idx <- which(nm %in% c("title", "subtitle", "caption"))
     legend_idx <- which(grepl("^guide-box", nm))
     legend_outside_idx <- which(grepl("^guide-box-(right|left|top|bottom)$", nm))
-    # ggplot2 can leave empty guide-box slots in the gtable.  Their layout cells
-    # must not be interpreted as a real legend bbox.  Keep only non-zero grobs.
+    # ggplot2 can leave empty guide-box slots in the gtable. Their layout cells
+    # must not be interpreted as a real legend bbox. Keep only non-zero grobs.
     guide_is_visible <- function(i) {
       if (!is.finite(i) || i < 1L || i > length(g$grobs)) return(FALSE)
       gr <- g$grobs[[i]]

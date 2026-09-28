@@ -1,4 +1,4 @@
-  # v4 RC7: keep one persistent Graph Editor module and one persistent live plot.
+  # keep one persistent Graph Editor module and one persistent live plot.
   # Every Graph selection retargets this same Editor; there is no cached-preview
   # browsing mode.
   session$onFlushed(function() {
@@ -34,7 +34,7 @@
     id <- next_id()
     is_new_graph <- is.null(initial_state)
 
-    # v4 RC7: creation is canonical-state first, but no display preview is
+    # creation is canonical-state first, but no display preview is
     # materialized. Once the state is committed, selecting the new Graph simply
     # retargets the one persistent Editor and its live ggplot output.
     state <- if (isTRUE(is_new_graph)) {
@@ -115,7 +115,7 @@
     request_graph_editor(id, source = "legacy-click", new_graph = FALSE)
   }, ignoreInit = TRUE)
 
-  # v4 RC7: a Graph tab click immediately targets the persistent Editor. The
+  # a Graph tab click immediately targets the persistent Editor. The
   # browser sends only the Graph id; canonical values remain in the R registry.
   observeEvent(input$graph_client_selected, {
     id <- as.character(input$graph_client_selected %||% "")[1]
@@ -131,11 +131,11 @@
     request_graph_editor(id, source = src, new_graph = FALSE, section_key = sec_key)
   }, ignoreInit = TRUE)
 
-  # v3.61.0: Graph editor readiness is owned by graph_single_load() and its
+  # Graph editor readiness is owned by graph_single_load() and its
   # REPLAY -> READY settle transaction above. Per-Graph editor-ready observers
   # are intentionally bypassed.
 
-  # Workspace return is view lifecycle only.  It may reconcile the same stale
+  # Workspace return is view lifecycle only. It may reconcile the same stale
   # owner after Figure Apply, but it never replays a different browsed Graph.
   observeEvent(input$workspace_main_tab, {
     if (!identical(as.character(input$workspace_main_tab %||% ""), "graph_workspace")) return()

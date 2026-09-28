@@ -1,5 +1,5 @@
 # R/figure/figure_ui_module.R — Figure workspace UI
-# v3.73.2: workflow-first Figure shell. Existing geometry/runtime input ids are
+# workflow-first Figure shell. Existing geometry/runtime input ids are
 # preserved; normal editing controls live in their workflow sections rather than an Advanced bucket.
 
 figureWorkflowHeaderUI <- function() {

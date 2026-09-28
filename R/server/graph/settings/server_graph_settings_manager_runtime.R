@@ -1,8 +1,8 @@
-# v3.73.2.29 — Graph/Figure Settings Manager companion data.
-# Canonical GraphState remains server-owned. The in-page and external managers
-# compare Graph and Figure-owned values, expose Shared Library binding status,
-# and navigate to the one persistent Graph Editor. Writes remain in focused
-# settings runtimes sourced after this file.
+  # Graph/Figure Settings Manager companion data.
+  # Canonical GraphState remains server-owned. The in-page and external managers
+  # compare Graph and Figure-owned values, expose Shared Library binding status,
+  # and navigate to the one persistent Graph Editor. Writes remain in focused
+  # settings runtimes sourced after this file.
 
   graph_settings_manager_get_result <- function(x, path) {
     cur <- x

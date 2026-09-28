@@ -1,5 +1,5 @@
 # R/figure/layout/figure_layout_fixed.R — Fixed Canvas layout policy and frozen geometry rebinding
-# v3.80.6-refactor1: Fixed layout is orchestration plus focused fit helpers.
+# Fixed layout is orchestration plus focused fit helpers.
 
 figure_fixed_num <- function(x, fallback = NA_real_) {
   z <- suppressWarnings(as.numeric(x %||% fallback)[1])
@@ -217,7 +217,7 @@ figure_fixed_basis_layout_geometry <- function(layout, source_sizes = list(), ov
   )
 }
 
-# v3.4.0-alpha2: when Auto-fit is Manual/Lock, freeze rectangle geometry but
+# when Auto-fit is Manual/Lock, freeze rectangle geometry but
 # rebind current slot content so Swap/Shift/source replacement still appears.
 figure_rebind_frozen_geometry <- function(geo, layout) {
   if (!is.list(geo) || !is.list(geo$rects)) return(geo)

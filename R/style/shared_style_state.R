@@ -1,6 +1,6 @@
 # ============================================================
 # Shared Label / Style Library — pure state helpers
-# v3.73.0: project-level semantic style definitions + per-Graph bindings.
+# project-level semantic style definitions + per-Graph bindings.
 # ============================================================
 
 shared_style_scalar_chr <- function(x, default = "") {

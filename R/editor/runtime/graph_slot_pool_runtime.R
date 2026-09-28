@@ -1,10 +1,9 @@
-# v4.0-rc8: persistent browser-owned slot pools for level-dependent controls.
-#
-# The browser owns a stable pool DOM (50 slots by default, growing in chunks of
-# 50 and never shrinking during the session). R sends semantic entries only.
-# Pool controls are deliberately *not* Shiny input bindings: user changes travel
-# through one namespaced event input, so Graph replay never has to bind/flush a
-# variable number of per-level inputs.
+  # persistent browser-owned slot pools for level-dependent controls.
+  # The browser owns a stable pool DOM (50 slots by default, growing in chunks of
+  # 50 and never shrinking during the session). R sends semantic entries only.
+  # Pool controls are deliberately *not* Shiny input bindings: user changes travel
+  # through one namespaced event input, so Graph replay never has to bind/flush a
+  # variable number of per-level inputs.
 
   graph_slot_pool_contexts <- reactiveValues()
 

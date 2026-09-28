@@ -1,5 +1,5 @@
-# v3.81.0: structured category ordering; no comma-delimited editor state.
-# Sourced into graphServer local environment.
+  # structured category ordering; no comma-delimited editor state.
+  # Sourced into graphServer local environment.
 
   category_order_observed <- function(d, variable) {
     variable <- as.character(variable %||% "")[1]

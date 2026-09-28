@@ -1,4 +1,4 @@
-# Shared Graph/Figure plot calculation; input is a value provider supplied by the caller.
+    # Shared Graph/Figure plot calculation; input is a value provider supplied by the caller.
     use_value <- isTRUE(direct_value_mode())
     d <- if (identical(input$plot_type, "scatter") || use_value) {
       plot_data()
@@ -94,7 +94,7 @@
       # Stable tracks are panel-local: every facet keeps one fixed track lattice
       # across all of its X levels, but a track that never exists in this facet
       # must not reserve an empty slot and push the visible Bar/Box group away
-      # from the canonical X tick.  Width stays common across facets, based on
+      # from the canonical X tick. Width stays common across facets, based on
       # the densest facet, so Bar/Box thickness does not change panel-to-panel.
       track_plan <- graph_stable_track_plan(raw, slot_vars, facetcol)
       n_slots_max <- max(track_plan$max_slots, 1L)
@@ -394,11 +394,9 @@
 
     # ----------------------------------------------------------
     # Individual-data layer helpers
-    #
     # geom_line() sorts observations by group/x internally. Passing an
     # n-row fixed colour vector outside aes() can therefore detach colours
     # from rows. Instead, draw one fixed-colour layer per Color level.
-    #
     # Individual connection grouping is handled separately with
     # .id_group__. A shared semantic plan chooses the repeated-measure
     # direction and retains only true parallel within-ID factors as series
@@ -599,7 +597,7 @@
         d$.x_raw <- d$.x_base + d$.spread__
       }
 
-      # v3.80: visual aesthetics and line-series identity are separate.
+      # visual aesthetics and line-series identity are separate.
       # Auto uses only mappings that distinguish multiple observations at the
       # same X; an aesthetic that changes only along X can therefore change
       # Color/Shape/Linetype without cutting the trajectory.
@@ -1466,8 +1464,8 @@
       lt_labels_now <- linetype_display_labels
 
       # During replay/Shared-Style refresh the selector can briefly describe a
-      # linetype variable whose concrete levels have not settled yet.  A manual
-      # scale with no overlap is meaningless and ggplot2 warns about it.  Gate
+      # linetype variable whose concrete levels have not settled yet. A manual
+      # scale with no overlap is meaningless and ggplot2 warns about it. Gate
       # the scale strictly to values that are present in the actual mapped
       # column for this render.
       mapped_lt <- unique(as.character(d[[linetype_map_var]]))
@@ -1548,7 +1546,7 @@
       )
     )
 
-    # X category names are independent from the X-axis title.  Hide only the
+    # X category names are independent from the X-axis title. Hide only the
     # per-category text; tick marks/axis line remain available.
     if (input$plot_type %in% c("line", "bar", "box") && !isTRUE(input$x_tick_labels_show)) {
       p <- p + theme(axis.text.x = element_blank())
@@ -1630,7 +1628,7 @@
     }
 
     if (break_is_valid) {
-      # Do not combine coord_cartesian() with ggbreak.  Applying both creates
+      # Do not combine coord_cartesian() with ggbreak. Applying both creates
       # duplicated/compressed panels and overlapping tick labels.
       gap_space <- suppressWarnings(as.numeric(input$y_break_space))
       if (!is.finite(gap_space)) gap_space <- 0.08
@@ -1648,7 +1646,7 @@
           space = gap_space
         )
 
-      # ggbreak supplies the actual discontinuous scale.  A custom text
+      # ggbreak supplies the actual discontinuous scale. A custom text
       # annotation inside the data panel caused label collisions in v1.8,
       # so the visual cue is now a small caption outside the plotting data.
       if (isTRUE(input$y_break_symbol)) {

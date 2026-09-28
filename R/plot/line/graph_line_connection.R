@@ -76,7 +76,7 @@ graph_line_break_apply_group <- function(data, x_col, levels_now, selected,
 }
 
 # ggplot2 cannot draw a non-solid path when colour changes within that path.
-# The v3.80 line contract deliberately allows Color to be visual-only, so do
+# The line contract deliberately allows Color to be visual-only, so do
 # not add Color to the series key merely to satisfy that renderer constraint.
 # Instead, identify only the affected paths and prepare adjacent segments.
 graph_line_path_requires_segments <- function(

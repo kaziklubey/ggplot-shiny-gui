@@ -1,7 +1,6 @@
 # Legend Policy — Variable × Aesthetic × Layer role
-#
 # This file is the single source of truth for guide visibility, merge planning,
-# layer legend contribution and final guide rendering.  It is deliberately
+# layer legend contribution and final guide rendering. It is deliberately
 # independent of Shiny reactives so the same policy is used by live Graphs and
 # DIRECT-STATE Figure/Export rendering.
 
@@ -40,8 +39,8 @@ graph_group_legend_key <- function(state) {
   key
 }
 
-# Canonical compatibility migration for legend state.  New controls are
-# aesthetic-oriented.  Legacy group/individual flags are read only as defaults
+# Canonical compatibility migration for legend state. New controls are
+# aesthetic-oriented. Legacy group/individual flags are read only as defaults
 # when the new fields are absent, so old .ggplotpack projects keep their view.
 graph_normalize_legend_state <- function(state) {
   if (!is.list(state)) return(state)
@@ -78,7 +77,7 @@ graph_normalize_legend_state <- function(state) {
     ap[[order]] <- graph_legend_order(ap[[order]], match(aes, graph_legend_aesthetics()))
   }
 
-  # Compatibility-only state.  There is intentionally no visible control for
+  # Compatibility-only state. There is intentionally no visible control for
   # this in the new UI; it preserves the old Color+Shape merge/split choice.
   if (is.null(ap$legend_merge_colour_shape)) {
     ap$legend_merge_colour_shape <- legacy_merge
@@ -112,7 +111,7 @@ graph_legend_component_ids <- function(active_names, edges) {
   out
 }
 
-# Pure policy calculation.  `mapping` contains the effective variables after
+# Pure policy calculation. `mapping` contains the effective variables after
 # __color__/fixed resolution; `appearance` contains scalar saved/UI values.
 graph_build_legend_policy <- function(mapping, appearance, plot_type,
                                       layer_context = list()) {
@@ -165,7 +164,7 @@ graph_build_legend_policy <- function(mapping, appearance, plot_type,
     graph_legend_bool(appearance$legend_merge_colour_shape,
                       graph_legend_bool(appearance$legend_merge_group_individual, TRUE))
 
-  # Color/Fill and Linetype are group-level aesthetics in the legacy UI.  When
+  # Color/Fill and Linetype are group-level aesthetics in the legacy UI. When
   # they encode the same variable they remain one guide, preserving prior plots.
   edges <- list()
   if (same("colour", "fill")) edges <- append(edges, list(c("colour", "fill")))
@@ -178,7 +177,7 @@ graph_build_legend_policy <- function(mapping, appearance, plot_type,
   shown <- names(items)[vapply(items, function(x) isTRUE(x$show), logical(1))]
   components <- graph_legend_component_ids(shown, edges)
 
-  # Stable ordering is part of the policy.  In current ggplot2, distinct order
+  # Stable ordering is part of the policy. In current ggplot2, distinct order
   # values also keep same-title/same-break guides separate when merge is OFF.
   preferred <- graph_legend_aesthetics()
   preferred <- preferred[order(vapply(preferred, function(aes) graph_legend_order(
@@ -215,7 +214,7 @@ graph_legend_merge_plan <- function(policy) {
 }
 
 # Named show.legend vectors keep each layer responsible only for the guides it
-# semantically explains.  This prevents a point mapped to Color+Shape from
+# semantically explains. This prevents a point mapped to Color+Shape from
 # injecting its point glyph into an unrelated Color guide.
 graph_legend_layer_flags <- function(policy, layer_role) {
   item <- policy$items %||% list()
@@ -293,9 +292,9 @@ graph_legend_guide_override <- function(policy, aesthetic) {
   if (identical(aesthetic, "colour")) {
     out <- list()
 
-    # For line plots the Colour guide explains the group colour only.  Keep it
+    # For line plots the Colour guide explains the group colour only. Keep it
     # as a line-only key unless Colour+Shape intentionally belong to the same
-    # merged variable/guide.  This also suppresses the fixed summary-point
+    # merged variable/guide. This also suppresses the fixed summary-point
     # glyph that ggplot2 may otherwise draw in the Colour key.
     if (identical(policy$plot_type, "line") &&
         !same_component("colour", "shape")) out$shape <- NA

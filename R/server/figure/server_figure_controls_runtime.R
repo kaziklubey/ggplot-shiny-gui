@@ -1,11 +1,10 @@
-# v3.70.0: extracted from server.R; sourced into the same server function environment.
 
   # ------------------------------------------------------------------
   # Graph tabs / UI
   # ------------------------------------------------------------------
   output$graph_tab_bar <- renderUI({
     meta <- graph_meta()
-    # v4 RC7: tab selection styling is browser-owned; the click then retargets
+    # tab selection styling is browser-owned; the click then retargets
     # the persistent live Editor through one Graph-id message.
     active <- isolate(active_graph())
     if (!nrow(meta)) return(NULL)
@@ -49,9 +48,6 @@
       selected = selected
     )
   })
-  # v3.3.56: figure_make_cell moved to its Figure module.
-  # v3.3.56: figure_reindex_layout moved to its Figure module.
-  # v3.3.56: figure_sanitize_layout moved to its Figure module.
 
   # Initialize/sanitize once graph metadata exists. Layout state, not dynamic
   # input defaults, remains authoritative after this point.
@@ -113,7 +109,7 @@
 
   output$figure_layout_editor <- renderUI({
     diag_log("FIGURE-LAYOUT-UI", paste0("render begin version=", isolate(figure_layout_ui_version())))
-    # v3.3.48: Figure layout controls are intentionally NOT Shiny input widgets.
+    # Figure layout controls are intentionally NOT Shiny input widgets.
     # They are plain HTML controls that send one explicit edit event on commit.
     # figure_layout_state() is the only source of truth. This removes the
     # renderUI -> input initial value -> observer -> state feedback loop that
@@ -124,7 +120,7 @@
     if (!length(st)) return(NULL)
     sr <- min(max(1L, isolate(figure_selected_row())), length(st))
 
-    # v3.3.69: when an Auto Graph size field is first nudged with the native
+    # when an Auto Graph size field is first nudged with the native
     # number-input spinner, start from the Graph-side panel size instead of
     # the HTML min=80 fallback.
     assets_for_size <- isolate(figure_loaded_assets())
@@ -289,7 +285,7 @@
           div(class = "figure-row-summary-meta", paste0(row$ncol, " panels")),
           div(class = "figure-row-summary-chevron", if (selected) "▾" else "▸")
         ),
-        # RC13.1: every Row detail stays materialized inside one persistent
+        # every Row detail stays materialized inside one persistent
         # Figure Layout DOM. Browser selection only toggles the `.selected`
         # class / visibility; changing Rows must never recreate this renderUI.
         selected_row_detail(r)
@@ -309,8 +305,8 @@
     diag_log("FIGURE-LAYOUT-UI", paste0("render end rows=", length(st), " selected_row=", sr))
     out
   })
-  # Phase 8: keep the Row editor materialized even while the Figure tab is
-  # hidden.  The Figure tab can be opened long after Project restore/materialization;
+  # keep the Row editor materialized even while the Figure tab is
+  # hidden. The Figure tab can be opened long after Project restore/materialization;
   # suspending this dynamic UI left an empty editor on some browser sessions.
   outputOptions(output, "figure_layout_editor", suspendWhenHidden = FALSE)
 
@@ -383,7 +379,7 @@
   })
   outputOptions(output, "figure_reorder_controls", suspendWhenHidden = FALSE)
 
-  # v3.48: Figure tab activation itself is not a structural layout change.
+  # Figure tab activation itself is not a structural layout change.
   # Keep the already-materialized Layout editor DOM untouched on tab reuse.
   # Do not depend on an extra browser probe here; outputOptions(..., suspendWhenHidden = FALSE)
   # keeps the output materialized while hidden.
@@ -403,7 +399,7 @@
     diag_log("FIGURE-EDIT", paste0("row_click row=", as.character(r)))
     st <- isolate(figure_layout_state())
     if (is.finite(r) && r >= 1L && r <= length(st) && !identical(r, isolate(figure_selected_row()))) {
-      # RC13.1: the browser already switched the persistent Row DOM locally.
+      # the browser already switched the persistent Row DOM locally.
       # Keep only the canonical presentation owner here; no renderUI rebuild.
       figure_selected_row(r)
       diag_log("FIGURE-LAYOUT-UI", paste0("selection local row=", r, " render skipped"))
@@ -412,9 +408,9 @@
 
   # Row/Panel structure is owned exclusively by the figure_layout_edit event
   # channel below. Legacy dynamic actionButton observers were removed in
-  # v3.80.7 so structural edits have one state transition path.
+  # so structural edits have one state transition path.
 
-  # RC13: a structural/layout choice can carry the numeric edits that were still
+  # a structural/layout choice can carry the numeric edits that were still
   # inside the browser quiet-period queue. Apply those values to the same local
   # Figure state before the structural transaction, so a fast spinner -> Panel
   # add/remove/assignment sequence cannot lose the final numeric value or apply
@@ -463,8 +459,8 @@
     }
     if (identical(typ0, "rapid_batch")) return()
 
-    # Phase 9: structural Row/Panel controls are plain HTML buttons routed
-    # through this same explicit event channel.  Keeping them out of dynamic
+    # structural Row/Panel controls are plain HTML buttons routed
+    # through this same explicit event channel. Keeping them out of dynamic
     # actionButton() binding avoids restore/re-render input lifecycle loss.
     if (typ0 %in% c("add_row", "remove_row", "add_panel", "remove_panel")) {
       changed0 <- FALSE
@@ -600,7 +596,7 @@
     }
   }, ignoreInit = TRUE)
 
-  # v3.73.1.6: deterministic Row/Grid reorder transaction. Slot-owned
+  # deterministic Row/Grid reorder transaction. Slot-owned
   # presentation stays put; source-owned content follows the Graph/Asset.
   # Every transaction is validated before commit, then selection/Inspector/
   # browser highlight follow the moved source to its destination slot.
@@ -858,10 +854,9 @@
     }
     figureSelectedPanelHeaderUI(figure_selected_graph(), figure_selected_panel_key(), gm)
   })
-  # v3.3.56: figure_default_override moved to its Figure module.
 
   observeEvent(figure_selected_graph(), {
-    # Dynamic Inspector follows selection, but v3.60.0 deliberately does NOT
+    # Dynamic Inspector follows selection, but deliberately does NOT
     # change Figure Graph-editor ownership. Viewing/selecting a panel is light.
     sync_figure_inspector()
     id <- as.character(figure_selected_graph() %||% "")[1]
@@ -1137,7 +1132,7 @@
     inset$height <- max(suppressWarnings(as.numeric(inset$height %||% 0.32)[1]), 0.01)
     inset$border <- isTRUE(isolate(input$figure_inset_border))
 
-    # v3.41: Appearance is no longer authored by Figure override controls.
+    # Appearance is no longer authored by Figure override controls.
     # Preserve a legacy override while an old Project is only being viewed;
     # the first successful editable Figure Graph snapshot clears it and makes
     # the Figure-owned GraphState the sole owner of graph appearance.
@@ -1156,7 +1151,7 @@
       if (is.finite(z)) exleg[[nm]] <- z
     }
 
-    # Panel label text + label geometry are Slot-owned.  Source-specific
+    # Panel label text + label geometry are Slot-owned. Source-specific
     # Appearance/Crop/Legend state must not carry them during Swap/Shift.
     panel_label_value <- as.character(isolate(input$figure_panel_label %||% ""))[1]
     key_now <- as.character(isolate(figure_selected_panel_key() %||% ""))[1]
@@ -1212,9 +1207,9 @@
        !isTRUE(all.equal(legend_y, suppressWarnings(as.numeric(old$legend_free_y %||% legend_y)[1]))))
 
     # F1-4 Figure Layer Model: detached legend ownership is prepared from the
-    # source-side state, not captured after a mode transition.  This removes the
+    # source-side state, not captured after a mode transition. This removes the
     # F1-3/F1-3b timing dependency where right -> free could briefly become
-    # `inside` before the snapshot was measured.  Keep only the stable side
+    # `inside` before the snapshot was measured. Keep only the stable side
     # anchor; renderer/export derive their layer geometry from the source asset.
     last_side <- as.character(old$legend_last_side %||% "")[1]
     if (!last_side %in% c("right","left","top","bottom")) last_side <- ""
@@ -1287,7 +1282,7 @@
     }
     # Canonical edit ownership advances immediately, but a legend transition
     # that still needs its Figure-owned ggplot snapshot keeps the *visible*
-    # requested override frozen.  The materializer publishes the newest draft
+    # requested override frozen. The materializer publishes the newest draft
     # together with the completed snapshot, so the Panel paints once rather
     # than first showing the persisted SVG under new geometry.
     bump_figure_commit_edit_revisions(id, old, drafts[[id]])
@@ -1310,7 +1305,7 @@
     invisible(merged)
   }
 
-  # RC13 rapid-edit policy. Inspector controls stay visually immediate in the
+  # rapid-edit policy. Inspector controls stay visually immediate in the
   # browser, but high-frequency numeric/text changes are committed only after a
   # short quiet period. This prevents spinner holds and quick palette/geometry
   # experiments from recalculating Auto Figure geometry for every intermediate
@@ -1369,7 +1364,7 @@
   observeEvent(figure_inset_width_commit(), { capture_current_figure_override("none", "width") }, ignoreInit = TRUE)
   observeEvent(figure_inset_height_commit(), { capture_current_figure_override("none", "height") }, ignoreInit = TRUE)
 
-  # Phase 2.1: the first explicit Inset enable/source selection should be
+  # the first explicit Inset enable/source selection should be
   # immediately visible without requiring a second refresh click. Freeze one
   # direct-state snapshot only when the user changes these controls and no
   # Figure-owned Inset snapshot exists yet. Later Graph edits remain snapshot-
@@ -1540,7 +1535,7 @@
       return()
     }
 
-    # Figure and Graph share the same GraphState schema.  The ownership
+    # Figure and Graph share the same GraphState schema. The ownership
     # boundary is centralized in R/figure/figure_sync_contract.R: Figure-only layout,
     # crop/inset and detached-legend placement are outside GraphState and are
     # never part of this source commit.
@@ -1614,8 +1609,8 @@
     id <- as.character(x$id %||% "")
     diag_log("FIGURE-EDIT", paste0("panel_click key=", as.character(x$key %||% "")), id = id)
     key <- as.character(x$key %||% "")
-    # v3.49.1: panel selection carries a synchronous snapshot of the currently
-    # visible Inspector fold state.  Store it before changing the selected Graph
+    # panel selection carries a synchronous snapshot of the currently
+    # visible Inspector fold state. Store it before changing the selected Graph
     # so the replacement renderUI cannot fall back to default collapsed classes.
     incoming_folds <- x$folds
     if (is.list(incoming_folds) && length(incoming_folds)) {
@@ -1634,7 +1629,7 @@
       figure_selected_panel_key(key)
       pos <- figure_layout_key_position(isolate(figure_layout_state()), key)
       if (is.finite(pos$row) && !identical(as.integer(pos$row), as.integer(isolate(figure_selected_row())))) {
-        # RC13.1: Figure canvas clicks update the persistent Row UI in-browser.
+        # Figure canvas clicks update the persistent Row UI in-browser.
         # Server only records the selected Row; no Layout renderUI replacement.
         figure_selected_row(as.integer(pos$row))
         diag_log("FIGURE-LAYOUT-UI", paste0("panel selection local row=", as.integer(pos$row), " render skipped"), id = id)
@@ -1690,7 +1685,7 @@
     figure_selected_panel_key(key)
 
     if (identical(typ, "label")) {
-      # alpha3 ownership rule: a Panel label belongs to the Slot. Dragging A/B/C
+      # ownership rule: a Panel label belongs to the Slot. Dragging A/B/C
       # must not mutate a source-keyed override that would move with Swap/Shift.
       st <- isolate(figure_layout_state())
       changed <- FALSE
@@ -1728,7 +1723,7 @@
       drafts[[id]] <- ov
       figure_override_drafts(drafts)
       # Publish the canonical state immediately, but do not redraw a legend that
-      # the browser has already moved to its final pixel position.  The next
+      # the browser has already moved to its final pixel position. The next
       # unrelated Figure render will materialize the same saved coordinates.
       figure_requested_overrides(
         if (exists("figure_visible_requested_overrides", mode = "function", inherits = TRUE)) {

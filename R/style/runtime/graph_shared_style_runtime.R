@@ -1,7 +1,7 @@
-# v3.73.0 — Shared Label / Style Library bindings inside graphServer.
-# This runtime owns only the interactive Graph-side binding UI and local
-# write-through adapter. The central Library and cross-Graph propagation live
-# in R/server/style/server_shared_style_runtime.R.
+  # Shared Label / Style Library bindings inside graphServer.
+  # This runtime owns only the interactive Graph-side binding UI and local
+  # write-through adapter. The central Library and cross-Graph propagation live
+  # in R/server/style/server_shared_style_runtime.R.
 
   shared_style_choices <- function(kind) {
     items <- shared_style_library_items(shared_style_library(), kind)

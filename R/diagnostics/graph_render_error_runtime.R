@@ -1,4 +1,4 @@
-# v3.73.2.5: Plot render error boundary.
+# Plot render error boundary.
 # Expected Shiny validation/req control flow must remain Shiny control flow;
 # only genuine R errors are converted to a visible diagnostic Plot.
 
@@ -52,9 +52,9 @@ graph_render_plot_safely <- function(plot_provider) {
 }
 
 # v4.0.1 draw boundary: ggplot objects can be constructed successfully but fail
-# later when renderPlot converts them to grobs (ggplotGrob/grid.draw).  Keep that
+# later when renderPlot converts them to grobs (ggplotGrob/grid.draw). Keep that
 # draw-time failure inside the same Editor-owned error boundary instead of letting
-# it escape through Shiny's output transport.  This is intentionally separate
+# it escape through Shiny's output transport. This is intentionally separate
 # from graph_render_plot_safely(): construction and drawing are distinct phases.
 graph_draw_plot_safely <- function(plot) {
   tryCatch(

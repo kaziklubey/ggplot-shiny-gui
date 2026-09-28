@@ -1,7 +1,7 @@
-# v3.73.2.29 — focused canonical GraphState batch-write helpers.
-# The legacy v28 batch input copies one whitelisted scalar GraphState setting
-# from a source Graph to selected target Graphs. It remains a one-time Graph-only
-# copy; v29 typed Graph/Figure writes live in R/server/graph/settings/server_graph_settings_value_runtime.R.
+  # focused canonical GraphState batch-write helpers.
+  # The legacy v28 batch input copies one whitelisted scalar GraphState setting
+  # from a source Graph to selected target Graphs. It remains a one-time Graph-only
+  # copy; v29 typed Graph/Figure writes live in R/server/graph/settings/server_graph_settings_value_runtime.R.
 
   graph_settings_manager_set_path <- function(state, path, value) {
     if (!is.list(state)) return(state)

@@ -1,8 +1,8 @@
-# v4 architecture — canonical GraphState capture for one persistent Editor.
-# Full Editor owns Data/reshape/Statistics. Figure Controls own only the
-# shared editable plot sections and overlay those sections onto their attached
-# Figure-owned GraphState. Missing Figure-only browser inputs therefore never
-# erase protected canonical state.
+  # v4 architecture — canonical GraphState capture for one persistent Editor.
+  # Full Editor owns Data/reshape/Statistics. Figure Controls own only the
+  # shared editable plot sections and overlay those sections onto their attached
+  # Figure-owned GraphState. Missing Figure-only browser inputs therefore never
+  # erase protected canonical state.
 
   graph_live_shared_state <- function() {
     live <- list(
@@ -51,7 +51,7 @@
       ),
       style = style_settings()
     )
-    # RC5 browser-patch PoC: once a path is browser-owned, canonical accepted
+    # browser-patch PoC: once a path is browser-owned, canonical accepted
     # values overlay the stale Shiny input mirror. This prevents a later edit
     # to an unrelated control from rolling the browser-patched value back.
     graph_apply_browser_patch_overlay(live)
@@ -134,9 +134,9 @@
     tryCatch(
       {
         if (is.function(on_state_change)) on_state_change(state_now)
-        # RC13 rapid-edit contract: canonical/module attachment is updated for
+        # rapid-edit contract: canonical/module attachment is updated for
         # the latest coalesced state before the expensive plot revision is
-        # released.  Spinner holds, text typing, color/palette experiments and
+        # released. Spinner holds, text typing, color/palette experiments and
         # persistent slot-pool edits therefore collapse to one rebuild after
         # the configured short project-state quiet period.
         attached_state_seed(state_now)

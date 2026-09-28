@@ -1,6 +1,5 @@
   eval(graph_plot_data_definitions, envir = environment())
-# v3.69.0: extracted from R/editor/graph_module.R; sourced into graphServer local environment.
-# Section: PREPARED-DATA-BEGIN
+  # Section: PREPARED-DATA-BEGIN
 
 
   # ============================================================
@@ -98,7 +97,7 @@
   })
 
   # Selectize bindings can report NULL briefly and later re-report the visual
-  # default ("sans") after restore.  Downstream plot reactives should invalidate
+  # default ("sans") after restore. Downstream plot reactives should invalidate
   # only when the *effective* mode changes, not when the browser binding merely
   # materializes the same default.
   font_family_mode_effective <- reactiveVal("sans")

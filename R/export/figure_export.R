@@ -1,5 +1,5 @@
 # R/export/figure_export.R — Figure device rendering
-# v3.4.0-alpha3: shared Preview/Export rect geometry + slot-owned labels + provisional crop/inset.
+# shared Preview/Export rect geometry + slot-owned labels + provisional crop/inset.
 
 figure_draw_plot_grob_cropped <- function(grob, cx, cy, ww, hh,
                                           crop = figure_default_crop(),
@@ -233,7 +233,7 @@ figure_export_plot_spec <- function(p_raw, ov, ex, rect) {
     )
 
     # Fail-safe: a detached legend extraction failure must never erase the
-    # legend from exported output.  Fall back to the combined source plot,
+    # legend from exported output. Fall back to the combined source plot,
     # fitted into the same Figure rect, instead of drawing a legend-free body.
     if (!figure_legend_asset_is_valid(legend_asset)) {
       sp <- tryCatch(figure_fit_cached_geometry(anchor_base, rect, ov), error=function(e) NULL)
@@ -250,7 +250,7 @@ figure_export_plot_spec <- function(p_raw, ov, ex, rect) {
     if (is.null(body_base)) return(NULL)
 
     # Mirror Preview's contract exactly: fit the legend-free 1x body geometry,
-    # then use that fitted geometry as the Figure owner frame.  Export may
+    # then use that fitted geometry as the Figure owner frame. Export may
     # render a fresh grob, but overlay positions must never be derived from a
     # second independent fit.
     sp <- tryCatch(figure_fit_cached_geometry(body_base, rect, ov), error=function(e) NULL)
@@ -276,7 +276,7 @@ figure_export_plot_spec <- function(p_raw, ov, ex, rect) {
   }
 
   # Normal legends use the same Preview rule as SVG mode: fit the 1x measured
-  # geometry first.  Avoid figure_plot_spec_for_rect()'s second corrective fit,
+  # geometry first. Avoid figure_plot_spec_for_rect()'s second corrective fit,
   # which can produce a different Figure frame at export time.
   sp <- tryCatch(figure_fit_cached_geometry(anchor_base, rect, ov), error=function(e) NULL)
   if (is.null(sp)) return(NULL)
@@ -370,7 +370,7 @@ figure_draw_to_device <- function(layout, canvas_w, canvas_h, overrides, plots, 
     if (!nzchar(id)) next
     ov <- figure_apply_slot_label_to_override(figure_override_for(id, overrides), rect)
 
-    # External asset export is intentionally conservative in alpha1. SVG/raster
+    # External asset export is intentionally conservative. SVG/raster
     # preview is supported without adding image-decoder dependencies; export
     # emits a placeholder frame until Work audit selects a dependency-free
     # raster/SVG import path.

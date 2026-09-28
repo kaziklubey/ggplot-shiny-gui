@@ -1,5 +1,4 @@
 # Shared deterministic defaults for Graph data UI and the built-in sample Graph.
-#
 # The sample GraphState is the canonical template for g001 and New Graph.
 # Browser controls display that state; they do not manufacture its Mapping.
 # Duplicate Graph continues to copy its source GraphState instead.
@@ -27,7 +26,7 @@ graph_sample_data_text <- function() {
 # Column-name validation shared by paste parsing, Mapping defaults and replay.
 # A transient malformed paste can contain blank or duplicated headers; those
 # names are not safe selectInput values and must never reach data[character]
-# lookups.  Keep this pure so every caller can fail softly instead of tearing
+# lookups. Keep this pure so every caller can fail softly instead of tearing
 # down a Shiny observer/session.
 graph_data_column_name_status <- function(data) {
   if (!is.data.frame(data)) {
@@ -331,7 +330,7 @@ graph_sample_graph_state <- function(base_state) {
     )
   )
   sample_mapping <- graph_default_mapping_for_data(sample_data)
-  # The built-in line sample does not need an ID mapping.  The browser's line
+  # The built-in line sample does not need an ID mapping. The browser's line
   # Mapping UI also starts with ID unset; keeping the template unset avoids a
   # pointless ID -> empty commit immediately after first render.
   sample_mapping$id <- ""

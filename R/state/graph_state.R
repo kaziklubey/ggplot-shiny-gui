@@ -1,6 +1,6 @@
 # ============================================================
 # Graph state helpers (UI/engine independent)
-# v3.3.55: first step toward GraphState / GraphUI / GraphEngine separation.
+# first step toward GraphState / GraphUI / GraphEngine separation.
 # ============================================================
 
 graph_state_scalar <- function(x, default = NULL) {
@@ -86,7 +86,7 @@ graph_ui_seed_from_state <- function(cfg) {
 }
 
 
-# v3.73.2.21: ui_snapshot stores only manual UI presentation state.
+# ui_snapshot stores only manual UI presentation state.
 # Canonical plot/mapping/style values live in GraphState proper; data-dependent
 # choices, conditional visibility and enabled state are derived by the already-
 # running UI reactives and are deliberately not duplicated here.

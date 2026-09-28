@@ -1,5 +1,5 @@
 # R/figure/layout/figure_layout_alignment_plan.R — Auto/Fixed alignment plan from rendered bboxes
-# v3.80.7: one explicit contract controls the alignment anchor (panel vs
+# one explicit contract controls the alignment anchor (panel vs
 # panel+axis) and whether an attached outer legend participates in the shared
 # trailing reservation. Physical visual extents are tracked independently so
 # excluding a legend from alignment never silently removes its drawing space.
@@ -81,7 +81,7 @@ figure_alignment_reservations <- function(source_size, scale, basis = "panel_leg
 
   # For include-legend modes the shared contract should be at least the full
   # rendered visual bbox. This keeps panel_legend backward-compatible with the
-  # v3.80.6 panel_auto geometry even when older metadata lacks detailed bboxes.
+  # panel_auto geometry even when older metadata lacks detailed bboxes.
   if (figure_alignment_includes_outer_legend(basis) && !is.null(visual_box)) {
     shared_extent <- figure_alignment_union_extent(list(shared_extent, visual_box))
   }

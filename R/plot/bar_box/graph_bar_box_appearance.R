@@ -1,6 +1,6 @@
 # ============================================================
 # Bar / Box appearance contract — pure helpers
-# v3.81.1: existing border ownership + no-fill semantics.
+# existing border ownership + no-fill semantics.
 # ============================================================
 
 # A fill colour remains an ordinary colour. "No fill" is stored separately as

@@ -1,5 +1,5 @@
 # Application UI shell.
-# v3.67.2: top-level UI regions are explicit functions. Each function owns one
+# top-level UI regions are explicit functions. Each function owns one
 # stable UI responsibility; Graph/Figure controls remain in their modules.
 
 app_head_ui <- function() {
@@ -283,7 +283,7 @@ tabsetPanel(
         id = "graph_workspace_body",
         div(
           id = "graph_panels",
-          # RC7: one persistent Editor DOM and one persistent live plot output.
+          # one persistent Editor DOM and one persistent live plot output.
           # Graph switching changes canonical values in this same Editor; there
           # is no separate cached/browser preview surface.
           div(

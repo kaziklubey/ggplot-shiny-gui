@@ -35,7 +35,7 @@ graph_render_state_apply_semantics <- function(state) {
   }
 
 
-  # Line-series identity is Mapping semantics only for line plots.  The
+  # Line-series identity is Mapping semantics only for line plots. The
   # explicit column is dormant unless column mode is selected.
   if (!identical(plot_type, "line")) {
     mp$line_series_mode <- NULL

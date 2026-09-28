@@ -1,9 +1,8 @@
-# v3.70.0: extracted from server.R; sourced into the same server function environment.
 
   # ------------------------------------------------------------------
   # Project save / load
   # ------------------------------------------------------------------
-  # v3.4.0 alpha6 GraphState phase 3:
+  # GraphState phase 3:
   # Project serialization reads Graph state from the canonical registry only.
   # The active editor is synchronously committed immediately before build_project()
   # so an edit followed by an immediate Save cannot be lost behind the normal
@@ -71,7 +70,6 @@
     )
     st
   }
-  # v3.3.56: figure_default_layout_state moved to its Figure module.
 
   figure_state_for_save <- function() {
     seed <- isolate(figure_control_restore_seed())
@@ -243,7 +241,7 @@
     ch <- suppressWarnings(as.numeric(saved$canvas_height %||% 1000)[1])
     gx <- suppressWarnings(as.numeric(saved$gap_x %||% 12)[1])
     gy <- suppressWarnings(as.numeric(saved$gap_y %||% 12)[1])
-    # Legacy Projects predate content-driven sizing.  v3.3.67 Projects can be
+    # Legacy Projects predate content-driven sizing. Projects can be
     # recognized by their per-Graph target sizes, so those migrate naturally to
     # Auto fit; older Projects without Graph sizes preserve Fixed behavior.
     if (is.null(saved$size_mode)) {
@@ -260,7 +258,7 @@
       size_mode <- as.character(saved$size_mode)[1]
     }
     if (!size_mode %in% c("auto", "fixed")) size_mode <- "fixed"
-    # v3.80.7 migration: old panel_auto/plot/facet/axis/axis_legend values are
+    # migration: old panel_auto/plot/facet/axis/axis_legend values are
     # normalized once at the Project boundary into the explicit contract.
     size_basis <- figure_normalize_alignment_basis(saved$size_basis %||% "panel_legend")
     # Graph-title alignment was a workaround for label drift. Panel labels now
@@ -285,7 +283,7 @@
     gy <- max(gy, 0)
 
     layout <- saved$layout %||% figure_default_layout_state()
-    # v3.80.8: Project payload stores the Figure-wide column vector explicitly.
+    # Project payload stores the Figure-wide column vector explicitly.
     # Older Projects migrate from their per-cell width values at this boundary.
     saved_column_ratios <- saved$column_ratios %||% attr(layout, "column_ratios", exact = TRUE)
     if (length(saved_column_ratios)) layout <- figure_set_shared_column_ratios(layout, saved_column_ratios)
@@ -351,9 +349,9 @@
       }
     }
 
-    # alpha3 migration: alpha1/alpha2 stored Panel label style on the source
-    # override.  Move those legacy values into the currently occupied Slot and
-    # remove them from source-owned override state.  Internal Graph duplication
+    # migration: older saved Figure schemas stored Panel label style on the source
+    # override. Move those legacy values into the currently occupied Slot and
+    # remove them from source-owned override state. Internal Graph duplication
     # is still forbidden, so the legacy source -> Slot mapping is unambiguous.
     legacy_slot_fields <- c(
       "label_size", "top_gutter", "label_mode", "label_anchor",
@@ -365,7 +363,7 @@
         sid <- as.character(cell$source_id %||% cell$id %||% "")[1]
         if (!nzchar(sid) || is.null(new_overrides[[sid]])) next
         old_ov <- new_overrides[[sid]]
-        # Existing slot values from v8+ remain authoritative.  For legacy
+        # Existing slot values from v8+ remain authoritative. For legacy
         # projects, reindexed defaults indicate no slot-owned style existed.
         saved_version <- suppressWarnings(as.integer(saved$version %||% 0L)[1])
         if (!is.finite(saved_version)) saved_version <- 0L
@@ -515,7 +513,7 @@
   }
 
   build_project <- function() {
-    # Close the user-edit/save races before serialization.  First merge each
+    # Close the user-edit/save races before serialization. First merge each
     # READY module's in-memory Statistics recipe collection into its canonical
     # GraphState; then commit the active editor's complete state so the selected
     # Analysis' currently visible inputs win over the in-memory recipe snapshot.
@@ -586,7 +584,7 @@
 
   project_bundle_filename <- function() project_filename()
 
-  # Graph SVG package records were retired in v3.73.2.18. Figure snapshot
+  # Graph SVG package records were retired. Figure snapshot
   # records below remain explicit project assets.
 
 
@@ -617,9 +615,9 @@
 
       ov <- figure_override_for(id, ovs)
       # F1-5e: mirror the live Figure layer preparation when serialising a
-      # Figure snapshot.  For detached/free legends, persist three coordinated
+      # Figure snapshot. For detached/free legends, persist three coordinated
       # artifacts: the stable source-side anchor SVG/geometry, a legend-free
-      # owner Graph body, and the tight guide-box legend asset.  This lets a
+      # owner Graph body, and the tight guide-box legend asset. This lets a
       # cache-first Project restore reproduce the final Figure immediately,
       # without waiting for the source Graph module to hydrate.
       render_ov <- figure_layer_source_override(ov)
@@ -657,25 +655,12 @@
               error = function(e) ""
             )
             if (nzchar(body_svg %||% "")) {
-              body_meta <- list(
-                width = body_rendered$width,
-                height = body_rendered$height,
-                panel_left = body_rendered$panel_left,
-                panel_top = body_rendered$panel_top,
-                panel_width = body_rendered$panel_width,
-                panel_height = body_rendered$panel_height,
-                panel_bbox = body_rendered$panel_bbox,
-                facet_bbox = body_rendered$facet_bbox,
-                axis_outer_bbox = body_rendered$axis_outer_bbox,
-                content_outer_bbox = body_rendered$content_outer_bbox,
-                title_bbox = body_rendered$title_bbox,
-                legend_bbox = body_rendered$legend_bbox,
-                legend_visual_bbox = body_rendered$legend_visual_bbox %||% body_rendered$legend_bbox,
-                legend_outside_bbox = body_rendered$legend_outside_bbox,
-                legend_outside_visual_bbox = body_rendered$legend_outside_visual_bbox %||% body_rendered$legend_outside_bbox,
-                legend_state = body_rendered$legend_state %||% "unknown",
-                geometry_source = body_rendered$geometry_source %||% "unknown",
-                reference_res = ex$reference_res %||% 120
+              body_meta <- figure_render_geometry_meta(
+                body_rendered,
+                reference_res = ex$reference_res %||% 120,
+                include_legend_state = TRUE,
+                include_geometry_source = TRUE,
+                include_reference_res = TRUE
               )
             }
           }
@@ -696,25 +681,12 @@
         legend_svg = if (is.list(legend_asset)) legend_asset$svg %||% "" else "",
         legend_width = if (is.list(legend_asset)) legend_asset$width %||% NA_real_ else NA_real_,
         legend_height = if (is.list(legend_asset)) legend_asset$height %||% NA_real_ else NA_real_,
-        meta = list(
-          width = rendered$width,
-          height = rendered$height,
-          panel_left = rendered$panel_left,
-          panel_top = rendered$panel_top,
-          panel_width = rendered$panel_width,
-          panel_height = rendered$panel_height,
-          panel_bbox = rendered$panel_bbox,
-          facet_bbox = rendered$facet_bbox,
-          axis_outer_bbox = rendered$axis_outer_bbox,
-          content_outer_bbox = rendered$content_outer_bbox,
-          title_bbox = rendered$title_bbox,
-          legend_bbox = rendered$legend_bbox,
-          legend_visual_bbox = rendered$legend_visual_bbox %||% rendered$legend_bbox,
-          legend_outside_bbox = rendered$legend_outside_bbox,
-          legend_outside_visual_bbox = rendered$legend_outside_visual_bbox %||% rendered$legend_outside_bbox,
-          legend_state = rendered$legend_state %||% "unknown",
-          geometry_source = rendered$geometry_source %||% "unknown",
-          reference_res = ex$reference_res %||% 120
+        meta = figure_render_geometry_meta(
+          rendered,
+          reference_res = ex$reference_res %||% 120,
+          include_legend_state = TRUE,
+          include_geometry_source = TRUE,
+          include_reference_res = TRUE
         )
       )
     }
@@ -730,7 +702,7 @@
 
     proj_obj <- build_project()
     saveRDS(proj_obj, file.path(root, "project.rds"), compress = "gzip", version = 3)
-    # v3.73.2.18: GraphState is the only persisted Graph authority. Graph SVG
+    # GraphState is the only persisted Graph authority. Graph SVG
     # previews are no longer generated or serialized; Figure snapshots remain
     # explicit point-in-time assets and continue to be packaged.
     previews <- list()
@@ -1082,7 +1054,7 @@
     project_bundle_pending_inset_previews(list())
     diag_log("PACK", paste0("read_project_file path=", basename(path), " bytes=", tryCatch(file.info(path)$size, error = function(e) NA)))
 
-    # v3.3.54: packaged Project may contain files either at archive root or
+    # packaged Project may contain files either at archive root or
     # below one enclosing folder. Discover project.rds/manifest by basename
     # instead of assuming one fixed ZIP layout.
     zip_list <- tryCatch(
@@ -1303,7 +1275,7 @@
     active_graph(target)
     complete_project_load_lock("registry/Figure snapshots staged; selected persistent Editor attach")
 
-    # RC13.8: do not queue a Project catalog before/around owner transition.
+    # do not queue a Project catalog before/around owner transition.
     # publish_client_graph_catalog() sends on the next Shiny flush; a payload
     # captured while editing_graph_id still named the old/empty owner could
     # arrive after graph-client-edit-begin and make browser hydration reject
@@ -1423,7 +1395,7 @@
     # to tear down; replace the canonical Registry after invalidating the one
     # persistent Editor owner below.
     # Project replacement invalidates the old Graph owner before the canonical
-    # Registry is cleared.  This prevents the outgoing Graph from being
+    # Registry is cleared. This prevents the outgoing Graph from being
     # committed into the newly loaded Project when the new target attaches.
     editing_graph_id("")
     graph_single_editor_loading(FALSE)
@@ -1640,7 +1612,7 @@
     )
   })
 
-  # v3.73.1: Close Project is an explicit hard boundary.  A full session reset
+  # Close Project is an explicit hard boundary. A full session reset
   # is safer than manually clearing dozens of Graph/Figure/editor reactive
   # owners and guarantees the app returns to the normal pristine g001 Editor.
   observeEvent(input$close_project_all, {

@@ -1,5 +1,4 @@
 # R/figure/figure_renderer.R — Figure responsibility module
-# v3.3.56: extracted from server.R so Figure state/layout/render logic can evolve
 # independently from Shiny orchestration. Functions here are side-effect free unless noted.
 
 figure_svg_viewport_text <- function(svg) {
@@ -21,7 +20,7 @@ figure_detached_legend_background_mode <- function(ov) {
   mode
 }
 
-# Figure-only legend background.  Detached/free legends are separate Figure
+# Figure-only legend background. Detached/free legends are separate Figure
 # assets, so this must never mutate the source Graph or normal side legends.
 figure_apply_detached_legend_background <- function(p, ov) {
   if (is.null(p)) return(p)
@@ -179,7 +178,7 @@ figure_plot_svg_text <- function(p, width_px, height_px, reference_res = 120) {
   if (!is.finite(ww) || ww <= 0 || !is.finite(hh) || hh <= 0) return(NULL)
 
   # Use a real temporary SVG file instead of svgstring()/data URI. The latter
-  # proved browser-sensitive in v3.3.49 (broken <img> previews on Windows).
+  # proved browser-sensitive (broken <img> previews on Windows).
   # The generated SVG is then embedded inline into the Shiny DOM, so no temp
   # path needs to be web-accessible and vector scaling stays crisp.
   path <- tempfile(fileext = ".svg")
@@ -260,6 +259,35 @@ figure_fit_cached_geometry <- function(meta, rect, ov) {
   )
 }
 
+
+figure_render_geometry_meta <- function(rendered, reference_res = NULL,
+                                        include_legend_state = FALSE,
+                                        include_geometry_source = FALSE,
+                                        include_reference_res = FALSE,
+                                        fallback_legend_visual = TRUE) {
+  if (!is.list(rendered)) return(NULL)
+  meta <- list(
+    width = rendered$width,
+    height = rendered$height,
+    panel_left = rendered$panel_left,
+    panel_top = rendered$panel_top,
+    panel_width = rendered$panel_width,
+    panel_height = rendered$panel_height,
+    panel_bbox = rendered$panel_bbox,
+    facet_bbox = rendered$facet_bbox,
+    axis_outer_bbox = rendered$axis_outer_bbox,
+    content_outer_bbox = rendered$content_outer_bbox,
+    title_bbox = rendered$title_bbox,
+    legend_bbox = rendered$legend_bbox,
+    legend_visual_bbox = if (isTRUE(fallback_legend_visual)) rendered$legend_visual_bbox %||% rendered$legend_bbox else rendered$legend_visual_bbox,
+    legend_outside_bbox = rendered$legend_outside_bbox,
+    legend_outside_visual_bbox = if (isTRUE(fallback_legend_visual)) rendered$legend_outside_visual_bbox %||% rendered$legend_outside_bbox else rendered$legend_outside_visual_bbox
+  )
+  if (isTRUE(include_legend_state)) meta$legend_state <- rendered$legend_state %||% "unknown"
+  if (isTRUE(include_geometry_source)) meta$geometry_source <- rendered$geometry_source %||% "unknown"
+  if (isTRUE(include_reference_res)) meta$reference_res <- reference_res %||% 120
+  meta
+}
 
 figure_scale_geometry_meta <- function(meta, scale = 1) {
   if (!is.list(meta)) return(NULL)
@@ -498,10 +526,10 @@ figure_build_detached_legend_layer_ui <- function(rect, sp, ov, svg_text = NULL)
   legend_svg <- as.character(sp$legend_svg_text %||% "")[1]
   standalone_legend <- nzchar(legend_svg)
   # F1-5d: a Figure-free legend must be backed by the dedicated detached
-  # legend asset.  During cache-first restore the persisted combined Graph SVG
+  # legend asset. During cache-first restore the persisted combined Graph SVG
   # may still expose the old full-height guide strip (e.g. 152x600); using that
   # strip as a temporary legend creates the tall placeholder seen before Graph
-  # hydration.  Keep geometry metadata for positioning/diagnostics, but render
+  # hydration. Keep geometry metadata for positioning/diagnostics, but render
   # no detached legend until the tight legend asset is available.
   if (!standalone_legend) return(NULL)
   svg_node <- if (standalone_legend) {

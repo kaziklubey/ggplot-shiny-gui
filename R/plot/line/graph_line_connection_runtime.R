@@ -1,13 +1,11 @@
-# v3.74.2: canonical line-break control state for the persistent Graph Editor.
-#
-# `input$line_breaks` is a browser control, not the authority. Updating a
-# selectize's choices can briefly clear its selected values while a Graph replay
-# or Category-order rebuild is settling. If that transient browser value is
-# committed directly, a duplicated/switched Graph can lose its saved break.
-#
-# Keep one module-local value that mirrors the attached GraphState. User edits
-# update it; server-driven choices refreshes never delete a saved break merely
-# because a transient choice universe cannot represent it yet.
+  # canonical line-break control state for the persistent Graph Editor.
+  # `input$line_breaks` is a browser control, not the authority. Updating a
+  # selectize's choices can briefly clear its selected values while a Graph replay
+  # or Category-order rebuild is settling. If that transient browser value is
+  # committed directly, a duplicated/switched Graph can lose its saved break.
+  # Keep one module-local value that mirrors the attached GraphState. User edits
+  # update it; server-driven choices refreshes never delete a saved break merely
+  # because a transient choice universe cannot represent it yet.
 
   line_break_state <- reactiveVal(character(0))
   line_break_x_var <- reactiveVal("")
@@ -154,7 +152,7 @@
 
     if (graph_editor_profile_has(editor_profile, "full_shell") ||
         graph_editor_profile_is_figure(editor_profile)) {
-      # RC13.1: both persistent Editors keep category-order-driven line-break
+      # both persistent Editors keep category-order-driven line-break
       # topology browser-direct. Figure used to fall back to updateSelectizeInput(),
       # whose delayed echo could be misclassified as a user edit after replay.
       session$sendCustomMessage(

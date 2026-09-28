@@ -1,13 +1,11 @@
 # R/figure/figure_layers.R — Figure layer ownership / coordinate-space contract
-# v3.4.0 F1-4: separate Graph body, legend, label and interaction responsibilities.
-#
+# F1-4: separate Graph body, legend, label and interaction responsibilities.
 # Layer model
-#   graph   : Graph/Asset visual. Crop applies here only.
-#   inset   : Figure-owned free inset visual, anchored to its owner Graph.
-#   legend  : Figure-owned free legend visual, anchored to its owner Graph.
-#   label   : Figure-owned panel label visual.
-#   ui      : selection / drag affordances.
-#
+# graph : Graph/Asset visual. Crop applies here only.
+# inset : Figure-owned free inset visual, anchored to its owner Graph.
+# legend : Figure-owned free legend visual, anchored to its owner Graph.
+# label : Figure-owned panel label visual.
+# ui : selection / drag affordances.
 # Important: detached legends are NOT re-laid out by ggplot after entering the
 # Figure Legend layer. A stable source-side plot is used only to extract the
 # guide-box asset; owner Graph sizing is measured from a legend-free body. The
@@ -168,7 +166,7 @@ figure_layer_inset_canvas_position <- function(rect, sp, ov) {
 
 
 # Source position comes from the measured guide-box geometry, while the visual
-# dimensions may come from a standalone guide-box SVG asset.  Keeping those two
+# dimensions may come from a standalone guide-box SVG asset. Keeping those two
 # concerns separate prevents legend title/label glyphs from being cropped by a
 # bbox that was inferred from the full plot SVG.
 figure_layer_legend_bbox <- function(sp) {
@@ -199,7 +197,7 @@ figure_layer_legend_side <- function(sp, ov) {
   NA_character_
 }
 
-# Local top-left for the single detached/free legend mode.  The persisted X/Y
+# Local top-left for the single detached/free legend mode. The persisted X/Y
 # are relative to the owner Graph display frame, not the Plot panel or Row slot.
 # Values may exceed 0..1 so a legend can sit anywhere on the Figure canvas.
 figure_layer_legend_local_position <- function(rect, sp, ov) {

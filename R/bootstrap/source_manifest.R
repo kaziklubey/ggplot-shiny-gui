@@ -29,7 +29,7 @@ source("R/export/export_text_normalization.R", local = TRUE)
 source("R/export/pptx_editable_export.R", local = TRUE)
 source("R/editor/graph_module.R", local = TRUE)
 
-# v3.57: compile graphServer once during application startup, before any Graph
+# compile graphServer once during application startup, before any Graph
 # replay begins. The compiled closure is reused by the one persistent Graph
 # Editor and the one reusable Figure Editor.
 graph_server_precompile_info <- list(
@@ -54,7 +54,7 @@ if (inherits(.graph_server_compiled, "error")) {
 rm(.graph_server_compile_t0, .graph_server_compiled)
 
 # Figure responsibilities are split before ui/server are constructed.
-# v3.80.7 centralizes Figure layout semantics before state/geometry modules.
+# centralizes Figure layout semantics before state/geometry modules.
 source("R/figure/layout/figure_layout_contract.R", local = TRUE)
 source("R/figure/figure_state.R", local = TRUE)
 source("R/figure/figure_sync_contract.R", local = TRUE)

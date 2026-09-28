@@ -2,7 +2,7 @@
 # Figure <-> source Graph ownership contract
 # ============================================================
 # Figure keeps an editable GraphState copy, but does not auto-write it to the
-# source Graph.  Source write-back happens only through the explicit
+# source Graph. Source write-back happens only through the explicit
 # "元Graphへ反映" action. Figure layout/placement/crop/inset state lives outside
 # GraphState and is therefore never part of that source commit.
 

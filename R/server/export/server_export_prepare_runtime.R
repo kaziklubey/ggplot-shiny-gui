@@ -1,5 +1,5 @@
-# v3.73.2.36: Export readiness is canonical-state based.
-# No hidden Graph UI/module is mounted or hydrated for bulk export.
+  # Export readiness is canonical-state based.
+  # No hidden Graph UI/module is mounted or hydrated for bulk export.
 
   # ------------------------------------------------------------------
   # Export target / direct-state readiness

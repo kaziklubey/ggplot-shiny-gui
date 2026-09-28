@@ -1,5 +1,5 @@
 # R/figure/layout/figure_layout_contract.R — canonical Figure alignment semantics
-# v3.80.7: alignment anchor and attached outer-legend participation are one
+# alignment anchor and attached outer-legend participation are one
 # explicit, persisted contract. Legacy names are accepted only at state/load
 # boundaries and never become a second runtime geometry path.
 
@@ -12,8 +12,8 @@ figure_normalize_alignment_basis <- function(x, fallback = "panel_legend", allow
   if (!length(z) || is.na(z) || !nzchar(z)) z <- fallback
   if (isTRUE(allow_inherit) && identical(z, "inherit")) return("inherit")
 
-  # Load/state-boundary migration from pre-v3.80.7 names. Note that the old
-  # literal `axis` was already migrated to panel_auto by v3.80.6, so the new
+  # Load/state-boundary migration from pre- names. Note that the old
+  # literal `axis` was already migrated to panel_auto by , so the new
   # Panel+axis contract deliberately uses the unambiguous `panel_axis` name.
   map <- c(
     panel_auto = "panel_legend",

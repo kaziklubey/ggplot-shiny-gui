@@ -1,5 +1,5 @@
 # R/figure/figure_interaction.R — Figure interaction state transitions
-# v3.3.56: browser events are converted to deterministic state changes here.
+# browser events are converted to deterministic state changes here.
 
 figure_apply_layout_edit_state <- function(st, event, valid_graph_ids = character(0), valid_asset_ids = character(0)) {
   typ <- as.character(event$type %||% "")
@@ -7,7 +7,7 @@ figure_apply_layout_edit_state <- function(st, event, valid_graph_ids = characte
   c <- suppressWarnings(as.integer(event$col %||% NA_integer_))
   ans <- list(state = st, changed = FALSE, rebuild_ui = FALSE)
 
-  # v3.80.8: column ratios are Figure-wide state, not Row/Panel state. Handle
+  # column ratios are Figure-wide state, not Row/Panel state. Handle
   # them before Row validation and update the single shared column contract.
   if (identical(typ, "column_ratio")) {
     x <- suppressWarnings(as.numeric(event$value %||% NA_real_))
@@ -108,7 +108,7 @@ figure_apply_drag_override_state <- function(ov, type, x, y, width = NULL, heigh
     ov$label_y <- yp
   } else if (identical(typ, "legend")) {
     previous <- as.character(ov$legend %||% "inherit")[1]
-    # F1-4g: direct manipulation has one placement mode only.  X/Y are
+    # F1-4g: direct manipulation has one placement mode only. X/Y are
     # owner-Graph-relative and the visual itself lives on the Figure layer.
     ov$legend <- "free"
     if (!previous %in% c("free", "inside", "panel") && previous %in% c("inherit", "right", "left", "top", "bottom")) {
@@ -173,7 +173,7 @@ figure_apply_free_panel_drag_state <- function(st, event) {
 }
 
 # -----------------------------------------------------------------------------
-# v3.4.0-alpha2 Row/Grid content reordering
+# Row/Grid content reordering
 # Slot-owned fields (key/row/col/panel_label/width/free geometry/z-index) stay in
 # place. Content-owned fields move as a package so a Graph keeps its Figure size.
 # Source-specific overrides are keyed by source id and therefore follow it.
