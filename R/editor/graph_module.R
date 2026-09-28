@@ -300,6 +300,30 @@ graphServer <- function(id, style_clipboard = NULL, diag_log = NULL, ui_preseede
       graph_editor_arbitration_state_snapshot("module-api-state")
     }),
 
+    # Browser-owned title/axis controls are committed outside graphServer. The
+    # outer canonical patch runtime calls this only after a real user patch has
+    # been accepted, converting that explicit action into one Shared Style
+    # writeback event without observing programmatic state changes.
+    shared_style_user_edit = function(reason = "browser-edit") {
+      shared_style_mark_user_edit(reason)
+    },
+
+    # Figure -> Graph workspace return may rebind dynamic Shared Style inputs
+    # without changing canonical GraphState. Rebuild only that small binding UI
+    # from the Graph-owned reactive state so browser lifecycle defaults cannot
+    # remain visible. This does not replay the Graph or rebuild other Style UI.
+    refresh_shared_style_binding_ui = function(reason = "workspace-resume") {
+      shared_style_binding_ui_epoch(as.integer(isolate(shared_style_binding_ui_epoch()) %||% 0L) + 1L)
+      diag(
+        "SHARED-STYLE-UI",
+        paste0(
+          "refresh reason=", as.character(reason %||% "workspace-resume")[[1]],
+          " enabled=", isTRUE(shared_style_normalize_binding(isolate(shared_style_binding()))$enabled)
+        )
+      )
+      invisible(TRUE)
+    },
+
     # SVG一括出力ではreadyなGraphだけPlotを生成する。
     plot = reactive({
       diag("PLOT-CONSUMER", "request=module-plot")

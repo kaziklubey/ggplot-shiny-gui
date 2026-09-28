@@ -94,96 +94,6 @@
     changed_ids
   }
 
-  # Direct Figure Shared Style application. Figure-owned GraphStates are updated
-  # first, then snapshots are regenerated from those values through the existing
-  # server-side GraphState renderer. No Figure Editor is created/switched merely
-  # to rebuild snapshots.
-  shared_style_apply_figure_states <- function(library, reason = "shared-style-figure") {
-    lib <- shared_style_normalize_library(library)
-    states <- isolate(figure_edit_states())
-    if (!length(states)) return(character(0))
-
-    current_owner <- as.character(isolate(figure_editing_graph()) %||% "")[1]
-    current_visible <- nzchar(current_owner) &&
-      figure_workspace_is_active() &&
-      isTRUE(isolate(figure_single_editor_show_when_ready())) &&
-      !isTRUE(isolate(figure_single_editor_loading())) &&
-      identical(as.character(isolate(figure_single_editor_mode()) %||% ""), "READY")
-
-    # Preserve unsaved Figure-only controls for the one currently visible editor
-    # before changing its Figure-owned GraphState externally.
-    if (isTRUE(current_visible)) {
-      mod_now <- figure_editor_module(current_owner)
-      live_state <- tryCatch({
-        if (!is.null(mod_now) && is.function(mod_now$state)) isolate(mod_now$state()) else NULL
-      }, error = function(e) NULL)
-      if (is.list(live_state)) states[[current_owner]] <- live_state
-    }
-
-    changed <- character(0)
-    render_changed <- character(0)
-    for (id in names(states)) {
-      old <- states[[id]]
-      if (!is.list(old)) next
-
-      # Figure has no independent semantic-binding editor. Resolve binding
-      # metadata from the current source Graph while keeping all other Figure
-      # GraphState fields snapshot-owned.
-      source_state <- if (cache_has(id)) cache_get(id) else NULL
-      source_binding <- if (is.list(source_state)) {
-        source_state$style$shared_library %||% NULL
-      } else {
-        old$style$shared_library %||% NULL
-      }
-
-      base <- old
-      if (!is.list(base$style)) base$style <- list()
-      base$style$shared_library <- shared_style_prune_binding_to_library(source_binding, lib)
-      base <- shared_style_prune_graph_state(base, lib)
-      new <- shared_style_apply_to_graph_state(base, lib)
-      if (identical(old, new)) next
-      states[[id]] <- new
-      changed <- c(changed, id)
-      if (isTRUE(graph_render_state_changed(old, new))) render_changed <- c(render_changed, id)
-    }
-    if (!length(changed)) return(character(0))
-
-    changed <- unique(changed)
-    render_changed <- unique(render_changed)
-    figure_edit_states(states)
-
-    for (id in render_changed) {
-      request_figure_source_snapshot(
-        id,
-        reason = paste0(reason, "-direct-state"),
-        import_editor_state = FALSE,
-        state_override = states[[id]],
-        target_type = "main"
-      )
-    }
-
-    # If the user is actively looking at the affected Figure Editor, replay that
-    # one owner from the updated Figure-owned state. This is presentation sync;
-    # snapshot generation above remains direct-state and editor-independent.
-    if (isTRUE(current_visible) && current_owner %in% render_changed) {
-      ensure_figure_editor(
-        current_owner,
-        force_reload = TRUE,
-        preserve_current = FALSE,
-        show_when_ready = TRUE,
-        state_override = states[[current_owner]]
-      )
-      diag_log("SHARED-STYLE-FIGURE", "visible editor replayed; snapshots queued direct-state", id = current_owner)
-    }
-
-    if (length(render_changed)) {
-      diag_log(
-        "SHARED-STYLE-FIGURE",
-        paste0("direct-state queued={", paste(render_changed, collapse=","), "} reason=", reason)
-      )
-    }
-    render_changed
-  }
 
   observe({
     pending <- shared_style_graph_replay_pending()
@@ -223,17 +133,14 @@
       reason = paste0("shared-style:", source)
     )
 
-    changed_figure <- character(0)
-    if (isTRUE(isolate(figure_shared_style_sync()))) {
-      changed_figure <- shared_style_apply_figure_states(new_lib, reason = paste0("auto:", source))
-    }
-
+    # Figure is a frozen owner. Library edits propagate through Graph bindings
+    # only; Figure changes require an explicit Common Settings apply.
     diag_log(
       "SHARED-STYLE-APPLY",
       paste0(
         "source=", source,
         " graphs={", paste(changed_graphs, collapse=","), "}",
-        " figure={", paste(changed_figure, collapse=","), "}"
+        " figure={explicit-only}"
       )
     )
     invisible(TRUE)
@@ -271,7 +178,7 @@
     lib <- shared_style_normalize_library(shared_style_library())
     usage <- shared_style_usage_records()
     if (!length(lib$items)) {
-      return(div(class = "shared-style-summary-empty", "Libraryは空です。下の『Libraryを編集…』から共通項目を作成してください。"))
+      return(div(class = "shared-style-summary-empty", "共通スタイルはまだありません。「＋ 新しいスタイル」から Expert / Normal / Control などを追加してください。"))
     }
     div(
       class = "shared-style-summary-grid",
@@ -286,36 +193,37 @@
           div(
             class = "shared-style-summary-copy",
             tags$strong(item$display),
-            tags$span(class = "text-muted", paste0(item$id, " · ", switch(item$kind, level="群・条件", axis_label="軸ラベル", legend_title="凡例タイトル", item$kind))),
-            tags$span(class = "text-muted", paste0("使用中 ", length(used), " 箇所"))
+            tags$span(class = "text-muted", switch(item$kind, level="群・条件", axis_label="軸ラベル", legend_title="凡例タイトル", item$kind)),
+            tags$span(class = "text-muted", paste0("使用中: ", length(used), " 箇所"))
           )
         )
       })
     )
   })
 
-  observe({
+  output$shared_style_selector <- renderUI({
     lib <- shared_style_normalize_library(shared_style_library())
     choices <- if (length(lib$items)) {
       stats::setNames(names(lib$items), vapply(lib$items, shared_style_item_label, character(1)))
     } else c("項目なし" = "")
     current <- as.character(isolate(input$shared_style_selected_id %||% ""))[1]
     selected <- if (current %in% unname(choices)) current else if (length(lib$items)) names(lib$items)[1] else ""
-    updateSelectInput(session, "shared_style_selected_id", choices = choices, selected = selected)
+    selectInput("shared_style_selected_id", "編集するスタイル", choices = choices, selected = selected, width = "100%")
   })
+
 
   output$shared_style_editor <- renderUI({
     lib <- shared_style_normalize_library(shared_style_library())
     id <- as.character(input$shared_style_selected_id %||% "")[1]
     item <- lib$items[[id]]
-    if (!is.list(item)) return(tags$em("編集するLibrary項目を選択してください。"))
+    if (!is.list(item)) return(tags$em("編集するスタイルを選択してください。"))
     is_level <- identical(item$kind, "level")
     manage_selected <- names(item$manage)[vapply(item$manage, isTRUE, logical(1))]
     div(
       class = "shared-style-editor-card",
       textInput("shared_style_edit_display", "表示名", value = item$display, width = "220px"),
       selectInput(
-        "shared_style_edit_kind", "種類",
+        "shared_style_edit_kind", "用途",
         choices = c("群・条件"="level", "軸ラベル"="axis_label", "凡例タイトル"="legend_title"),
         selected = item$kind, width = "140px"
       ),
@@ -323,40 +231,43 @@
         condition = "input.shared_style_edit_kind == 'level'",
         div(
           class = "shared-style-editor-style-row",
-          colourpicker::colourInput("shared_style_edit_color", "Color / Fill", value = item$color, showColour = "both"),
-          selectInput("shared_style_edit_shape", "Shape", choices = c("● 丸"=16,"▲ 三角"=17,"■ 四角"=15,"◆ ひし形"=18,"+ プラス"=3,"× クロス"=4,"○ 白丸"=1,"△ 白三角"=2,"□ 白四角"=0,"◇ 白ひし形"=5), selected = as.character(item$shape), width = "120px"),
-          selectInput("shared_style_edit_linetype", "Line", choices = c("実線"="solid","破線"="dashed","点線"="dotted","一点鎖線"="dotdash","長い破線"="longdash","二重点線"="twodash"), selected = item$linetype, width = "120px")
+          colourpicker::colourInput("shared_style_edit_color", "色", value = item$color, showColour = "both"),
+          selectInput("shared_style_edit_shape", "形", choices = c("● 丸"=16,"▲ 三角"=17,"■ 四角"=15,"◆ ひし形"=18,"+ プラス"=3,"× クロス"=4,"○ 白丸"=1,"△ 白三角"=2,"□ 白四角"=0,"◇ 白ひし形"=5), selected = as.character(item$shape), width = "120px"),
+          selectInput("shared_style_edit_linetype", "線", choices = c("実線"="solid","破線"="dashed","点線"="dotted","一点鎖線"="dotdash","長い破線"="longdash","二重点線"="twodash"), selected = item$linetype, width = "120px")
         )
       ),
       checkboxGroupInput(
-        "shared_style_edit_manage", "Libraryが管理する属性",
+        "shared_style_edit_manage", "このスタイルで揃える項目",
         choices = if (is_level) c("表示名"="display","Color"="color","Fill"="fill","Shape"="shape","Line type"="linetype") else c("表示名"="display"),
         selected = manage_selected, inline = TRUE
       ),
-      actionButton("shared_style_save", "Libraryへ保存", class = "btn-sm btn-primary"),
-      tags$p(class = "help-block", "internal idは作成後固定です。表示名を変更してもGraph bindingは維持されます。現行GraphではColor/Fillは同じcategorical colour treeを共有するため、1つの色として管理します。")
+      actionButton("shared_style_save", "保存", class = "btn-sm btn-primary"),
+      tags$p(class = "help-block", "表示名はあとから変更できます。すでに設定済みのGraphとの対応は維持されます。色はColor / Fillで共通に使われます。")
     )
   })
 
   observeEvent(input$shared_style_add, {
-    id <- shared_style_safe_id(input$shared_style_new_id %||% "")
     display <- trimws(as.character(input$shared_style_new_display %||% "")[1])
     kind <- as.character(input$shared_style_new_kind %||% "level")[1]
-    if (!nzchar(id)) {
-      showNotification("internal idを入力してください。", type="warning")
+    if (!nzchar(display)) {
+      showNotification("新しい名前を入力してください。", type="warning")
       return()
     }
     lib <- shared_style_normalize_library(isolate(shared_style_library()))
-    if (id %in% names(lib$items)) {
-      showNotification("同じinternal idが既にあります。", type="warning")
-      return()
+    base_id <- shared_style_safe_id(display)
+    if (!nzchar(base_id)) base_id <- "item"
+    id <- base_id
+    suffix <- 2L
+    while (id %in% names(lib$items)) {
+      id <- paste0(base_id, "_", suffix)
+      suffix <- suffix + 1L
     }
-    if (!nzchar(display)) display <- id
     lib$items[[id]] <- shared_style_default_item(id, display, kind)
     shared_style_commit_library(lib, source = "library-add")
-    updateSelectInput(session, "shared_style_selected_id", selected = id)
-    updateTextInput(session, "shared_style_new_id", value = "")
-    updateTextInput(session, "shared_style_new_display", value = "")
+    showModal(figureSharedStyleLibraryModalUI())
+    session$onFlushed(function() {
+      updateSelectInput(session, "shared_style_selected_id", selected = id)
+    }, once = TRUE)
   }, ignoreInit = TRUE)
 
   observeEvent(input$shared_style_save, {
@@ -406,13 +317,13 @@
     }
     incoming <- shared_style_normalize_library(imported)
     if (!length(incoming$items)) {
-      showNotification("ImportファイルにLibrary項目がありません。", type="warning")
+      showNotification("読み込んだファイルに共通スタイルがありません。", type="warning")
       return()
     }
     lib <- shared_style_normalize_library(isolate(shared_style_library()))
     for (id in names(incoming$items)) lib$items[[id]] <- incoming$items[[id]]
     shared_style_commit_library(lib, source = "library-import")
-    showNotification(paste0("Shared LibraryをImportしました（", length(incoming$items), "項目）。bindingは変更していません。"), type="message")
+    showNotification(paste0("共通スタイルを読み込みました（", length(incoming$items), "項目）。Graphとの対応は変更していません。"), type="message")
   }, ignoreInit = TRUE)
 
   output$download_shared_style <- downloadHandler(
@@ -425,14 +336,4 @@
     }
   )
 
-  observeEvent(input$figure_shared_style_sync, {
-    figure_shared_style_sync(isTRUE(input$figure_shared_style_sync))
-    diag_log("SHARED-STYLE-FIGURE", paste0("auto_sync=", isTRUE(input$figure_shared_style_sync)))
-  }, ignoreInit = TRUE)
-
-  observeEvent(input$figure_shared_style_apply, {
-    changed <- shared_style_apply_figure_states(isolate(shared_style_library()), reason = "manual-apply")
-    if (length(changed)) showNotification(paste0("Shared LibraryをFigureの ", length(changed), " Graphへ反映します。"), type="message")
-    else showNotification("Figure側に反映が必要なShared Style変更はありません。", type="message", duration=2)
-  }, ignoreInit = TRUE)
 

@@ -98,18 +98,6 @@
     list(changed = unique(changed), render_changed = unique(render_changed))
   }
 
-  graph_settings_manager_figure_base_state <- function(id) {
-    id <- as.character(id %||% "")[1]
-    states <- isolate(figure_edit_states())
-    st <- states[[id]]
-    if (is.list(st)) return(list(state = st, source = "figure-owned"))
-    if (cache_has(id)) {
-      st <- cache_get(id)
-      if (is.list(st)) return(list(state = st, source = "graph-canonical"))
-    }
-    list(state = NULL, source = "missing")
-  }
-
   graph_settings_manager_reload_visible_figure_editor <- function(ids, reason) {
     ids <- unique(as.character(ids %||% character(0)))
     owner <- as.character(isolate(figure_editing_graph()) %||% "")[1]
@@ -136,15 +124,16 @@
     main_ids <- tryCatch(figure_main_panel_source_ids(), error = function(e) character(0))
     requested <- intersect(unique(as.character(target_ids %||% character(0))), main_ids)
     requested <- requested[nzchar(requested)]
+    states <- isolate(figure_edit_states())
+    eligible <- figure_existing_state_target_ids(requested, main_ids, states)
+    skipped <- setdiff(requested, eligible)
     queued <- character(0)
     changed <- character(0)
-    base_sources <- character(0)
 
-    for (id in requested) {
-      base <- graph_settings_manager_figure_base_state(id)
-      if (!is.list(base$state)) next
-      new <- graph_settings_manager_set_path(base$state, path, value)
-      if (!identical(base$state, new)) changed <- c(changed, id)
+    for (id in eligible) {
+      old <- states[[id]]
+      new <- graph_settings_manager_set_path(old, path, value)
+      if (!identical(old, new)) changed <- c(changed, id)
       store_figure_edit_state(id, new, reason = reason)
       if (exists("cancel_figure_source_snapshot_jobs", mode = "function", inherits = TRUE)) {
         cancel_figure_source_snapshot_jobs(id, reason = paste0(reason, "-replace"))
@@ -159,7 +148,6 @@
       rev_num <- suppressWarnings(as.integer(rev %||% NA_integer_)[1])
       if (!identical(rev, FALSE) && is.finite(rev_num) && rev_num > 0L) {
         queued <- c(queued, id)
-        base_sources <- c(base_sources, paste0(id, ":", base$source))
       }
     }
 
@@ -169,13 +157,14 @@
       paste0(
         "VALUE path=", path,
         " requested={", paste(requested, collapse=","), "}",
+        " skipped_unimported={", paste(skipped, collapse=","), "}",
         " queued={", paste(unique(queued), collapse=","), "}",
         " changed={", paste(unique(changed), collapse=","), "}",
-        " bases={", paste(base_sources, collapse=","), "}",
         " graph_state_unchanged=TRUE"
       )
     )
-    list(requested = requested, queued = unique(queued), changed = unique(changed))
+    list(requested = requested, eligible = eligible, skipped = skipped,
+         queued = unique(queued), changed = unique(changed))
   }
 
   graph_settings_manager_refresh_figure_from_graph <- function(target_ids,

@@ -95,7 +95,9 @@ cancel_figure_source_snapshot_jobs <- function(id, reason = "cancel") {
   removed <- character(0)
   for (job_id in names(jobs)) {
     job <- jobs[[job_id]] %||% list()
-    if (!identical(as.character(job$id %||% "")[1], id)) next
+    source_match <- identical(as.character(job$id %||% "")[1], id)
+    owner_match <- identical(as.character(job$owner_id %||% "")[1], id)
+    if (!isTRUE(source_match || owner_match)) next
     if (identical(job_id, active)) {
       job$cancelled <- TRUE
       jobs[[job_id]] <- job
@@ -116,6 +118,26 @@ cancel_figure_source_snapshot_jobs <- function(id, reason = "cancel") {
     diag_log("FIGURE-SOURCE-QUEUE", paste0("cancel source reason=", reason, " queued=", length(removed)), id = id)
   }
   invisible(TRUE)
+}
+
+drop_figure_source_snapshot_bookkeeping <- function(id) {
+  id <- as.character(id %||% "")[1]
+  if (!nzchar(id)) return(invisible(FALSE))
+  registries <- list(
+    figure_source_snapshot_requested,
+    figure_source_snapshot_completed,
+    figure_source_snapshot_succeeded
+  )
+  keys <- unique(unlist(lapply(registries, function(registry) {
+    names(isolate(reactiveValuesToList(registry)))
+  }), use.names = FALSE))
+  drop <- keys[vapply(keys, figure_snapshot_key_references_graph, logical(1), graph_id = id)]
+  for (key in drop) {
+    figure_source_snapshot_requested[[key]] <- NULL
+    figure_source_snapshot_completed[[key]] <- NULL
+    figure_source_snapshot_succeeded[[key]] <- NULL
+  }
+  invisible(length(drop) > 0L)
 }
 
 figure_source_snapshot_next_revision <- function(key) {
@@ -161,7 +183,7 @@ request_figure_source_snapshot <- function(id, reason = "figure-source",
     target_type = target_type,
     import_editor_state = isTRUE(import_editor_state),
     reason = as.character(reason %||% "figure-source")[1],
-    state = unserialize(serialize(state, NULL)),
+    state = figure_source_snapshot_copy(state),
     revision = revision,
     completion_key = key
   )
@@ -205,10 +227,12 @@ figure_source_snapshot_store_inset <- function(job, payload) {
   rec$figure_plot <- payload$plot
   rec$figure_export <- payload$meta
   rec$figure_components <- payload$components
+  rec$owner_id <- owner_id
+  rec$source_id <- source_id
   cache <- isolate(figure_inset_preview_cache())
-  cache[[source_id]] <- rec
+  cache[[owner_id]] <- rec
   figure_inset_preview_cache(cache)
-  bump_figure_snapshot_revision(source_id)
+  bump_figure_snapshot_revision(owner_id)
   diag_log(
     "FIGURE-INSET",
     paste0("direct state snapshot owner=", owner_id, " source=", source_id,
@@ -243,7 +267,6 @@ figure_source_snapshot_run_job <- function(job) {
     if (isTRUE(job$import_editor_state)) {
       seed_figure_editor_from_source(job$id, job$state, reason = job$reason, reload_editor = TRUE)
     }
-    figure_clear_new_import(job$id)
   }
   ok
 }

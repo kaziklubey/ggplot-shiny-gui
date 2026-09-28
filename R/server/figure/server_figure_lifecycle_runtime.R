@@ -1,7 +1,5 @@
-# v3.73.2.23: Figure workspace lifecycle and first-view snapshot bootstrap.
-# Figure layout/source ownership is persistent. Entering the workspace may only
-# materialize a missing Figure-owned snapshot; it must never refresh one that
-# already exists.
+# Figure workspace activation owns geometry only. Displaying the workspace is
+# never permission to import GraphState into Figure-owned state.
 
   figure_workspace_is_active <- function() {
     isTRUE(isolate(figure_workspace_active()))
@@ -20,50 +18,6 @@
     intersect(ids[nzchar(ids)], meta_ids)
   }
 
-  figure_main_snapshot_exists <- function(id) {
-    id <- as.character(id %||% "")[1]
-    if (!nzchar(id)) return(FALSE)
-    if (exists("figure_editor_snapshot_available", mode = "function", inherits = TRUE) &&
-        isTRUE(figure_editor_snapshot_available(id))) return(TRUE)
-    persisted <- isolate(figure_persisted_previews())
-    rec <- persisted[[id]]
-    is.list(rec) && nzchar(as.character(rec$svg %||% "")[1])
-  }
-
-  figure_bootstrap_missing_main_snapshots <- function(reason = "workspace-first-view") {
-    if (!exists("request_figure_source_snapshot", mode = "function", inherits = TRUE)) return(invisible(FALSE))
-    ids <- figure_main_panel_source_ids()
-    if (!length(ids)) return(invisible(FALSE))
-    edit_states <- isolate(figure_edit_states())
-    queued <- character(0)
-
-    for (id in ids) {
-      if (isTRUE(figure_main_snapshot_exists(id))) next
-      # Automatic first-view bootstrap is one-shot. Failed prior attempts are
-      # left for explicit Refresh/Bulk Import instead of retrying on every tab visit.
-      if (figure_source_snapshot_completed_revision(id, "main") > 0L ||
-          isTRUE(figure_source_snapshot_pending(id))) next
-
-      owned_state <- edit_states[[id]]
-      if (is.list(owned_state)) {
-        request_figure_source_snapshot(
-          id, reason = reason, import_editor_state = FALSE,
-          state_override = owned_state, target_type = "main"
-        )
-        queued <- c(queued, id)
-        next
-      }
-
-      request_figure_source_snapshot(id, reason = reason, import_editor_state = TRUE)
-      queued <- c(queued, id)
-    }
-
-    if (length(queued)) {
-      diag_log("FIGURE-BOOTSTRAP", paste0("queued missing main snapshots={", paste(unique(queued), collapse = ","), "} reason=", reason))
-    }
-    invisible(length(queued) > 0L)
-  }
-
   enter_figure_workspace <- function(reason = "tab-open") {
     if (figure_workspace_is_active()) return(invisible(FALSE))
     figure_workspace_active(TRUE)
@@ -74,7 +28,6 @@
       figure_geometry_revision(as.integer(isolate(figure_geometry_revision()) %||% 0L) + 1L)
     }
     diag_log("FIGURE-RUNTIME", paste0("ACTIVE reason=", reason))
-    figure_bootstrap_missing_main_snapshots(reason = "workspace-first-view")
     invisible(TRUE)
   }
 

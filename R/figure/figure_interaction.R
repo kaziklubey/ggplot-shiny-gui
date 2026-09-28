@@ -14,7 +14,7 @@ figure_apply_layout_edit_state <- function(st, event, valid_graph_ids = characte
     if (!is.finite(c) || c < 1L || !is.finite(x) || x <= 0) return(ans)
     before <- figure_shared_column_ratios(st)
     if (c > length(before)) return(ans)
-    x <- min(max(x, 0.1), 10)
+    x <- max(x, 0.1)
     if (isTRUE(all.equal(before[[c]], x))) return(ans)
     st <- figure_set_shared_column_ratio(st, c, x)
     ans$state <- st
@@ -37,7 +37,7 @@ figure_apply_layout_edit_state <- function(st, event, valid_graph_ids = characte
   if (identical(typ, "row_height")) {
     x <- suppressWarnings(as.numeric(event$value %||% NA_real_))
     if (!is.finite(x) || x <= 0) return(ans)
-    x <- min(max(x, 0.1), 10)
+    x <- max(x, 0.1)
     if (!isTRUE(all.equal(st[[r]]$height, x))) {
       st[[r]]$height <- x
       ans$state <- st; ans$changed <- TRUE
@@ -51,7 +51,7 @@ figure_apply_layout_edit_state <- function(st, event, valid_graph_ids = characte
     raw <- as.character(event$value %||% "")[1]
     x <- suppressWarnings(as.numeric(raw))
     if (!nzchar(trimws(raw)) || !is.finite(x) || x <= 0) x <- NA_real_
-    if (is.finite(x)) x <- min(max(x, 80), 3000)
+    if (is.finite(x)) x <- max(x, 1)
     field <- if (identical(typ, "graph_width")) "graph_width" else "graph_height"
     old <- suppressWarnings(as.numeric(st[[r]]$cells[[c]][[field]] %||% NA_real_)[1])
     same <- (is.na(old) && is.na(x)) || (is.finite(old) && is.finite(x) && isTRUE(all.equal(old, x)))
@@ -65,9 +65,7 @@ figure_apply_layout_edit_state <- function(st, event, valid_graph_ids = characte
   if (typ %in% c("free_x", "free_y", "free_width", "free_height", "z_index")) {
     raw <- suppressWarnings(as.numeric(event$value %||% NA_real_))
     if (!is.finite(raw)) return(ans)
-    if (typ %in% c("free_width", "free_height")) raw <- min(max(raw, 20), 10000)
-    if (typ %in% c("free_x", "free_y")) raw <- min(max(raw, -10000), 10000)
-    if (identical(typ, "z_index")) raw <- min(max(raw, -1000), 1000)
+    if (typ %in% c("free_width", "free_height")) raw <- max(raw, 1)
     old <- suppressWarnings(as.numeric(st[[r]]$cells[[c]][[typ]] %||% NA_real_)[1])
     if (!is.finite(old) || !isTRUE(all.equal(old, raw))) {
       st[[r]]$cells[[c]][[typ]] <- raw
@@ -104,8 +102,6 @@ figure_apply_drag_override_state <- function(ov, type, x, y, width = NULL, heigh
   xp <- suppressWarnings(as.numeric(x %||% NA_real_))
   yp <- suppressWarnings(as.numeric(y %||% NA_real_))
   if (!is.finite(xp) || !is.finite(yp) || !typ %in% c("label", "legend", "inset")) return(ov)
-  xp <- min(max(xp, -2), 3)
-  yp <- min(max(yp, -2), 3)
   if (identical(typ, "label")) {
     ov$label_mode <- "free"
     ov$label_x <- xp
@@ -123,8 +119,8 @@ figure_apply_drag_override_state <- function(ov, type, x, y, width = NULL, heigh
       }
     }
     ov$legend_free_auto <- FALSE
-    ov$legend_free_x <- min(max(xp, -2), 3)
-    ov$legend_free_y <- min(max(yp, -2), 3)
+    ov$legend_free_x <- xp
+    ov$legend_free_y <- yp
     # Legacy mirrors are retained only for project compatibility.
     ov$legend_x <- ov$legend_free_x
     ov$legend_y <- ov$legend_free_y
@@ -136,8 +132,8 @@ figure_apply_drag_override_state <- function(ov, type, x, y, width = NULL, heigh
     inset$y <- yp
     ww <- suppressWarnings(as.numeric(width %||% inset$width %||% 0.32))
     hh <- suppressWarnings(as.numeric(height %||% inset$height %||% 0.32))
-    if (is.finite(ww)) inset$width <- min(max(ww, 0.05), 1.5)
-    if (is.finite(hh)) inset$height <- min(max(hh, 0.05), 1.5)
+    if (is.finite(ww)) inset$width <- max(ww, 0.01)
+    if (is.finite(hh)) inset$height <- max(hh, 0.01)
     ov$inset <- inset
   }
   ov
@@ -156,16 +152,16 @@ figure_apply_free_panel_drag_state <- function(st, event) {
     x <- suppressWarnings(as.numeric(event$x %||% NA_real_))
     y <- suppressWarnings(as.numeric(event$y %||% NA_real_))
     if (is.finite(x) && is.finite(y)) {
-      cell$free_x <- min(max(x, -10000), 10000)
-      cell$free_y <- min(max(y, -10000), 10000)
+      cell$free_x <- x
+      cell$free_y <- y
       ans$changed <- TRUE
     }
   } else {
     w <- suppressWarnings(as.numeric(event$width %||% NA_real_))
     h <- suppressWarnings(as.numeric(event$height %||% NA_real_))
     if (is.finite(w) && is.finite(h)) {
-      cell$free_width <- min(max(w, 20), 10000)
-      cell$free_height <- min(max(h, 20), 10000)
+      cell$free_width <- max(w, 1)
+      cell$free_height <- max(h, 1)
       ans$changed <- TRUE
     }
   }

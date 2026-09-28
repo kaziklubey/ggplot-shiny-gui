@@ -144,10 +144,10 @@ figure_layer_inset_local_position <- function(rect, sp, ov) {
     z <- suppressWarnings(as.numeric(x %||% fallback)[1])
     if (!is.finite(z)) fallback else z
   }
-  x <- min(max(num(inset$x, 0.62), -2), 3)
-  y <- min(max(num(inset$y, 0.08), -2), 3)
-  w <- min(max(num(inset$width, 0.32), 0.05), 1.5)
-  h <- min(max(num(inset$height, 0.32), 0.05), 1.5)
+  x <- num(inset$x, 0.62)
+  y <- num(inset$y, 0.08)
+  w <- max(num(inset$width, 0.32), 0.01)
+  h <- max(num(inset$height, 0.32), 0.01)
   list(
     x = frame$x + frame$width * x,
     y = frame$y + frame$height * y,

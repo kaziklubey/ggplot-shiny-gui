@@ -1,4 +1,3 @@
-  shared_style_pending_group_title <- reactiveVal(NULL)
 # v3.73.0 — Shared Label / Style Library bindings inside graphServer.
 # This runtime owns only the interactive Graph-side binding UI and local
 # write-through adapter. The central Library and cross-Graph propagation live
@@ -11,6 +10,31 @@
     vals <- names(items)
     out <- stats::setNames(vals, labs)
     c("未接続" = "", out)
+  }
+
+  # Shared Style controls have a focused UI generation in addition to the
+  # ordinary Style generation. Returning from Figure can rebind hidden Shiny
+  # inputs; using a fresh id lets us rehydrate from the Graph-owned binding
+  # without rebuilding the rest of the Style editor.
+  shared_style_input_id <- function(prefix, variable_name, level_name = NULL) {
+    paste0(
+      style_input_id(prefix, variable_name, level_name),
+      "_ss", as.integer(shared_style_binding_ui_epoch() %||% 0L)
+    )
+  }
+
+  shared_style_diag_binding <- function(b) {
+    b <- shared_style_normalize_binding(b)
+    diag(
+      "SHARED-STYLE-BIND",
+      paste0(
+        "enabled=", isTRUE(b$enabled),
+        " level_links=", sum(vapply(b$levels, length, integer(1))),
+        " axis_links=", sum(nzchar(unlist(b$axis, use.names = FALSE))),
+        " legend_links=", length(b$legends)
+      )
+    )
+    invisible(TRUE)
   }
 
   shared_style_level_rows <- reactive({
@@ -29,6 +53,7 @@
 
   output$shared_style_binding_ui <- renderUI({
     style_restore_epoch()
+    shared_style_binding_ui_epoch()
     lib <- shared_style_normalize_library(shared_style_library())
     b <- shared_style_normalize_binding(isolate(shared_style_binding()))
     level_choices <- shared_style_choices("level")
@@ -44,21 +69,24 @@
     tagList(
       div(
         class = "shared-style-graph-binding",
-        checkboxInput("shared_style_enabled", "共通Graph Label / Style Libraryと連動", value = isTRUE(b$enabled)),
+        checkboxInput(
+          shared_style_input_id("shared_style_enabled", "binding"),
+          "共通スタイルを使用", value = isTRUE(b$enabled)
+        ),
         checkboxGroupInput(
-          "shared_style_attributes", "Libraryから管理する属性",
-          choices = c("表示名" = "display", "Color / Fill" = "color", "Shape" = "shape", "Line type" = "linetype"),
+          shared_style_input_id("shared_style_attributes", "binding"), "共通スタイルで揃える項目",
+          choices = c("表示名" = "display", "色" = "color", "形" = "shape", "線" = "linetype"),
           selected = attr_selected, inline = TRUE
         ),
         tags$p(
           class = "help-block",
           paste0(
-            "①連動をON → ②Libraryから管理する属性を選択 → ③下の各行で対応するLibrary項目を選択します。名前から自動判定しません。現在のbinding: ", linked_n,
-            "。Library連動中の属性をこのGraphで変更するとLibraryへ書き戻し、他の連動Graphへ反映します。"
+            "共通グループとこのGraphの項目を対応づけます。現在の対応: ", linked_n,
+            "。揃える項目をこのGraphで変更すると、同じ共通グループを使うGraphにも反映します。Figureは自動では変わりません。"
           )
         ),
         if (!length(lib$items)) {
-          tags$div(class = "alert alert-info shared-style-empty", "Shared Libraryはまだ空です。Figure > 共通Graph Label / Style で項目を作成してください。")
+          tags$div(class = "alert alert-info shared-style-empty", "共通スタイルはまだありません。Figure > Figure調整 > まとめて調整 > 共通スタイル管理 から作成してください。")
         } else tagList(
           if (length(rows)) tagList(
             tags$strong("群・条件"),
@@ -70,7 +98,7 @@
                   class = "shared-style-binding-row",
                   tags$span(class = "shared-style-binding-source", paste0(row$variable, " / ", row$level)),
                   selectInput(
-                    style_input_id("shared_bind_level", paste0(row$variable, "::", row$level)),
+                    shared_style_input_id("shared_bind_level", paste0(row$variable, "::", row$level)),
                     label = NULL, choices = level_choices, selected = current, width = "230px"
                   )
                 )
@@ -82,9 +110,9 @@
           div(
             class = "shared-style-binding-grid shared-style-binding-axis",
             div(class = "shared-style-binding-row", tags$span(class = "shared-style-binding-source", "X axis"),
-                selectInput(style_input_id("shared_bind_axis", "x"), NULL, choices = axis_choices, selected = b$axis$x %||% "", width = "230px")),
+                selectInput(shared_style_input_id("shared_bind_axis", "x"), NULL, choices = axis_choices, selected = b$axis$x %||% "", width = "230px")),
             div(class = "shared-style-binding-row", tags$span(class = "shared-style-binding-source", "Y axis"),
-                selectInput(style_input_id("shared_bind_axis", "y"), NULL, choices = axis_choices, selected = b$axis$y %||% "", width = "230px"))
+                selectInput(shared_style_input_id("shared_bind_axis", "y"), NULL, choices = axis_choices, selected = b$axis$y %||% "", width = "230px"))
           ),
           if (length(specs)) tagList(
             tags$hr(),
@@ -96,7 +124,7 @@
                 div(
                   class = "shared-style-binding-row",
                   tags$span(class = "shared-style-binding-source", paste0(sp$used_by, " / ", sp$default)),
-                  selectInput(style_input_id("shared_bind_legend", sp$key), NULL, choices = legend_choices, selected = current, width = "230px")
+                  selectInput(shared_style_input_id("shared_bind_legend", sp$key), NULL, choices = legend_choices, selected = current, width = "230px")
                 )
               })
             )
@@ -106,30 +134,57 @@
     )
   })
 
-  # Browser binding controls -> canonical per-Graph binding metadata.
+  # The linkage checkbox is user-intent owned. A hidden persistent Editor can
+  # be unbound/rebound while Figure is active; that browser lifecycle used to
+  # publish a synthetic FALSE and silently disable the Graph. Only the explicit
+  # trusted-user channel from app_client.js may change `enabled`.
+  observeEvent(input$shared_style_enabled_user_change, {
+    if (isTRUE(restoring_style_state()) || isTRUE(graph_state_replay_active())) return()
+    req <- input$shared_style_enabled_user_change
+    if (!is.list(req) || is.null(req$value)) return()
+    req_graph <- as.character(req$graphId %||% "")[[1]]
+    owner_now <- tryCatch(as.character(graph_browser_patch_override_snapshot()$graphId %||% "")[[1]], error = function(e) "")
+    if (nzchar(req_graph) && nzchar(owner_now) && !identical(req_graph, owner_now)) {
+      diag("SHARED-STYLE-BIND-SKIP", paste0("stale user event graph=", req_graph, " owner=", owner_now))
+      return()
+    }
+    old <- isolate(shared_style_binding())
+    b <- shared_style_normalize_binding(old)
+    b$enabled <- isTRUE(req$value)
+    b <- shared_style_normalize_binding(b)
+    if (!identical(old, b)) {
+      shared_style_binding(b)
+      shared_style_diag_binding(b)
+    }
+  }, ignoreInit = TRUE, priority = 130)
+
+  # Remaining Browser binding controls -> canonical per-Graph binding metadata.
+  # Do not read/write the linkage checkbox here: this observer can re-run for
+  # topology/UI reasons that are not user edits.
   observe({
     if (isTRUE(restoring_style_state())) return()
-    enabled <- input$shared_style_enabled
-    attrs <- input$shared_style_attributes
-    if (is.null(enabled) || is.null(attrs)) return()
+    style_restore_epoch()
+    shared_style_binding_ui_epoch()
+    attrs <- input[[shared_style_input_id("shared_style_attributes", "binding")]]
 
     old <- isolate(shared_style_binding())
     b <- shared_style_normalize_binding(old)
-    b$enabled <- isTRUE(enabled)
-    attrs <- as.character(attrs %||% character(0))
-    b$attributes <- list(
-      display = "display" %in% attrs,
-      color = "color" %in% attrs,
-      shape = "shape" %in% attrs,
-      linetype = "linetype" %in% attrs
-    )
+    if (!is.null(attrs)) {
+      attrs <- as.character(attrs %||% character(0))
+      b$attributes <- list(
+        display = "display" %in% attrs,
+        color = "color" %in% attrs,
+        shape = "shape" %in% attrs,
+        linetype = "linetype" %in% attrs
+      )
+    }
 
     rows <- shared_style_level_rows()
     active_keys <- character(0)
     for (row in rows) {
       key <- paste0(row$variable, "\r", row$level)
       active_keys <- c(active_keys, key)
-      val <- input[[style_input_id("shared_bind_level", paste0(row$variable, "::", row$level))]]
+      val <- input[[shared_style_input_id("shared_bind_level", paste0(row$variable, "::", row$level))]]
       if (is.null(val)) next
       val <- shared_style_safe_id(val)
       br <- b$levels[[row$variable]] %||% list()
@@ -138,13 +193,13 @@
     }
 
     for (axis_nm in c("x", "y")) {
-      val <- input[[style_input_id("shared_bind_axis", axis_nm)]]
+      val <- input[[shared_style_input_id("shared_bind_axis", axis_nm)]]
       if (!is.null(val)) b$axis[[axis_nm]] <- shared_style_safe_id(val)
     }
     specs <- active_legend_specs()
     active_legend_keys <- vapply(specs, function(sp) sp$key, character(1))
     for (sp in specs) {
-      val <- input[[style_input_id("shared_bind_legend", sp$key)]]
+      val <- input[[shared_style_input_id("shared_bind_legend", sp$key)]]
       if (is.null(val)) next
       val <- shared_style_safe_id(val)
       if (nzchar(val)) b$legends[[sp$key]] <- val else b$legends[[sp$key]] <- NULL
@@ -153,15 +208,7 @@
     b <- shared_style_normalize_binding(b)
     if (!identical(old, b)) {
       shared_style_binding(b)
-      diag(
-        "SHARED-STYLE-BIND",
-        paste0(
-          "enabled=", isTRUE(b$enabled),
-          " level_links=", sum(vapply(b$levels, length, integer(1))),
-          " axis_links=", sum(nzchar(unlist(b$axis, use.names = FALSE))),
-          " legend_links=", length(b$legends)
-        )
-      )
+      shared_style_diag_binding(b)
     }
   }, priority = 120)
 
@@ -228,14 +275,16 @@
         title_input <- if (graph_plot_value("type", input$plot_type %||% "line") %in% c("bar", "box")) "legend_fill_title" else "legend_colour_title"
         current_legend_title <- graph_appearance_value(title_input, input[[title_input]] %||% "")
         if (identical(legend_key, key) && !identical(current_legend_title, item$display)) {
-          shared_style_pending_group_title(item$display)
           updateTextInput(session, "legend_group_title", value = item$display)
           updateTextInput(session, title_input, value = item$display)
         }
       }
     }
 
-    if (!identical(ll, isolate(level_labels()))) level_labels(ll)
+    if (!identical(ll, isolate(level_labels()))) {
+      level_labels(ll)
+      shared_style_mark_ui_sync()
+    }
     if (!identical(cs, isolate(color_styles()))) color_styles(cs)
     if (!identical(ss, isolate(shape_styles()))) shape_styles(ss)
     if (!identical(ls, isolate(linetype_styles()))) linetype_styles(ls)
@@ -252,46 +301,53 @@
     shared_style_apply_local()
   }, priority = 80)
 
-  # Linked Graph edits write back to the central semantic item. The server-level
-  # callback performs an identical-state guard and propagates only affected
-  # canonical Graphs; no Graph-to-Graph direct messaging exists.
-  observe({
+  # Graph -> Library write-through is event-driven, not state-driven. The old
+  # implementation observed level_labels/color_styles/etc. directly, so a
+  # Library -> Graph application invalidated the writeback observer and could
+  # bounce the same semantic value back into the Library indefinitely. Only
+  # explicit user-edit sources increment shared_style_user_edit_epoch().
+  observeEvent(shared_style_user_edit_epoch(), {
     if (isTRUE(restoring_style_state())) return()
     b <- shared_style_normalize_binding(shared_style_binding())
     if (!isTRUE(b$enabled) || !is.function(on_shared_style_library_change)) return()
 
-    # Dependencies that can represent linked user edits. Browser-direct fixed
-    # controls are read through the accepted canonical/Figure working state;
-    # their Shiny mirrors intentionally stay stale.
-    level_labels(); color_styles(); shape_styles(); linetype_styles(); legend_titles()
+    reason <- as.character(isolate(shared_style_user_edit_reason()) %||% "graph-user-edit")[[1]]
     current_xlab <- graph_label_value("xlab", input$xlab %||% "")
     current_ylab <- graph_label_value("ylab", input$ylab %||% "")
     current_colour_title <- graph_appearance_value("legend_colour_title", input$legend_colour_title %||% "")
     current_fill_title <- graph_appearance_value("legend_fill_title", input$legend_fill_title %||% "")
     current_title <- if (graph_plot_value("type", input$plot_type %||% "line") %in% c("bar", "box")) current_fill_title else current_colour_title
-    pending_title <- shared_style_pending_group_title()
-    if (!is.null(pending_title)) {
-      if (!identical(current_title, pending_title)) return()
-      shared_style_pending_group_title(NULL)
+
+    # Axis controls are browser-owned and may be applied programmatically by the
+    # Library. They become write-through candidates only when this event itself
+    # came from an explicit axis edit. This keeps Library -> Graph directional.
+    b_write <- b
+    if (!reason %in% c("browser:xlab", "browser:ylab")) {
+      b_write$axis <- list(x = "", y = "")
+    } else if (identical(reason, "browser:xlab")) {
+      b_write$axis$y <- ""
+    } else if (identical(reason, "browser:ylab")) {
+      b_write$axis$x <- ""
     }
 
-    # Axis text controls are browser inputs. Immediately after a binding change,
-    # updateTextAreaInput() may still be in flight when this low-priority
-    # observer runs. Do not write those transient values back into the central
-    # Library. Axis bindings are Library -> Graph in this first release;
-    # level/legend/style values remain safe to write through because their
-    # reactiveVals are updated synchronously.
-    b_write <- b
-    b_write$axis <- list(x = "", y = "")
+    # Likewise, legend-title writeback is enabled only for the explicit browser
+    # title controls. Level/style edits should not reinterpret a programmatic
+    # legend title refresh as a Graph edit.
+    if (!reason %in% c("browser:legend_group_title", "browser:legend_colour_title", "browser:legend_fill_title")) {
+      b_write$legends <- list()
+    }
 
     partial_state <- list(
       mapping = list(
         color = graph_mapping_value("color", input$colorvar %||% ""),
         position = graph_mapping_value("position", input$groupvar %||% "")
       ),
+      plot = list(type = graph_plot_value("type", input$plot_type %||% "line")),
       labels = list(xlab = current_xlab, ylab = current_ylab),
       style = list(
         appearance = list(legend_group_title = current_title,
+                          legend_colour_title = current_colour_title,
+                          legend_fill_title = current_fill_title,
                           series_style_override = graph_appearance_value("series_style_override", input$series_style_override)),
         color_styles = isolate(color_styles()),
         shape_styles = isolate(shape_styles()),
@@ -304,6 +360,7 @@
     old_lib <- isolate(shared_style_library())
     new_lib <- shared_style_update_library_from_graph_state(old_lib, partial_state)
     if (!identical(shared_style_normalize_library(old_lib), new_lib)) {
+      diag("SHARED-STYLE-WRITEBACK", paste0("trigger=", reason))
       on_shared_style_library_change(new_lib)
     }
-  }, priority = -90)
+  }, ignoreInit = TRUE, priority = -90)

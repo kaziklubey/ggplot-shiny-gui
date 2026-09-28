@@ -27,6 +27,12 @@ graph_style_migrate_v6 <- function(style) {
   ap <- st$appearance %||% list()
   if (!is.list(ap)) ap <- list()
 
+  # Summary method/unit belong exclusively to GraphState$plot. Older Style
+  # schemas mirrored them in appearance; strip those duplicates at migration
+  # so replay, browser hydration and RenderState cannot acquire two owners.
+  ap$summary_type <- NULL
+  ap$summary_unit <- NULL
+
   ap$base_size <- graph_style_canonical_base_size(ap$base_size, 13)
 
   wrap_mode <- graph_style_migration_scalar_chr(ap$legend_wrap_mode, "auto")
@@ -35,15 +41,15 @@ graph_style_migrate_v6 <- function(style) {
 
   wrap_count <- suppressWarnings(as.integer(graph_state_scalar(ap$legend_wrap_count, 2L)))
   if (!length(wrap_count) || !is.finite(wrap_count[[1]])) wrap_count <- 2L
-  ap$legend_wrap_count <- max(1L, min(12L, as.integer(wrap_count[[1]])))
+  ap$legend_wrap_count <- max(1L, as.integer(wrap_count[[1]]))
 
   item_spacing <- suppressWarnings(as.numeric(graph_state_scalar(ap$legend_item_spacing, -1)))
   if (!length(item_spacing) || !is.finite(item_spacing[[1]])) item_spacing <- -1
-  ap$legend_item_spacing <- max(-1, min(2, as.numeric(item_spacing[[1]])))
+  ap$legend_item_spacing <- max(-1, as.numeric(item_spacing[[1]]))
 
   text_size <- suppressWarnings(as.numeric(graph_state_scalar(ap$legend_text_size, 0)))
   if (!length(text_size) || !is.finite(text_size[[1]])) text_size <- 0
-  ap$legend_text_size <- max(0, min(48, as.numeric(text_size[[1]])))
+  ap$legend_text_size <- max(0, as.numeric(text_size[[1]]))
 
   jitter_enabled <- isTRUE(graph_state_scalar(ap$scatter_jitter_enabled, FALSE))
   jitter_x <- suppressWarnings(as.numeric(graph_state_scalar(ap$scatter_jitter_x, 0.10)))

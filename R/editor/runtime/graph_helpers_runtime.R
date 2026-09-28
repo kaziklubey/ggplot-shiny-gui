@@ -77,6 +77,35 @@
   # authority. Binding is explicit; no name-based auto matching is performed.
   shared_style_binding <- reactiveVal(shared_style_default_binding())
 
+  # Shared Style synchronization is directional. Library -> Graph updates local
+  # render state directly; Graph -> Library writeback is triggered only by an
+  # explicit user edit signal. This prevents programmatic Library application,
+  # replay and UI hydration from being reinterpreted as a Graph edit.
+  shared_style_user_edit_epoch <- reactiveVal(0L)
+  shared_style_user_edit_reason <- reactiveVal("")
+  shared_style_ui_epoch <- reactiveVal(0L)
+  # Shared Style binding controls can be temporarily unbound/rebound when the
+  # workspace switches to Figure and back. Keep their UI generation separate
+  # from the broader Style generation so a focused canonical rehydrate does not
+  # rebuild unrelated colour/shape/linetype controls.
+  shared_style_binding_ui_epoch <- reactiveVal(0L)
+  # Dynamic legend-item text inputs show the ordinary condition display name
+  # as a placeholder when no legend-only override exists.  When Shared Style
+  # changes that ordinary display name, the old DOM value can remain visible
+  # for one reactive turn.  Remember which Shared-Style sync epoch the legend
+  # observer has consumed so that transient value is never materialised as an
+  # explicit legend-only override.
+  legend_item_shared_sync_seen <- reactiveVal(0L)
+  shared_style_mark_user_edit <- function(reason = "graph-user-edit") {
+    shared_style_user_edit_reason(as.character(reason %||% "graph-user-edit")[[1]])
+    shared_style_user_edit_epoch(as.integer(isolate(shared_style_user_edit_epoch()) %||% 0L) + 1L)
+    invisible(TRUE)
+  }
+  shared_style_mark_ui_sync <- function() {
+    shared_style_ui_epoch(as.integer(isolate(shared_style_ui_epoch()) %||% 0L) + 1L)
+    invisible(TRUE)
+  }
+
   legend_title_value <- function(key, default_title) {
     st <- legend_titles()
     z <- st[[key]]

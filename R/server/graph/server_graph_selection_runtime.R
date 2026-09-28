@@ -99,6 +99,14 @@
     }
 
     if (identical(owner, id) && graph_single_ready(id)) {
+      # Figure is a view lifecycle, not a Graph replay. The hidden persistent
+      # Editor can still have its dynamic Shared Style checkbox rebound by the
+      # browser while Figure is active. Rehydrate only that focused UI from the
+      # existing Graph-owned state before showing the Editor again.
+      mod <- graph_single_mod()
+      if (!is.null(mod) && is.function(mod$refresh_shared_style_binding_ui)) {
+        try(mod$refresh_shared_style_binding_ui("workspace-resume"), silent = TRUE)
+      }
       show_graph_single_editor(id)
       return(invisible(TRUE))
     }

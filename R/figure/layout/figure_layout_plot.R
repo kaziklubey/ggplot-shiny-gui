@@ -15,7 +15,7 @@ figure_override_for <- function(id, overrides = list()) {
   ov$panel_label <- scalar_chr(ov$panel_label, "")
   ov$label_size <- scalar_num(ov$label_size, 18)
   ov$top_gutter <- scalar_num(ov$top_gutter, 48)
-  ov$top_gutter <- min(max(ov$top_gutter, 0), 240)
+  ov$top_gutter <- max(ov$top_gutter, 0)
   ov$label_mode <- scalar_chr(ov$label_mode, "align")
   if (!ov$label_mode %in% c("align", "free")) ov$label_mode <- "align"
   ov$label_anchor <- scalar_chr(ov$label_anchor, "panel")
@@ -46,10 +46,8 @@ figure_override_for <- function(id, overrides = list()) {
   ov$legend_free_x <- scalar_num(ov$legend_free_x, ov$legend_x)
   ov$legend_free_y <- scalar_num(ov$legend_free_y, ov$legend_y)
   # Detached free legends use owner-Graph-relative coordinates and may live
-  # outside both the Graph and its Row/Panel slot. Keep a generous finite range
-  # without forcing them back into [0,1].
-  ov$legend_free_x <- min(max(ov$legend_free_x, -2), 3)
-  ov$legend_free_y <- min(max(ov$legend_free_y, -2), 3)
+  # outside both the Graph and its Row/Panel slot. Manual coordinates are kept
+  # as entered; only non-finite values are normalized by scalar_num().
   # Legacy detached placement cannot be mapped exactly without its old runtime
   # frame, so seed it from the stable source position once after load. New F1-4g
   # state carries `legend_free_anchor = "graph"` and preserves manual X/Y.
@@ -94,10 +92,8 @@ figure_override_for <- function(id, overrides = list()) {
   for (nm in c("x", "y", "width", "height")) {
     inset[[nm]] <- scalar_num(inset[[nm]], c(x=.62,y=.08,width=.32,height=.32)[[nm]])
   }
-  inset$x <- min(max(inset$x, -2), 3)
-  inset$y <- min(max(inset$y, -2), 3)
-  inset$width <- min(max(inset$width, 0.05), 1.5)
-  inset$height <- min(max(inset$height, 0.05), 1.5)
+  inset$width <- max(inset$width, 0.01)
+  inset$height <- max(inset$height, 0.01)
   inset$border <- isTRUE(inset$border)
   inset$border_width <- min(max(scalar_num(inset$border_width, 1), 0), 20)
   # Layer ordering is structural, not a per-Inset style knob.
@@ -125,12 +121,12 @@ figure_override_for <- function(id, overrides = list()) {
   for (nm in c("base_size", "axis_title_size", "axis_text_size", "alpha", "point_size", "line_width", "ymin", "ymax")) {
     app[[nm]] <- scalar_num(app[[nm]], NA_real_)
   }
-  if (is.finite(app$base_size)) app$base_size <- min(max(app$base_size, 5), 96)
-  if (is.finite(app$axis_title_size)) app$axis_title_size <- min(max(app$axis_title_size, 5), 96)
-  if (is.finite(app$axis_text_size)) app$axis_text_size <- min(max(app$axis_text_size, 4), 72)
+  if (is.finite(app$base_size)) app$base_size <- max(app$base_size, 1)
+  if (is.finite(app$axis_title_size)) app$axis_title_size <- max(app$axis_title_size, 1)
+  if (is.finite(app$axis_text_size)) app$axis_text_size <- max(app$axis_text_size, 1)
   if (is.finite(app$alpha)) app$alpha <- min(max(app$alpha, 0), 1)
-  if (is.finite(app$point_size)) app$point_size <- min(max(app$point_size, 0), 30)
-  if (is.finite(app$line_width)) app$line_width <- min(max(app$line_width, 0), 12)
+  if (is.finite(app$point_size)) app$point_size <- max(app$point_size, 0)
+  if (is.finite(app$line_width)) app$line_width <- max(app$line_width, 0)
   ov$appearance <- app
 
   exleg_raw <- ov$external_legend %||% list()
@@ -143,9 +139,8 @@ figure_override_for <- function(id, overrides = list()) {
   for (nm in c("x","y","width","height","gap","scale")) {
     exleg[[nm]] <- scalar_num(exleg[[nm]], figure_default_external_legend()[[nm]])
   }
-  exleg$x <- min(max(exleg$x, -0.2), 1.2); exleg$y <- min(max(exleg$y, -0.2), 1.2)
-  exleg$width <- min(max(exleg$width, 0.03), 1.5); exleg$height <- min(max(exleg$height, 0.03), 1.5)
-  exleg$gap <- min(max(exleg$gap, 0), 200); exleg$scale <- min(max(exleg$scale, 0.1), 5)
+  exleg$width <- max(exleg$width, 0.01); exleg$height <- max(exleg$height, 0.01)
+  exleg$gap <- max(exleg$gap, 0); exleg$scale <- max(exleg$scale, 0.1)
   ov$external_legend <- exleg
   ov
 }
@@ -273,7 +268,7 @@ figure_label_band <- function(ov) {
   if (!length(lbl) || is.na(lbl[[1]]) || !nzchar(lbl[[1]])) return(0)
   g <- suppressWarnings(as.numeric(ov$top_gutter)[1])
   if (!length(g) || !is.finite(g)) g <- 48
-  g <- min(max(g, 0), 240)
+  g <- max(g, 0)
   # A positive gutter is treated as a minimum; keep enough room for the
   # current label font automatically. Setting gutter=0 explicitly enables
   # intentional overlay placement with no reserved top band.
@@ -282,7 +277,7 @@ figure_label_band <- function(ov) {
     if (!length(fs) || !is.finite(fs)) fs <- 18
     g <- max(g, fs + 12)
   }
-  min(g, 240)
+  g
 }
 
 figure_plot_for_scale <- function(p_raw, ov, ex, scale = 1) {

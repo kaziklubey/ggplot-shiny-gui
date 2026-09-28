@@ -551,6 +551,7 @@
       type = "plot_type", summary = "summary_type", summary_unit = "summary_unit",
       external_error_mode = "external_error_mode", show_raw = "show_raw",
       connect_id = "connect_id", scatter_connect_mode = "scatter_connect_mode",
+      individual_connect_direction = "individual_connect_direction",
       line_breaks = "line_breaks", ""
     )
     if (!nzchar(input_key)) return(fallback)
@@ -724,6 +725,7 @@
   output$legend_item_labels_ui <- renderUI({
     style_restore_epoch()
     level_labels()
+    shared_style_ui_epoch()
     d <- tryCatch(dat(), error = function(e) NULL)
     if (is.null(d)) return(NULL)
     specs <- active_legend_specs()
@@ -742,7 +744,8 @@
           lv <- info$levels[i]
           def <- info$defaults[i]
           current <- branch[[lv]]
-          if (is.null(current) || !length(current) || !nzchar(trimws(as.character(current)[1]))) current <- def
+          explicit_value <- if (is.null(current) || !length(current) ||
+                                !nzchar(trimws(as.character(current)[1]))) "" else as.character(current)[1]
           fluidRow(
             column(5, tags$div(style = "padding-top:7px;", def)),
             column(
@@ -750,7 +753,7 @@
               textInput(
                 style_input_id("legend_item_label", spec$key, lv),
                 label = NULL,
-                value = as.character(current)[1],
+                value = explicit_value,
                 placeholder = def
               )
             )
@@ -765,6 +768,17 @@
   observe({
     if (isTRUE(graph_state_replay_active())) return()
     if (isTRUE(restoring_style_state())) return()
+
+    # Shared Style applies level_labels() before renderUI can replace these
+    # dynamic text inputs.  Without this one-epoch guard, an old DOM default
+    # such as "Pre" can be read against the new default "Pre Common" and be
+    # incorrectly stored as an explicit legend-only override.
+    sync_epoch <- as.integer(shared_style_ui_epoch() %||% 0L)
+    seen_epoch <- as.integer(isolate(legend_item_shared_sync_seen()) %||% 0L)
+    if (!identical(sync_epoch, seen_epoch)) {
+      legend_item_shared_sync_seen(sync_epoch)
+      return()
+    }
 
     d <- tryCatch(dat(), error = function(e) NULL)
     if (is.null(d)) return()
@@ -805,6 +819,7 @@
 
   output$display_labels_ui <- renderUI({
     style_restore_epoch()
+    shared_style_ui_epoch()
 
     d <- tryCatch(dat(), error = function(e) NULL)
     if (is.null(d)) return(NULL)
@@ -895,7 +910,10 @@
       ls[[v]] <- branch
     }
 
-    if (changed_label) level_labels(ls)
+    if (changed_label) {
+      level_labels(ls)
+      shared_style_mark_user_edit("level-label")
+    }
   })
 
   group_levels <- reactive({

@@ -20,6 +20,19 @@
     has_linetype <- nzchar(lvar)
     has_shape <- nzchar(svar)
     has_id <- nzchar(id)
+    individual_connect_direction <- as.character(
+      input$individual_connect_direction %||% "auto"
+    )[1]
+    individual_requested_connection_var <- function(position_var = g) {
+      graph_individual_connection_requested_var(
+        individual_connect_direction,
+        xvar = x,
+        positionvar = position_var,
+        colorvar = cvar,
+        linetypevar = lvar,
+        shapevar = svar
+      )
+    }
 
     # Dynamic ggplot mapping helper. aes_string() is wrapped here so arbitrary
     # column names can be passed through .data[[...]] expressions.
@@ -59,6 +72,13 @@
         )
       }
       z
+    }
+
+    apply_individual_connection_plan <- function(z, plan, group_col = ".id_group__") {
+      if (!is.list(plan)) return(add_interaction_key(z, id, group_col))
+      z$.individual_repeat_track__ <- graph_individual_repeat_track(z, plan)
+      grouping <- unique(c(plan$group_vars %||% character(0), ".individual_repeat_track__"))
+      add_interaction_key(z, grouping, group_col)
     }
 
     # Bar/Box: stable observed tracks shared across X.
@@ -380,13 +400,13 @@
     # from rows. Instead, draw one fixed-colour layer per Color level.
     #
     # Individual connection grouping is handled separately with
-    # .id_group__, which combines ID with the currently mapped overlay
-    # conditions (Series/Color/Linetype/Shape). This prevents Route a and
-    # Route b of the same rat from being connected into one zig-zag line.
+    # .id_group__. A shared semantic plan chooses the repeated-measure
+    # direction and retains only true parallel within-ID factors as series
+    # boundaries; visual mappings alone no longer split trajectories.
     # ----------------------------------------------------------
     add_id_line_layers <- function(
       p0, z, xcol, ycol, groupcol = ".id_group__",
-      map_linetype = FALSE
+      split_color = TRUE, map_linetype = FALSE
     ) {
       if (!nrow(z)) return(p0)
 
@@ -420,7 +440,7 @@
         p1 + do.call(geom_line, args)
       }
 
-      if (!has_color || is.null(id_cols)) {
+      if (!has_color || is.null(id_cols) || !isTRUE(split_color)) {
         return(add_one(p0, z, id_fixed_color))
       }
 
@@ -507,7 +527,7 @@
       base_x_positions <- seq_along(xl)
       line_x_spacing <- suppressWarnings(as.numeric(input$line_x_spacing))
       if (!is.finite(line_x_spacing)) line_x_spacing <- 1.00
-      line_x_spacing <- max(0, min(1.00, line_x_spacing))
+      line_x_spacing <- max(0, line_x_spacing)
 
       if (length(base_x_positions) <= 1L) {
         x_positions <- base_x_positions
@@ -523,7 +543,7 @@
         n_group <- max(length(gl), 1)
         dodge_total <- suppressWarnings(as.numeric(input$line_group_dodge))
         if (!is.finite(dodge_total)) dodge_total <- 0.10
-        dodge_total <- max(0, min(0.40, dodge_total))
+        dodge_total <- max(0, dodge_total)
 
         if (length(gl) == 0L) {
           gl <- unique(as.character(d[[g]]))
@@ -590,13 +610,38 @@
         d, x, line_series_candidates, facet,
         mode = line_series_mode, explicit_var = line_series_var
       )
-      overlay_vars_d <- line_series_vars
-      if (has_id && use_value) overlay_vars_d <- unique(c(id, overlay_vars_d))
-      d <- add_interaction_key(d, overlay_vars_d, ".line_group__")
-      d <- graph_line_break_apply_group(
-        d, x, xl, line_breaks_now,
-        group_col = ".line_group__", output_col = ".line_group__"
+
+      # The primary line in direct-value mode is itself the individual
+      # trajectory, so it must use the same ID connection semantics as the
+      # individual overlay used by summarized Line plots.
+      line_forced_series <- switch(
+        as.character(line_series_mode %||% "auto")[1],
+        mapped = graph_individual_connection_clean_vars(d, line_series_candidates),
+        column = graph_individual_connection_clean_vars(d, line_series_var),
+        character(0)
       )
+      line_id_plan <- if (has_id) graph_individual_connection_plan(
+        d,
+        idvar = id,
+        facetvar = facet,
+        candidates = c(x, g, cvar, lvar, svar),
+        priority = c(x, g, cvar, lvar, svar),
+        forced_series_vars = line_forced_series,
+        requested_connection_var = individual_requested_connection_var(g)
+      ) else NULL
+
+      if (has_id && use_value) {
+        d <- apply_individual_connection_plan(d, line_id_plan, ".line_group__")
+      } else {
+        d <- add_interaction_key(d, line_series_vars, ".line_group__")
+      }
+      if (!has_id || !use_value ||
+          (isTRUE(line_id_plan$active) && identical(line_id_plan$connection_var, x))) {
+        d <- graph_line_break_apply_group(
+          d, x, xl, line_breaks_now,
+          group_col = ".line_group__", output_col = ".line_group__"
+        )
+      }
 
       add_summary_line <- function(p0, z, xcol, ycol) {
         boundary_cols <- if (nzchar(facet) && facet %in% names(z)) facet else character(0)
@@ -652,15 +697,24 @@
         p0 + do.call(geom_line, line_args)
       }
 
-      # Individual connection lines must never bridge different routes /
-      # conditions of the same ID. Example:
-      # ID5 × Route a and ID5 × Route b are two independent trajectories.
-      if (has_id) {
-        id_overlay_vars <- unique(c(id, line_series_vars))
-        d <- add_interaction_key(d, id_overlay_vars, ".id_group__")
-        d <- graph_line_break_apply_group(
-          d, x, xl, line_breaks_now,
-          group_col = ".id_group__", output_col = ".id_group__"
+      # Summarized Line plots draw individual trajectories as an overlay.
+      # Direct-value Line plots already used the same plan for .line_group__
+      # above, so no second connector layer is needed there.
+      line_id_color_split <- FALSE
+      line_id_linetype_map <- FALSE
+      if (has_id && !use_value) {
+        d <- apply_individual_connection_plan(d, line_id_plan, ".id_group__")
+        if (isTRUE(line_id_plan$active) && identical(line_id_plan$connection_var, x)) {
+          d <- graph_line_break_apply_group(
+            d, x, xl, line_breaks_now,
+            group_col = ".id_group__", output_col = ".id_group__"
+          )
+        }
+        line_id_color_split <- has_color && graph_individual_group_var_is_constant(
+          d, ".id_group__", color_map_var
+        )
+        line_id_linetype_map <- effective_has_linetype && graph_individual_group_var_is_constant(
+          d, ".id_group__", linetype_map_var
         )
       }
 
@@ -807,13 +861,17 @@
 
         add_individual_layers <- function(p0) {
           if (isTRUE(input$connect_id) && has_id) {
-            p0 <- add_id_line_layers(
-              p0,
-              d,
-              xcol = ".x_raw",
-              ycol = y,
-              groupcol = ".id_group__"
-            )
+            if (isTRUE(line_id_plan$active)) {
+              p0 <- add_id_line_layers(
+                p0,
+                d,
+                xcol = ".x_raw",
+                ycol = y,
+                groupcol = ".id_group__",
+                split_color = line_id_color_split,
+                map_linetype = line_id_linetype_map
+              )
+            }
           }
 
           if (isTRUE(input$show_raw)) {
@@ -931,27 +989,26 @@
       )
       d$.x_raw <- d$.x_group__ + d$.spread__ * slot_width
 
+      # Bar horizontal-position variables are safe automatic parallel-series
+      # boundaries. Users can explicitly choose the horizontal-position role as
+      # the connection direction; that manual request overrides the boundary and
+      # the remaining repeated-measure variables become parallel trajectories.
+      bar_position_boundary <- if (has_group) g else ""
+      bar_id_plan <- if (has_id) graph_individual_connection_plan(
+        d,
+        idvar = id,
+        facetvar = facet,
+        candidates = c(x, cvar, bar_position_boundary, lvar, svar),
+        priority = c(x, cvar, lvar, svar),
+        forced_series_vars = bar_position_boundary,
+        requested_connection_var = individual_requested_connection_var(bar_position_boundary)
+      ) else NULL
+      bar_id_color_split <- FALSE
       if (has_id) {
-        # Barの個体線:
-        # ID × Color × 追加横並び要因を基本系列とする。
-        # その系列内で同じXに複数点が残る場合は、行順に反復track番号を付け、
-        # 同一block内の点同士を縦につながない。
-        bar_id_vars <- unique(c(
-          id,
-          color_map_var,
-          if (has_group) g else "",
-          if (nzchar(facet)) facet else ""
-        ))
-        bar_id_vars <- bar_id_vars[nzchar(bar_id_vars)]
-
-        repeat_group_vars <- unique(c(bar_id_vars, x))
-        d <- d %>%
-          group_by(across(all_of(repeat_group_vars))) %>%
-          mutate(.bar_repeat_track__ = row_number()) %>%
-          ungroup()
-
-        bar_line_vars <- unique(c(bar_id_vars, ".bar_repeat_track__"))
-        d <- add_interaction_key(d, bar_line_vars, ".id_group__")
+        d <- apply_individual_connection_plan(d, bar_id_plan, ".id_group__")
+        bar_id_color_split <- has_color && graph_individual_group_var_is_constant(
+          d, ".id_group__", color_map_var
+        )
       }
 
       border_matches_fill <- identical(input$bar_border_mode %||% "fixed", "fill")
@@ -989,8 +1046,11 @@
         p <- p + do.call(geom_errorbar, err_args)
       }
 
-      if (isTRUE(input$connect_id) && has_id) {
-        p <- add_id_line_layers(p,d,xcol=".x_raw",ycol=y,groupcol=".id_group__")
+      if (isTRUE(input$connect_id) && has_id && isTRUE(bar_id_plan$active)) {
+        p <- add_id_line_layers(
+          p, d, xcol = ".x_raw", ycol = y, groupcol = ".id_group__",
+          split_color = bar_id_color_split
+        )
       }
       if (isTRUE(input$show_raw)) {
         raw_shape_var <- if (identical(input$raw_shape_mode,"group") && effective_has_shape) shape_map_var else ""
@@ -1082,12 +1142,28 @@
       scatter_connect_mode <- input$scatter_connect_mode %||% "none"
 
       if (identical(scatter_connect_mode, "id") && has_id) {
-        scatter_id_vars <- unique(c(id, color_map_var, linetype_map_var, shape_map_var))
-        d <- add_interaction_key(d, scatter_id_vars, ".id_group__")
-        p <- add_id_line_layers(
-          p, d, xcol=x, ycol=y, groupcol=".id_group__",
-          map_linetype = TRUE
+        scatter_id_plan <- graph_individual_connection_plan(
+          d,
+          idvar = id,
+          facetvar = facet,
+          candidates = c(x, cvar, lvar, svar),
+          priority = c(x, cvar, lvar, svar),
+          requested_connection_var = individual_requested_connection_var("")
         )
+        d <- apply_individual_connection_plan(d, scatter_id_plan, ".id_group__")
+        scatter_id_color_split <- has_color && graph_individual_group_var_is_constant(
+          d, ".id_group__", color_map_var
+        )
+        scatter_id_linetype_map <- effective_has_linetype && graph_individual_group_var_is_constant(
+          d, ".id_group__", linetype_map_var
+        )
+        if (isTRUE(scatter_id_plan$active)) {
+          p <- add_id_line_layers(
+            p, d, xcol = x, ycol = y, groupcol = ".id_group__",
+            split_color = scatter_id_color_split,
+            map_linetype = scatter_id_linetype_map
+          )
+        }
       }
 
       if (identical(scatter_connect_mode, "row")) {
@@ -1229,7 +1305,7 @@
       # 各X×Facet内のslot幅に対する割合として決める。
       box_width_scale <- suppressWarnings(as.numeric(input$box_width_scale %||% 0.72))
       if (!is.finite(box_width_scale)) box_width_scale <- 0.72
-      box_width_scale <- max(0, min(3.00, box_width_scale))
+      box_width_scale <- max(0, box_width_scale)
       d$.box_width__ <- d$.slot_width__ * box_width_scale
 
       # x is now an explicit numeric position, so geom_boxplot must be
@@ -1383,27 +1459,31 @@
     }
 
     if (isTRUE(uses_mapped_linetype) &&
-        effective_has_linetype && length(linetype_levels)) {
+        effective_has_linetype && nzchar(linetype_map_var) &&
+        linetype_map_var %in% names(d) && length(linetype_levels)) {
       lt_values_now <- linetype_values
       lt_levels_now <- linetype_levels
       lt_labels_now <- linetype_display_labels
 
-      if (nzchar(linetype_map_var) && linetype_map_var %in% names(d)) {
-        mapped_lt <- unique(as.character(d[[linetype_map_var]]))
-        mapped_lt <- mapped_lt[!is.na(mapped_lt)]
-        keep_lt <- intersect(names(lt_values_now), mapped_lt)
+      # During replay/Shared-Style refresh the selector can briefly describe a
+      # linetype variable whose concrete levels have not settled yet.  A manual
+      # scale with no overlap is meaningless and ggplot2 warns about it.  Gate
+      # the scale strictly to values that are present in the actual mapped
+      # column for this render.
+      mapped_lt <- unique(as.character(d[[linetype_map_var]]))
+      mapped_lt <- mapped_lt[!is.na(mapped_lt) & nzchar(mapped_lt)]
+      keep_lt <- intersect(names(lt_values_now), mapped_lt)
 
-        if (length(keep_lt)) {
-          lt_values_now <- lt_values_now[keep_lt]
-          idx_lt <- match(keep_lt, lt_levels_now)
-          idx_lt <- idx_lt[!is.na(idx_lt)]
-          lt_levels_now <- lt_levels_now[idx_lt]
-          lt_labels_now <- lt_labels_now[idx_lt]
-        } else {
-          lt_values_now <- character(0)
-          lt_levels_now <- character(0)
-          lt_labels_now <- character(0)
-        }
+      if (length(keep_lt)) {
+        lt_values_now <- lt_values_now[keep_lt]
+        idx_lt <- match(keep_lt, lt_levels_now)
+        idx_lt <- idx_lt[!is.na(idx_lt)]
+        lt_levels_now <- lt_levels_now[idx_lt]
+        lt_labels_now <- lt_labels_now[idx_lt]
+      } else {
+        lt_values_now <- character(0)
+        lt_levels_now <- character(0)
+        lt_labels_now <- character(0)
       }
 
       if (length(lt_values_now) && length(lt_levels_now)) {
@@ -1554,7 +1634,7 @@
       # duplicated/compressed panels and overlapping tick labels.
       gap_space <- suppressWarnings(as.numeric(input$y_break_space))
       if (!is.finite(gap_space)) gap_space <- 0.08
-      gap_space <- max(0.02, min(0.30, gap_space))
+      gap_space <- max(0.001, gap_space)
 
       p <- p +
         scale_y_continuous(

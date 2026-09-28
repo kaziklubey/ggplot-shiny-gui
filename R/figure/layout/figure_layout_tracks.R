@@ -18,7 +18,7 @@ figure_shared_column_ratios <- function(layout) {
   if (length(saved)) {
     take <- seq_len(min(length(saved), max_col))
     ok <- is.finite(saved[take]) & saved[take] > 0
-    out[take[ok]] <- pmin(pmax(saved[take[ok]], 0.1), 10)
+    out[take[ok]] <- pmax(saved[take[ok]], 0.1)
   }
 
   # Migration fallback for legacy layouts that only stored widths per cell.
@@ -46,7 +46,7 @@ figure_set_shared_column_ratios <- function(layout, ratios) {
   if (length(incoming)) {
     take <- seq_len(min(length(incoming), max_col))
     ok <- is.finite(incoming[take]) & incoming[take] > 0
-    out[take[ok]] <- pmin(pmax(incoming[take[ok]], 0.1), 10)
+    out[take[ok]] <- pmax(incoming[take[ok]], 0.1)
   }
   attr(layout, "column_ratios") <- out
   for (rr in seq_along(layout)) {
@@ -63,7 +63,7 @@ figure_set_shared_column_ratio <- function(layout, col, value) {
   if (!is.finite(cc) || cc < 1L || !is.finite(x) || x <= 0) return(layout)
   ratios <- figure_shared_column_ratios(layout)
   if (cc > length(ratios)) return(layout)
-  x <- min(max(x, 0.1), 10)
+  x <- max(x, 0.1)
   if (isTRUE(all.equal(ratios[[cc]], x))) return(layout)
   ratios[[cc]] <- x
   figure_set_shared_column_ratios(layout, ratios)
@@ -123,14 +123,14 @@ figure_shared_track_rects <- function(layout, canvas_w, canvas_h, gap_x = 12, ga
         source_type = as.character(cell$source_type %||% "internal_graph"),
         source_id = as.character(cell$source_id %||% cell$id %||% ""),
         panel_label = as.character(cell$panel_label %||% ""),
-        label_size = figure_num_or(cell$label_size, 18, 6, 72),
-        top_gutter = figure_num_or(cell$top_gutter, 48, 0, 240),
+        label_size = figure_num_or(cell$label_size, 18, 1, Inf),
+        top_gutter = figure_num_or(cell$top_gutter, 48, 0, Inf),
         label_mode = as.character(cell$label_mode %||% "align")[1],
         label_anchor = as.character(cell$label_anchor %||% "panel")[1],
-        label_x_offset = figure_num_or(cell$label_x_offset, 0, -300, 300),
-        label_y_offset = figure_num_or(cell$label_y_offset, 0, -300, 300),
-        label_x = figure_num_or(cell$label_x, 0.06, -0.2, 1.2),
-        label_y = figure_num_or(cell$label_y, 0.02, -0.2, 1.2),
+        label_x_offset = figure_num_or(cell$label_x_offset, 0),
+        label_y_offset = figure_num_or(cell$label_y_offset, 0),
+        label_x = figure_num_or(cell$label_x, 0.06),
+        label_y = figure_num_or(cell$label_y, 0.02),
         graph_width = suppressWarnings(as.numeric(cell$graph_width %||% NA_real_)[1]),
         graph_height = suppressWarnings(as.numeric(cell$graph_height %||% NA_real_)[1]),
         track_column_ratio = plan$column_ratios[cc],

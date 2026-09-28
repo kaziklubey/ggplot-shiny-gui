@@ -19,7 +19,9 @@
     plot_type = "plot.type", summary_type = "plot.summary",
     summary_unit = "plot.summary_unit", external_error_mode = "plot.external_error_mode",
     show_raw = "plot.show_raw", connect_id = "plot.connect_id",
-    scatter_connect_mode = "plot.scatter_connect_mode", line_breaks = "plot.line_breaks",
+    scatter_connect_mode = "plot.scatter_connect_mode",
+    individual_connect_direction = "plot.individual_connect_direction",
+    line_breaks = "plot.line_breaks",
     xlab = "labels.xlab", ylab = "labels.ylab", title = "labels.title",
     ymin = "labels.ymin", ymax = "labels.ymax", y_top_to_tick = "labels.y_top_to_tick"
   )
@@ -109,6 +111,31 @@
     list(ok = TRUE, value = normalized$value)
   }
 
+  graph_browser_patch_value_equal <- function(a, b) {
+    identical(a, b) || isTRUE(app_state_semantically_equal(a, b))
+  }
+
+  # A render revision can advance between two ordinary browser edits because a
+  # previously accepted Mapping change may publish derived style metadata. A
+  # stale revision alone is therefore not a write conflict. Rebase only when
+  # the canonical value at this exact path still equals the value the browser
+  # saw before the edit (or the desired value is already canonical).
+  graph_browser_patch_path_rebase <- function(key, path, base_value, desired_value, state) {
+    current <- graph_settings_manager_get_result(state, path)
+    if (!is.list(current) || !isTRUE(current$found)) {
+      return(list(ok = FALSE, reason = "path-missing"))
+    }
+    base <- graph_browser_patch_normalize(key, path, base_value, state)
+    if (!isTRUE(base$ok)) return(list(ok = FALSE, reason = "base-invalid"))
+    if (graph_browser_patch_value_equal(current$value, desired_value)) {
+      return(list(ok = TRUE, already_current = TRUE))
+    }
+    if (graph_browser_patch_value_equal(current$value, base$value)) {
+      return(list(ok = TRUE, already_current = FALSE))
+    }
+    list(ok = FALSE, reason = "path-changed")
+  }
+
   graph_browser_patch_result <- function(id, seq, accepted, path = "", key = "",
                                          revision = NULL, value = NULL,
                                          reason = "", canonical_values = NULL) {
@@ -131,6 +158,7 @@
     path <- as.character(req$path %||% "")[1]
     seq <- suppressWarnings(as.integer(req$seq %||% 0L)[1])
     base_revision <- suppressWarnings(as.integer(req$baseRevision %||% -1L)[1])
+    has_base_value <- isTRUE(req$hasBaseValue)
     canonical <- if (nzchar(id) && cache_has(id)) cache_get(id) else NULL
     allowed_paths <- if (is.list(canonical)) graph_browser_patch_paths_for_state(canonical) else character(0)
     expected_path <- if (key %in% names(allowed_paths)) unname(allowed_paths[[key]]) else ""
@@ -150,13 +178,36 @@
     if (!is.finite(seq) || seq <= 0L) return(reject("invalid-seq"))
     last_seq <- suppressWarnings(as.integer(graph_browser_patch_last_seq[[id]] %||% 0L))
     if (seq <= last_seq) return(reject("stale-seq"))
-    current_revision <- graph_render_state_revision_value(id)
-    if (!identical(base_revision, current_revision)) return(reject("revision-mismatch"))
-
     old <- cache_get(id)
     if (!is.list(old)) return(reject("canonical-state-missing"))
     normalized <- graph_browser_patch_normalize(key, path, req$value, old)
     if (!isTRUE(normalized$ok)) return(reject(normalized$message %||% "invalid-value"))
+
+    current_revision <- graph_render_state_revision_value(id)
+    rebased <- FALSE
+    if (!identical(base_revision, current_revision)) {
+      can_rebase_revision <- is.finite(base_revision) && base_revision >= 0L &&
+        base_revision < current_revision && isTRUE(has_base_value)
+      if (!isTRUE(can_rebase_revision)) return(reject("revision-mismatch"))
+
+      rebase <- graph_browser_patch_path_rebase(
+        key, path, req$baseValue, normalized$value, old
+      )
+      if (!isTRUE(rebase$ok)) return(reject("revision-conflict"))
+      rebased <- TRUE
+      diag_log(
+        "BROWSER-PATCH",
+        paste0(
+          "REBASE seq=", seq, " key=", key,
+          " base_revision=", base_revision,
+          " current_revision=", current_revision,
+          " path=", path,
+          " already_current=", isTRUE(rebase$already_current)
+        ),
+        id = id
+      )
+    }
+
     new <- graph_settings_manager_set_path(old, path, normalized$value)
 
     # Wide→Long changes can replace the effective X/Y/Color/etc. column
@@ -193,10 +244,11 @@
     if (!isTRUE(result$changed) && !isTRUE(result$render)) {
       revision <- graph_render_state_revision_value(id)
       graph_browser_patch_result(id, seq, TRUE, path, key, revision,
-        normalized$value, "no-op")
+        normalized$value, if (isTRUE(rebased)) "no-op-rebased" else "no-op")
       diag_log("BROWSER-PATCH",
         paste0("ACCEPT seq=", seq, " key=", key, " base_revision=", base_revision,
                " revision=", revision,
+               " rebased=", isTRUE(rebased),
                " changed=FALSE render=FALSE early_return=TRUE update_input_return=FALSE"), id = id)
       return()
     }
@@ -217,11 +269,18 @@
     graph_single_claim_revision(id, reason = "browser-working-state")
     graph_single_mark_editor_visit(id)
 
+    if (key %in% c("xlab", "ylab", "legend_group_title", "legend_colour_title", "legend_fill_title") &&
+        !is.null(mod_now) && is.function(mod_now$shared_style_user_edit)) {
+      try(mod_now$shared_style_user_edit(paste0("browser:", key)), silent = TRUE)
+    }
+
     revision <- graph_render_state_revision_value(id)
     graph_browser_patch_result(id, seq, TRUE, path, key, revision,
-      normalized$value, if (isTRUE(result$changed)) "accepted" else "no-op")
+      normalized$value,
+      if (isTRUE(rebased)) "accepted-rebased" else if (isTRUE(result$changed)) "accepted" else "no-op")
     diag_log("BROWSER-PATCH",
       paste0("ACCEPT seq=", seq, " key=", key, " base_revision=", base_revision,
-             " revision=", revision, " changed=", isTRUE(result$changed),
+             " revision=", revision, " rebased=", isTRUE(rebased),
+             " changed=", isTRUE(result$changed),
              " render=", isTRUE(result$render), " update_input_return=FALSE"), id = id)
   }, ignoreInit = TRUE, priority = 160)

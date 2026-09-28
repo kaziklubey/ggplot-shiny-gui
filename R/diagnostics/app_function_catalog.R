@@ -28,6 +28,7 @@ app_function_catalog <- function() {
       graph_effective_slot_vars = list(kind = "pure Mapping semantics", input = "data + X + Bar/Box slot candidates + facet", output = "effective stable-track variables"),
       graph_stable_track_order = list(kind = "pure Mapping semantics", input = "data + effective Bar/Box track variables", output = "observed global track order"),
       graph_line_series_vars = list(kind = "pure Mapping semantics", input = "data + X + visual Mapping candidates + series mode", output = "line-series identity variables"),
+      graph_individual_connection_plan = list(kind = "pure individual-trajectory semantics", input = "data + ID + facet + candidate repeated-measure variables + optional manual direction", output = "connection direction + series boundaries"),
       graph_mapping_diagnostics = list(kind = "pure visual diagnostic", input = "data + Mapping + plot type", output = "non-canonical diagnostic messages"),
       graph_style_input_id = list(kind = "pure", input = "style identity", output = "stable input id"),
       graph_parse_pasted_data = list(kind = "pure parser", input = "pasted text", output = "data.frame or NULL"),
@@ -80,8 +81,7 @@ app_function_catalog <- function() {
       shared_style_apply_to_graph_state = list(kind = "pure semantic materializer", input = "GraphState + Shared Library", output = "GraphState with concrete style values"),
       shared_style_update_library_from_graph_state = list(kind = "pure write-through adapter", input = "Shared Library + linked GraphState", output = "updated Library definition"),
       shared_style_resolve_writeback = list(kind = "pure conflict resolver", input = "current semantic value + linked candidates", output = "unambiguous write-through value"),
-      shared_style_commit_library = list(kind = "server semantic transaction", input = "Shared Library + source", output = "affected Graph/Figure propagation"),
-      shared_style_apply_figure_states = list(kind = "Figure semantic transaction", input = "Shared Library + reason", output = "direct-state Figure snapshot rebuilds")
+      shared_style_commit_library = list(kind = "server semantic transaction", input = "Shared Library + source", output = "affected Graph propagation")
     ),
     figure_workflow = list(
       figureWorkflowHeaderUI = list(kind = "UI component", input = "none", output = "workflow header"),
@@ -89,8 +89,12 @@ app_function_catalog <- function() {
       figureLayoutWorkflowUI = list(kind = "UI component", input = "none", output = "layout/alignment step"),
       figureCanvasControlsUI = list(kind = "UI component", input = "none", output = "visible Canvas controls"),
       figureLayoutPrimaryControlsUI = list(kind = "UI component", input = "none", output = "visible primary layout controls"),
-      figureSharedStylePanelUI = list(kind = "UI component", input = "none", output = "Shared Style step"),
-      figureSelectedPanelDrawerUI = list(kind = "UI component", input = "none", output = "individual adjustment drawer"),
+      figureCommonDrawerPaneUI = list(kind = "UI component", input = "none", output = "Figure multi-Graph adjustment pane"),
+      figureSelectedPanelControlsUI = list(kind = "UI component", input = "none", output = "Figure individual adjustment pane"),
+      figureAdjustmentDrawerUI = list(kind = "UI component", input = "none", output = "collapsed individual/common adjustment drawer"),
+      figure_common_available_ids = list(kind = "Figure ownership selector", input = "layout + FigureState registry", output = "placed imported Figure Graph ids"),
+      figure_common_commit_states = list(kind = "Figure-only batch transaction", input = "FigureStates + ids + reason", output = "one snapshot rebuild per changed target"),
+      figure_common_semantic_records = list(kind = "Figure semantic view", input = "selected FigureStates", output = "Graph/variable/level binding rows"),
       figureTopExportUI = list(kind = "UI component", input = "none", output = "workspace-aware top Figure output bar"),
       figurePreviewWorkflowUI = list(kind = "UI component", input = "none", output = "Figure preview shell"),
       figureWorkspaceUI = list(kind = "UI composition", input = "none", output = "workflow-first Figure workspace"),

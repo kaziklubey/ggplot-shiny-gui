@@ -276,7 +276,7 @@ graph_legend_layout_args <- function(layout = list()) {
   wrap_mode <- as.character(layout$wrap_mode %||% "auto")[[1]]
   wrap_count <- suppressWarnings(as.integer(layout$wrap_count %||% 2L))
   if (!is.finite(wrap_count) || wrap_count < 1L) wrap_count <- 2L
-  wrap_count <- max(1L, min(12L, wrap_count))
+  wrap_count <- max(1L, wrap_count)
 
   if (identical(wrap_mode, "ncol")) return(list(ncol = wrap_count, byrow = TRUE))
   if (identical(wrap_mode, "nrow")) return(list(nrow = wrap_count, byrow = TRUE))

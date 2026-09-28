@@ -19,7 +19,9 @@
       plot_type = "plot.type", summary_type = "plot.summary",
       summary_unit = "plot.summary_unit", external_error_mode = "plot.external_error_mode",
       show_raw = "plot.show_raw", connect_id = "plot.connect_id",
-      scatter_connect_mode = "plot.scatter_connect_mode", line_breaks = "plot.line_breaks",
+      scatter_connect_mode = "plot.scatter_connect_mode",
+      individual_connect_direction = "plot.individual_connect_direction",
+      line_breaks = "plot.line_breaks",
       xlab = "labels.xlab", ylab = "labels.ylab", title = "labels.title",
       ymin = "labels.ymin", ymax = "labels.ymax", y_top_to_tick = "labels.y_top_to_tick"
     )

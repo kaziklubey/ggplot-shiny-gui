@@ -32,6 +32,9 @@
         show_raw = graph_plot_value("show_raw", input$show_raw),
         connect_id = graph_plot_value("connect_id", input$connect_id),
         scatter_connect_mode = graph_plot_value("scatter_connect_mode", input$scatter_connect_mode %||% "none"),
+        individual_connect_direction = graph_plot_value(
+          "individual_connect_direction", input$individual_connect_direction %||% "auto"
+        ),
         line_breaks = line_break_clean(line_break_state())
       ),
       labels = list(

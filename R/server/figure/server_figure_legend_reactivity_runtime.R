@@ -19,33 +19,9 @@ figure_legend_materializer_signature <- function(ov) {
   )
 }
 
-figure_legend_materializer_legacy_seed <- function(id) {
-  id <- as.character(id %||% "")[1]
-  if (!nzchar(id) || !cache_has(id)) return(NULL)
-
-  figure_rec <- isolate(figure_persisted_previews())[[id]]
-  graph_rec <- isolate(project_legacy_graph_previews())[[id]]
-  if (!is.list(figure_rec) || !is.list(graph_rec)) return(NULL)
-  figure_svg <- as.character(figure_rec$svg %||% "")[1]
-  graph_svg <- as.character(graph_rec$svg %||% "")[1]
-  if (!nzchar(figure_svg) || !identical(figure_svg, graph_svg)) return(NULL)
-
-  state <- cache_get(id)
-  if (!is.list(state)) return(NULL)
-  store_figure_edit_state(id, state, reason = "legend-legacy-equal-preview")
-  diag_log(
-    "FIGURE-LEGEND-MATERIALIZE",
-    "legacy editable state seeded because Graph/Figure persisted SVGs are identical",
-    id = id
-  )
-  state
-}
-
 figure_legend_materializer_state <- function(id) {
   id <- as.character(id %||% "")[1]
-  state <- isolate(figure_edit_states())[[id]]
-  if (is.list(state)) return(state)
-  figure_legend_materializer_legacy_seed(id)
+  isolate(figure_edit_states())[[id]]
 }
 
 figure_legend_materializer_pending <- function(id) {

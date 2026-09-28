@@ -52,11 +52,15 @@
     if (!nzchar(preset)) preset <- "okabe_ito"
 
     tree <- isolate(color_styles())
+    before <- tree
     br <- tree[[v]] %||% list()
     pal <- default_palette(length(lev), preset)
     for (i in seq_along(lev)) br[[lev[i]]] <- pal[i]
     tree[[v]] <- br
-    color_styles(tree)
+    if (!identical(before, tree)) {
+      color_styles(tree)
+      shared_style_mark_user_edit("palette")
+    }
     style_restore_epoch(isolate(style_restore_epoch()) + 1L)
     diag("PALETTE-APPLY", paste0(
       "preset=", preset,
@@ -250,11 +254,10 @@
           ),
           column(
             4,
-            sliderInput(
+            numericInput(
               style_input_id("reg_width", nm),
               "線幅",
-              min = 0, max = 3,
-              value = st$width, step = 0.1
+              value = st$width, min = 0, step = 0.1
             )
           )
         )
@@ -434,7 +437,10 @@
         z <- as.character(value %||% "")[1]
         if (!nzchar(z)) return()
         tree <- isolate(color_styles()); br <- tree[[v]] %||% list()
-        if (!identical(as.character(br[[key]] %||% "")[1], z)) { br[[key]] <- z; tree[[v]] <- br; color_styles(tree) }
+        if (!identical(as.character(br[[key]] %||% "")[1], z)) {
+          br[[key]] <- z; tree[[v]] <- br; color_styles(tree)
+          shared_style_mark_user_edit("color-style")
+        }
       } else if (identical(field, "fillNone") && json_chr((canonical$plot %||% list())$type, "line") %in% c("bar", "box")) {
         tree <- isolate(fill_none_styles())
         old <- key %in% graph_bar_box_fill_none_levels(tree, v)
@@ -449,7 +455,10 @@
       z <- as.character(value %||% "")[1]
       if (!nzchar(v) || !nzchar(z)) return()
       tree <- isolate(linetype_styles()); br <- tree[[v]] %||% list()
-      if (!identical(as.character(br[[key]] %||% "")[1], z)) { br[[key]] <- z; tree[[v]] <- br; linetype_styles(tree) }
+      if (!identical(as.character(br[[key]] %||% "")[1], z)) {
+        br[[key]] <- z; tree[[v]] <- br; linetype_styles(tree)
+        shared_style_mark_user_edit("linetype-style")
+      }
       return()
     }
 
@@ -458,7 +467,10 @@
       z <- suppressWarnings(as.numeric(value)[1])
       if (!nzchar(v) || !is.finite(z)) return()
       tree <- isolate(shape_styles()); br <- tree[[v]] %||% list()
-      if (!isTRUE(all.equal(as.numeric(br[[key]] %||% NA_real_), z))) { br[[key]] <- z; tree[[v]] <- br; shape_styles(tree) }
+      if (!isTRUE(all.equal(as.numeric(br[[key]] %||% NA_real_), z))) {
+        br[[key]] <- z; tree[[v]] <- br; shape_styles(tree)
+        shared_style_mark_user_edit("shape-style")
+      }
       return()
     }
 

@@ -152,7 +152,7 @@ show_figure_editor_wrapper <- function(id = "") {
     state <- if (is.list(state_override)) state_override else states[[id]]
     if (!is.list(state)) {
       if (isTRUE(show_when_ready)) {
-        showNotification("Figure側に編集可能なGraph snapshotがありません。先に『Graphから再読込』してください。", type="warning", duration=4)
+        showNotification("Figure側に編集可能なGraph snapshotがありません。先にGraph Sourcesから読み込んでください。", type="warning", duration=4)
       }
       return(FALSE)
     }

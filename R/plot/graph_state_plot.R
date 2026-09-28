@@ -17,7 +17,7 @@ graph_snapshot_input_defaults <- function() {
   list(
     plot_type = "line", summary_type = "sem", summary_unit = "row",
     show_raw = TRUE, connect_id = FALSE, scatter_connect_mode = "none",
-    line_breaks = character(0),
+    individual_connect_direction = "auto", line_breaks = character(0),
     xvar = "", yvar = "", groupvar = "", colorvar = "",
     linetypevar = "__color__", shapevar = "__color__",
     line_series_mode = "auto", line_series_var = "", idvar = "", facetvar = "",

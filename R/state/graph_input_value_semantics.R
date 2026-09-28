@@ -7,7 +7,7 @@
 # 1L); a continuous control must still preserve a later 0.9/0.7 edit as double.
 graph_input_integer_numeric_keys <- function() {
   c(
-    "base_size", "mean_shape", "raw_shape",
+    "mean_shape", "raw_shape",
     "bar_border_dash", "bar_border_gap",
     "plot_width_px", "plot_width_px_direct",
     "plot_height_px", "plot_height_px_direct",

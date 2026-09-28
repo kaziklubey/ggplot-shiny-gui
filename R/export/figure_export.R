@@ -339,17 +339,13 @@ figure_draw_detached_legend_plot <- function(p_raw, ov, ex, rect, canvas_w, canv
   list(sp=sp, legend_job=job)
 }
 
-figure_export_inset_record <- function(id, inset_snapshots = list(), persisted_previews = list()) {
-  id <- as.character(id %||% "")[1]
-  if (!nzchar(id)) return(list())
-  rec <- inset_snapshots[[id]]
-  if (is.list(rec) && (isTRUE(valid_graph_preview_record(rec)) || !is.null(rec$figure_plot))) return(rec)
-
-  # Legacy Project compatibility mirrors the Viewer: old packs may have only
-  # a persisted Figure preview and no dedicated Inset snapshot. New sessions
-  # create a dedicated Inset snapshot on first source selection.
-  legacy <- persisted_previews[[id]]
-  if (is.list(legacy) && nzchar(as.character(legacy$svg %||% "")[1])) return(legacy)
+figure_export_inset_record <- function(owner_id, source_id, inset_snapshots = list()) {
+  owner_id <- as.character(owner_id %||% "")[1]
+  source_id <- as.character(source_id %||% "")[1]
+  if (!nzchar(owner_id) || !nzchar(source_id)) return(list())
+  rec <- inset_snapshots[[owner_id]]
+  if (is.list(rec) && identical(as.character(rec$source_id %||% "")[1], source_id) &&
+      (isTRUE(valid_graph_preview_record(rec)) || !is.null(rec$figure_plot))) return(rec)
   list()
 }
 
@@ -468,7 +464,7 @@ figure_draw_to_device <- function(layout, canvas_w, canvas_h, overrides, plots, 
     inset_pos <- figure_layer_inset_canvas_position(rect, sp, ov)
     if (!is.null(inset_pos)) {
       iid <- as.character(inset$source_id %||% "")[1]
-      inset_rec <- figure_export_inset_record(iid, inset_snapshots, persisted_previews)
+      inset_rec <- figure_export_inset_record(id, iid, inset_snapshots)
       ibox <- figure_inset_export_content_box(inset_pos, inset)
       ip <- inset_rec$figure_plot
       iex <- inset_rec$figure_export %||% exports[[iid]] %||% list(
@@ -938,7 +934,7 @@ figure_write_svg_vector <- function(path, layout, canvas_w, canvas_h, overrides,
     inset_pos <- figure_layer_inset_canvas_position(rect, sp, ov)
     if (!is.null(inset_pos)) {
       iid <- as.character(inset$source_id %||% "")[1]
-      inset_rec <- figure_export_inset_record(iid, inset_snapshots, persisted_previews)
+      inset_rec <- figure_export_inset_record(id, iid, inset_snapshots)
       ibox <- figure_inset_export_content_box(inset_pos, inset)
       ip <- inset_rec$figure_plot
       iex <- inset_rec$figure_export %||% exports[[iid]] %||% list(plot_width_px=600,plot_height_px=600,panel_width_px=600,panel_height_px=600,reference_res=reference_res)

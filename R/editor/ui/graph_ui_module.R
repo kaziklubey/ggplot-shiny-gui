@@ -627,7 +627,26 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                   ),
                   p(
                     class = "help-block",
-                    "『データの行順』は、貼り付けた表の上から下へ(x, y)座標を順番に結びます。位置軌跡などに使えます。"
+                    "『個体IDごと』は同一IDの点を個体線ルールで接続します。『データの行順』は、貼り付けた表の上から下へ(x, y)座標を順番に結びます。位置軌跡などに使えます。"
+                  )
+                ),
+                conditionalPanel(
+                  condition = "((input.plot_type == 'line' || input.plot_type == 'bar') && input.connect_id == true) || (input.plot_type == 'scatter' && input.scatter_connect_mode == 'id')",
+                  selectInput(
+                    "individual_connect_direction", "個体線の接続方向",
+                    choices = c(
+                      "自動" = "auto",
+                      "X軸の変数" = "x",
+                      "Color / Fill の変数" = "color",
+                      "横ずらし要因" = "position",
+                      "線種（Linetype）の変数" = "linetype",
+                      "点の形（Shape）の変数" = "shape"
+                    ),
+                    selected = "auto"
+                  ),
+                  p(
+                    class = "help-block",
+                    "自動では同一ID内で変化する要因からXを最優先し、次にColor、Linetype、Shapeを接続方向として判定します。Barの横ずらし要因は自動では別系列境界ですが、『横ずらし要因』を選べばその方向へ接続できます。指定した役割が未設定、または同一ID内で変化しない場合は自動判定へ戻ります。"
                   )
                 )
               ),
@@ -672,10 +691,10 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                           ),
                           selected = "solid"
                         ),
-                        sliderInput(
+                        numericInput(
                           "scatter_regression_width",
                           "回帰線幅",
-                          min = 0, max = 3, value = 0.9, step = 0.1
+                          value = 0.9, min = 0, step = 0.1
                         )
                       ),
                       conditionalPanel(
@@ -692,7 +711,7 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                         sliderInput(
                           "scatter_regression_se_alpha",
                           "信頼区間の透明度",
-                          min = 0, max = 0.60, value = 0.20, step = 0.05
+                          min = 0, max = 1, value = 0.20, step = 0.05
                         )
                       ),
                       p(
@@ -729,9 +748,9 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                     ),
                     selected = "classic"
                   ),
-                  sliderInput(
+                  numericInput(
                     "base_size", "基本フォントサイズ",
-                    min = 8, max = 24, value = 13, step = 1
+                    value = 13, min = 1, step = 0.1
                   ),
                   selectizeInput(
                     "font_family_mode", "フォント",
@@ -852,9 +871,9 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                       ),
                       selected = "solid"
                     ),
-                    sliderInput(
+                    numericInput(
                       "line_width", "平均線幅",
-                      min = 0, max = 3, value = 0.9, step = 0.1
+                      value = 0.9, min = 0, step = 0.1
                     ),
                   ),
                   conditionalPanel(
@@ -872,9 +891,9 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                       ),
                       selected = 16
                     ),
-                    sliderInput(
+                    numericInput(
                       "point_size", "平均マーカーサイズ",
-                      min = 0, max = 8, value = 2.8, step = 0.1
+                      value = 2.8, min = 0, step = 0.1
                     ),
                     conditionalPanel(
                       condition = "input.plot_type == 'scatter'",
@@ -930,9 +949,9 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                     conditionalPanel(
                       condition = "input.plot_type == 'line'",
                       p(class = "help-block", "横ずらし要因は Mapping の同名項目で指定します。"),
-                      sliderInput(
+                      numericInput(
                         "line_group_dodge", "横ずらし幅",
-                        min = 0, max = 0.40, value = 0.10, step = 0.01
+                        value = 0.10, min = 0, step = 0.01
                       ),
                     ),
                     conditionalPanel(
@@ -941,16 +960,16 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                         class = "help-block",
                         "横並びに使う条件はMappingの「追加の横並び要因」で指定します。ここでは配置間隔だけを調整します。"
                       ),
-                      sliderInput(
+                      numericInput(
                         "group_spacing", "横並び条件の中心間隔",
-                        min = 0, max = 1.60, value = 1.00, step = 0.05
+                        value = 1.00, min = 0, step = 0.05
                       )
                     ),
                     conditionalPanel(
                       condition = "input.plot_type == 'box'",
-                      sliderInput(
+                      numericInput(
                         "box_width_scale", "箱の太さ",
-                        min = 0, max = 3.00, value = 0.72, step = 0.05
+                        value = 0.72, min = 0, step = 0.05
                       ),
                       p(
                         class = "help-block",
@@ -971,17 +990,17 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
 
                   conditionalPanel(
                     condition = "input.plot_type == 'bar'",
-                    sliderInput(
+                    numericInput(
                       "bar_width", "バーの太さ",
-                      min = 0, max = 3.00, value = 0.82, step = 0.02
+                      value = 0.82, min = 0, step = 0.02
                     ),
                     p(
                       class = "help-block",
                       "1を超える値では横slot幅より太くでき、必要なら意図的に隣のバーへ重ねられます。多数条件ではPlot横幅も併用してください。"
                     ),
-                    sliderInput(
+                    numericInput(
                       "x_category_spacing", "Xカテゴリ（バーの塊）間隔",
-                      min = 0, max = 2.50, value = 1.00, step = 0.05
+                      value = 1.00, min = 0, step = 0.05
                     ),
                     checkboxInput(
                       "bar_zero_touch",
@@ -1017,9 +1036,9 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                         showColour = "both"
                       )
                     ),
-                    sliderInput(
+                    numericInput(
                       "bar_border_width", "枠線幅",
-                      min = 0, max = 2, value = 0.5, step = 0.05
+                      value = 0.5, min = 0, step = 0.05
                     ),
                     selectInput(
                       "bar_border_linetype", "枠線種",
@@ -1107,13 +1126,13 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                       showColour = "both"
                     )
                   ),
-                  sliderInput(
+                  numericInput(
                     "error_width", "Error bar 横幅",
-                    min = 0, max = 0.8, value = 0.15, step = 0.05
+                    value = 0.15, min = 0, step = 0.05
                   ),
-                  sliderInput(
+                  numericInput(
                     "error_line_width", "Error bar 線幅",
-                    min = 0, max = 2, value = 0.6, step = 0.05
+                    value = 0.6, min = 0, step = 0.05
                   )
                 )
               )
@@ -1150,7 +1169,7 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                       sliderInput(
                         "raw_lighten",
                         "基本色を白へ混ぜる量",
-                        min = 0, max = 0.90, value = 0.45, step = 0.05
+                        min = 0, max = 1, value = 0.45, step = 0.05
                       )
                     ),
                     conditionalPanel(
@@ -1211,15 +1230,15 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                         selected = 16
                       )
                     ),
-                    sliderInput(
+                    numericInput(
                       "raw_point_size",
                       "個体点サイズ",
-                      min = 0, max = 6, value = 2.2, step = 0.1
+                      value = 2.2, min = 0, step = 0.1
                     ),
-                    sliderInput(
+                    numericInput(
                       "jitter_width",
                       "個体点の横方向の散らし幅",
-                      min = 0, max = 0.45, value = 0.18, step = 0.01
+                      value = 0.18, min = 0, step = 0.01
                     ),
                     p(
                       class = "help-block",
@@ -1246,12 +1265,16 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                       ),
                       selected = "group_light"
                     ),
+                    p(
+                      class = "help-block",
+                      "Colorが接続方向そのもので線の途中で変化する場合は、Color別に線を分断せず接続を保つため固定色で描画します。"
+                    ),
                     conditionalPanel(
                       condition = "input.id_line_color_mode == 'group_light'",
                       sliderInput(
                         "id_line_lighten",
                         "Colorの色を白へ混ぜる量",
-                        min = 0, max = 0.90, value = 0.60, step = 0.05
+                        min = 0, max = 1, value = 0.60, step = 0.05
                       )
                     ),
                     conditionalPanel(
@@ -1273,10 +1296,10 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                       ),
                       selected = "solid"
                     ),
-                    sliderInput(
+                    numericInput(
                       "id_line_width",
                       "接続線の線幅",
-                      min = 0, max = 2, value = 0.45, step = 0.05
+                      value = 0.45, min = 0, step = 0.05
                     ),
                     sliderInput(
                       "id_line_alpha",
@@ -1338,14 +1361,14 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                   class = "subsection-body",
                   conditionalPanel(
                     condition = "input.plot_type == 'line'",
-                    sliderInput(
+                    numericInput(
                       "line_x_spacing",
                       "X目盛間の間隔",
-                      min = 0, max = 1.00, value = 1.00, step = 0.05
+                      value = 1.00, min = 0, step = 0.05
                     ),
                     p(
                       class = "help-block",
-                      "折れ線グラフ専用。1.00が標準で、値を小さくすると離散Xの目盛同士を詰めます。"
+                      "折れ線グラフ専用。1.00が標準です。小さくすると詰まり、大きくすると広がります。"
                     )
                   ),
                   sliderInput(
@@ -1356,7 +1379,7 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                   numericInput(
                     "plot_width_px_direct",
                     "Plot横幅（数値指定）",
-                    value = 600, min = 250, max = 2000, step = 10
+                    value = 600, min = 1, step = 10
                   ),
                   sliderInput(
                     "plot_height_px",
@@ -1366,7 +1389,7 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                   numericInput(
                     "plot_height_px_direct",
                     "Plot縦幅（数値指定）",
-                    value = 600, min = 180, max = 1400, step = 10
+                    value = 600, min = 1, step = 10
                   ),
                   p(
                     class = "help-block",
@@ -1431,10 +1454,10 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                         )
                       )
                     ),
-                    sliderInput(
+                    numericInput(
                       "y_break_space",
                       "省略部分の見た目の隙間",
-                      min = 0.02, max = 0.30, value = 0.08, step = 0.01
+                      value = 0.08, min = 0.001, step = 0.01
                     ),
                     checkboxInput(
                       "y_break_symbol",
@@ -1449,10 +1472,9 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                 )
               ),
 
-              sliderInput(
-                "facet_spacing_x", "Facet間隔（左右）",
-                min = 0, max = 1.5, value = 0.12, step = 0.02,
-                post = " cm"
+              numericInput(
+                "facet_spacing_x", "Facet間隔（左右, cm）",
+                value = 0.12, min = 0, step = 0.02
               )
             )
           ),
@@ -1556,20 +1578,20 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                   ),
                   conditionalPanel(
                     condition = "input.legend_wrap_mode != 'auto'",
-                    sliderInput(
+                    numericInput(
                       "legend_wrap_count", "列 / 行数",
-                      min = 1, max = 12, value = 2, step = 1
+                      value = 2, min = 1, step = 1
                     )
                   ),
                   numericInput(
                     "legend_item_spacing",
                     "凡例項目の間隔（-1 = Theme自動）",
-                    value = -1, min = -1, max = 2, step = 0.05
+                    value = -1, min = -1, step = 0.05
                   ),
                   numericInput(
                     "legend_text_size",
                     "凡例文字サイズ（0 = Theme自動）",
-                    value = 0, min = 0, max = 48, step = 0.5
+                    value = 0, min = 0, step = 0.5
                   )
                 )
               ),
@@ -1577,11 +1599,10 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                 class = "help-block",
                 "各凡例の表示、タイトル、並び順を個別に設定できます。表示/非表示はPlot本体のMappingを変更しません。凡例内の条件順は Mapping → Category order に連動します。同じ変数の凡例は、タイトルが一致すれば自動で統合されます。別々に表示することもできます。"
               ),
-              sliderInput(
+              numericInput(
                 "legend_key_width",
-                "凡例の線サンプル長",
-                min = 0, max = 4.0, value = 1.8, step = 0.1,
-                post = " cm"
+                "凡例の線サンプル長 (cm)",
+                value = 1.8, min = 0, step = 0.1
               )
             )
           ),
@@ -1589,12 +1610,12 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
           if (graph_editor_profile_has(editor_profile, "shared_style")) tags$details(
             class = "control-section shared-label-style-section",
             `data-ui-section` = "shared-style",
-            tags$summary("9. 共通 Label / Style"),
+            tags$summary("9. 共通スタイル"),
             div(
               class = "section-body",
               p(
                 class = "help-block",
-                "ProjectのShared Libraryへ、群・条件・軸ラベル・凡例タイトルを明示的に対応付けます。自動bindingは行いません。"
+                "同じ群・条件・軸ラベル・凡例タイトルを、他のGraphと共通の見た目に揃えます。対応付けは明示的に行います。"
               ),
               uiOutput("shared_style_binding_ui")
             )

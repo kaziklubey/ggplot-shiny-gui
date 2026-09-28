@@ -57,6 +57,7 @@ graph_ui_seed_from_state <- function(cfg) {
     put("show_raw", cfg$plot$show_raw)
     put("connect_id", cfg$plot$connect_id)
     put("scatter_connect_mode", cfg$plot$scatter_connect_mode)
+    put("individual_connect_direction", cfg$plot$individual_connect_direction %||% "auto")
     out$line_breaks <- as.character(unlist(cfg$plot$line_breaks %||% character(0), use.names = FALSE))
   }
 
@@ -68,7 +69,11 @@ graph_ui_seed_from_state <- function(cfg) {
 
   appearance <- if (is.list(cfg$style)) cfg$style$appearance else NULL
   if (is.list(appearance)) {
-    for (nm in names(appearance)) put(nm, appearance[[nm]])
+    # Plot summary semantics have a single canonical owner under cfg$plot.
+    # Legacy style trees may still contain mirrors of these keys; never let
+    # those stale mirrors overwrite the Plot-owned replay/browser seed.
+    appearance_keys <- setdiff(names(appearance), c("summary_type", "summary_unit"))
+    for (nm in appearance_keys) put(nm, appearance[[nm]])
   }
   # Persistent UI seeding uses the same canonical font representation as
   # restore/render comparison. Legacy/missing values therefore start as sans.

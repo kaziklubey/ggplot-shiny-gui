@@ -92,6 +92,10 @@ graph_render_state <- function(state) {
     plot_type0 <- as.character(pl0$type %||% "line")[[1]]
     ap <- st$appearance
     if (!is.list(ap)) ap <- list()
+    # Summary method/unit are already represented by out$plot. Ignore any
+    # legacy Style mirrors so they cannot create false render revisions.
+    ap$summary_type <- NULL
+    ap$summary_unit <- NULL
     color_var <- as.character(mp0$color %||% "")[[1]]
     has_color_mapping <- nzchar(color_var) && !identical(color_var, "__fixed__")
 

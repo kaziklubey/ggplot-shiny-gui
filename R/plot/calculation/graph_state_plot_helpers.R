@@ -23,6 +23,7 @@ graph_plot_value <- function(key, fallback = "") {
       type = "plot_type", summary = "summary_type", summary_unit = "summary_unit",
       external_error_mode = "external_error_mode", show_raw = "show_raw",
       connect_id = "connect_id", scatter_connect_mode = "scatter_connect_mode",
+      individual_connect_direction = "individual_connect_direction",
       line_breaks = "line_breaks", ""
     )
     if (!nzchar(input_key)) return(fallback)

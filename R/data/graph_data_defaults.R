@@ -223,6 +223,26 @@ graph_state_migrate_v5 <- function(state) {
   mp$line_series_var <- series_var
   state$mapping <- mp
 
+  # Compatibility for a very old/incomplete GraphState: if Plot lacks summary
+  # semantics but the legacy Style mirror has them, promote once into the sole
+  # canonical Plot owner before Style migration removes the mirror.
+  legacy_ap <- ((state$style %||% list())$appearance %||% list())
+  if (!is.list(legacy_ap)) legacy_ap <- list()
+  pl <- state$plot %||% list()
+  if (!is.list(pl)) pl <- list()
+  if (is.null(pl$summary) && !is.null(legacy_ap$summary_type)) {
+    pl$summary <- graph_state_scalar(legacy_ap$summary_type, "sem")
+  }
+  if (is.null(pl$summary_unit) && !is.null(legacy_ap$summary_unit)) {
+    pl$summary_unit <- graph_state_scalar(legacy_ap$summary_unit, "row")
+  }
+  connect_direction <- as.character(graph_state_scalar(pl$individual_connect_direction, "auto") %||% "auto")[1]
+  if (is.na(connect_direction) || !connect_direction %in% c("auto", "x", "color", "position", "linetype", "shape")) {
+    connect_direction <- "auto"
+  }
+  pl$individual_connect_direction <- connect_direction
+  state$plot <- pl
+
   st <- graph_style_migrate_v6(state$style %||% list())
   ap <- st$appearance %||% list()
   if (!is.list(ap)) ap <- list()

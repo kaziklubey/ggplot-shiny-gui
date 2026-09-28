@@ -219,7 +219,7 @@
               `data-col` = c,
               `data-auto-value` = format(auto_size$width, trim = TRUE, scientific = FALSE),
               value = if (is.finite(suppressWarnings(as.numeric(cell$graph_width %||% NA_real_)))) format(cell$graph_width, trim = TRUE, scientific = FALSE) else "",
-              placeholder = "Auto", min = "80", max = "3000", step = "10",
+              placeholder = "Auto", min = "1", step = "10",
               title = "Crop前のGraph表示サイズを決める目標幅(px)。Panel/列幅とは別です。空欄は元Graph基準のAuto。"
             )
           ),
@@ -233,7 +233,7 @@
               `data-col` = c,
               `data-auto-value` = format(auto_size$height, trim = TRUE, scientific = FALSE),
               value = if (is.finite(suppressWarnings(as.numeric(cell$graph_height %||% NA_real_)))) format(cell$graph_height, trim = TRUE, scientific = FALSE) else "",
-              placeholder = "Auto", min = "80", max = "3000", step = "10",
+              placeholder = "Auto", min = "1", step = "10",
               title = "Crop前のGraph表示サイズを決める目標高さ(px)。Panel/行高さとは別です。空欄は元Graph基準のAuto。"
             )
           )
@@ -252,7 +252,7 @@
               class = "form-control input-sm figure-row-height-edit",
               `data-row` = r,
               value = format(row$height %||% 1, trim = TRUE, scientific = FALSE),
-              min = "0.1", max = "10", step = "0.1"
+              min = "0.1", step = "0.1"
             )
           ),
           div(
@@ -375,7 +375,7 @@
         class="figure-layout-batch-align",
         tags$strong("全Panelの縦配置"),
         selectInput("figure_batch_align_v", NULL, choices=c("上"="top", "中央"="center", "下"="bottom"), selected="top", width="95px"),
-        numericInput("figure_batch_top_gutter", "上側余白", value=32, min=0, max=240, step=2, width="95px"),
+        numericInput("figure_batch_top_gutter", "上側余白", value=32, min=0, step=2, width="95px"),
         actionButton("figure_apply_panel_vertical", "全Panelへ適用", class="btn-sm btn-default"),
         tags$span(class="text-muted", "Fixed Canvasで上側が広い場合は『上 + 32px』を目安にできます。")
       )
@@ -513,13 +513,11 @@
                                       " rows=", length(isolate(figure_layout_state())),
                                       " selected_row=", isolate(figure_selected_row())))
       if (isTRUE(changed0)) {
-        figure_gc_unreferenced_sources(reason = paste0("structure-", typ0))
         bump_figure_layout_ui()
       }
       return()
     }
 
-    old_refs <- figure_referenced_graph_ids(layout = st)
     tr <- figure_apply_layout_edit_state(
       st, e,
       valid_graph_ids = as.character(meta$id),
@@ -546,34 +544,16 @@
           }
         }
         key <- if (is.finite(rid) && is.finite(cid)) paste0("r", rid, "_c", cid) else ""
-        fresh_assignment <- nzchar(src) && src %in% meta$id && !src %in% old_refs
+        has_figure_state <- nzchar(src) && src %in% names(isolate(figure_edit_states()))
         diag_log(
           "FIGURE-SOURCE",
           paste0("row=", rid, " col=", cid, " key=", key, " source=", src,
-                 " fresh_import=", fresh_assignment),
+                 " assignment=layout-only figure_state=", if (has_figure_state) "retained" else "missing"),
           id = src
         )
         figure_selected_panel_key(key)
         figure_selected_graph(src)
-
-        if (isTRUE(fresh_assignment)) {
-          # A Graph with zero previous Figure references owns no Figure cache.
-          # Clear any historical/stale snapshot before treating this assignment
-          # as a new import from the current Graph.
-          figure_evict_source_state(src, reason = "new-assignment-reset")
-          figure_mark_new_import(src)
-
-          request_figure_source_snapshot(
-            src, reason = "figure-assignment", import_editor_state = TRUE
-          )
-          diag_log("FIGURE-SOURCE-SYNC", "new assignment queued for direct GraphState snapshot", id = src)
-        } else if (nzchar(src) && src %in% meta$id) {
-          # Existing Figure ownership is a snapshot. Selecting/reassigning the
-          # same source is not permission to refresh it from Graph.
-          diag_log("FIGURE-SOURCE-SYNC", "existing Figure snapshot retained; no source refresh", id = src)
-        }
       }
-      figure_gc_unreferenced_sources(reason = "panel-graph-change")
       if (isTRUE(tr$rebuild_ui)) bump_figure_layout_ui()
     }
   }, ignoreInit = TRUE)
@@ -839,7 +819,7 @@
     if (!mode %in% c("top", "center", "bottom")) mode <- "top"
     gutter <- suppressWarnings(as.numeric(isolate(input$figure_batch_top_gutter %||% 32))[1])
     if (!is.finite(gutter)) gutter <- 32
-    gutter <- min(max(gutter, 0), 240)
+    gutter <- max(gutter, 0)
     st <- isolate(figure_layout_state())
     drafts <- isolate(figure_override_drafts())
     requested <- isolate(figure_requested_overrides())
@@ -922,7 +902,7 @@
     target <- figure_panel_refresh_target()
     id <- as.character(target$id %||% "")[1]
     if (nzchar(id) && (is.null(selected_id) || identical(selected_id, id))) {
-      messages <- c(messages, figure_source_load_status(id, "Graphから再読込"))
+      messages <- c(messages, figure_source_load_status(id, "選択Graphを読込"))
     }
     if (isTRUE(figure_load_pending())) {
       ids <- figure_load_target_ids()
@@ -930,7 +910,7 @@
         # Editor status only reports its selected Graph; Preview reports all targets.
         check_ids <- if (is.null(selected_id)) ids else selected_id
         messages <- c(messages, paste0(
-          figure_source_load_status(check_ids, "全GraphをFigureへ読込"),
+          figure_source_load_status(check_ids, "Graph Sources読込"),
           " [cache miss処理済み ", length(setdiff(ids, figure_queue())), " / ", length(ids), "]"
         ))
       }
@@ -961,7 +941,7 @@
     if (nzchar(operation)) return(operation)
     states <- figure_edit_states()
     if (!is.list(states[[selected_id]])) {
-      return("編集可能snapshotがありません。『Graphから再読込』で現在のGraphから作成してください。")
+      return("編集可能snapshotがありません。Graph Sourcesから現在のGraphを読み込んでください。")
     }
     if (!nzchar(editing_id)) return(paste0("選択中: ", selected_id, " / Editor未起動"))
     mod <- figure_editor_module(editing_id)
@@ -1066,10 +1046,10 @@
 
     label_size <- suppressWarnings(as.numeric(isolate(input$figure_panel_label_size %||% 18)))
     if (!is.finite(label_size)) label_size <- 18
-    label_size <- min(max(label_size, 6), 72)
+    label_size <- max(label_size, 1)
     top_gutter <- suppressWarnings(as.numeric(isolate(input$figure_top_gutter %||% 48)))
     if (!is.finite(top_gutter)) top_gutter <- 48
-    top_gutter <- min(max(top_gutter, 0), 240)
+    top_gutter <- max(top_gutter, 0)
     label_mode <- as.character(isolate(input$figure_label_mode %||% "align"))
     if (!label_mode %in% c("align", "free")) label_mode <- "align"
     label_anchor <- as.character(isolate(input$figure_label_anchor %||% "panel"))
@@ -1077,16 +1057,12 @@
     if (!label_anchor %in% c("panel", "plot_left", "cell_left")) label_anchor <- "panel"
     label_x_offset <- suppressWarnings(as.numeric(isolate(input$figure_label_x_offset %||% 0)))
     if (!is.finite(label_x_offset)) label_x_offset <- 0
-    label_x_offset <- min(max(label_x_offset, -300), 300)
     label_y_offset <- suppressWarnings(as.numeric(isolate(input$figure_label_y_offset %||% 0)))
     if (!is.finite(label_y_offset)) label_y_offset <- 0
-    label_y_offset <- min(max(label_y_offset, -300), 300)
     label_x <- suppressWarnings(as.numeric(isolate(input$figure_label_x %||% 0.06)))
     if (!is.finite(label_x)) label_x <- 0.06
-    label_x <- min(max(label_x, -0.2), 1.2)
     label_y <- suppressWarnings(as.numeric(isolate(input$figure_label_y %||% 0.02)))
     if (!is.finite(label_y)) label_y <- 0.02
-    label_y <- min(max(label_y, -0.2), 1.2)
     legend <- as.character(isolate(input$figure_legend_override %||% "inherit"))
     if (!legend %in% c("inherit", "none", "right", "left", "top", "bottom", "free")) legend <- "inherit"
     legend_title <- figure_normalize_legend_title_mode(isolate(input$figure_legend_title %||% "inherit"))
@@ -1094,7 +1070,7 @@
     if (!legend_background %in% c("transparent", "white")) legend_background <- "transparent"
     legend_gap <- suppressWarnings(as.numeric(isolate(input$figure_legend_gap %||% 8)))
     if (!is.finite(legend_gap)) legend_gap <- 8
-    legend_gap <- min(max(legend_gap, 0), 100)
+    legend_gap <- max(legend_gap, 0)
     # F1-4e: legend placement is canonical in the draft, not in the Inspector
     # input echo. Direct drag updates the draft immediately and mirrors the
     # visible numeric fields client-side without sending another Shiny input.
@@ -1122,10 +1098,7 @@
       zy <- suppressWarnings(as.numeric(isolate(input$figure_legend_y %||% legend_y))[1])
       if (is.finite(zy)) legend_y <- zy
     }
-    if (identical(legend, "free")) {
-      legend_x <- min(max(legend_x, -2), 3)
-      legend_y <- min(max(legend_y, -2), 3)
-    } else {
+    if (!identical(legend, "free")) {
       legend_x <- min(max(legend_x, 0), 1)
       legend_y <- min(max(legend_y, 0), 1)
     }
@@ -1158,10 +1131,10 @@
       val <- suppressWarnings(as.numeric(isolate(input[[paste0("figure_inset_", inset_mode)]] %||% inset[[inset_mode]]))[1])
       if (is.finite(val)) inset[[inset_mode]] <- val
     }
-    inset$x <- min(max(suppressWarnings(as.numeric(inset$x %||% 0.62)[1]), -2), 3)
-    inset$y <- min(max(suppressWarnings(as.numeric(inset$y %||% 0.08)[1]), -2), 3)
-    inset$width <- min(max(suppressWarnings(as.numeric(inset$width %||% 0.32)[1]), 0.05), 1.5)
-    inset$height <- min(max(suppressWarnings(as.numeric(inset$height %||% 0.32)[1]), 0.05), 1.5)
+    inset$x <- suppressWarnings(as.numeric(inset$x %||% 0.62)[1])
+    inset$y <- suppressWarnings(as.numeric(inset$y %||% 0.08)[1])
+    inset$width <- max(suppressWarnings(as.numeric(inset$width %||% 0.32)[1]), 0.01)
+    inset$height <- max(suppressWarnings(as.numeric(inset$height %||% 0.32)[1]), 0.01)
     inset$border <- isTRUE(isolate(input$figure_inset_border))
 
     # v3.41: Appearance is no longer authored by Figure override controls.
@@ -1415,8 +1388,9 @@
       if (source_id %in% names(ext %||% list())) return()
       if (!cache_has(source_id)) return()
 
-      existing <- isolate(figure_inset_preview_cache())[[source_id]]
-      if (is.list(existing) && isTRUE(valid_graph_preview_record(existing))) return()
+      existing <- isolate(figure_inset_preview_cache())[[owner_id]]
+      if (is.list(existing) && isTRUE(valid_graph_preview_record(existing)) &&
+          identical(as.character(existing$source_id %||% "")[1], source_id)) return()
       if (isTRUE(figure_source_snapshot_target_pending(source_id, "inset", owner_id))) return()
 
       revision <- request_figure_inset_snapshot(
@@ -1562,7 +1536,7 @@
 
     st <- isolate(figure_edit_states())[[id]]
     if (!is.list(st)) {
-      showNotification("Figure側に編集可能なGraph snapshotがありません。先に『Graphから再読込』してください。", type="warning", duration=4)
+      showNotification("Figure側に編集可能なGraph snapshotがありません。先にGraph Sourcesから読み込んでください。", type="warning", duration=4)
       return()
     }
 
@@ -1622,7 +1596,7 @@
     id <- as.character(isolate(figure_selected_graph()) %||% "")[1]
     if (!nzchar(id) || id %in% names(isolate(figure_external_assets()))) return()
     if (!id %in% names(isolate(figure_edit_states()))) {
-      showNotification("Figure側に編集可能なGraph snapshotがありません。先に『Graphから再読込』してください。", type="warning", duration=4)
+      showNotification("Figure側に編集可能なGraph snapshotがありません。先にGraph Sourcesから読み込んでください。", type="warning", duration=4)
       return()
     }
     diag_log("FIGURE-EDITOR-SHELL", "edit-request", id = id)
@@ -1726,8 +1700,8 @@
           cell <- st[[rr]]$cells[[cc]]
           if (!identical(as.character(cell$key %||% ""), key)) next
           cell$label_mode <- "free"
-          cell$label_x <- min(max(xp, -0.2), 1.2)
-          cell$label_y <- min(max(yp, -0.2), 1.2)
+          cell$label_x <- xp
+          cell$label_y <- yp
           cell$panel_label_auto <- FALSE
           st[[rr]]$cells[[cc]] <- cell
           slot_payload <- figure_slot_label_payload(cell)

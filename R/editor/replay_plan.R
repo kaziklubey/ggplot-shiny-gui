@@ -65,7 +65,8 @@ graph_editor_replay_plan <- function(previous_state, target_state, profile) {
     if (isTRUE(full) || isTRUE(plot_changed)) {
       add_inputs(c(
         "plot_type", "summary_type", "summary_unit", "external_error_mode",
-        "show_raw", "connect_id", "scatter_connect_mode", "line_breaks"
+        "show_raw", "connect_id", "scatter_connect_mode",
+        "individual_connect_direction", "line_breaks"
       ))
     }
     if (isTRUE(full) || isTRUE(labels_changed)) {

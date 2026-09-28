@@ -49,8 +49,9 @@
         font_family_mode = app_normalize_font_family_mode(font_family_mode_effective()),
         font_family_custom = app_normalize_font_family_custom(font_family_custom_effective()),
         base_size = graph_style_canonical_base_size(graph_appearance_value("base_size", input$base_size), 13),
-        summary_type = graph_plot_value("summary", input$summary_type %||% "sem"),
-        summary_unit = graph_plot_value("summary_unit", input$summary_unit %||% "row"),
+        # Summary method/unit are Plot semantics (GraphState$plot), not Style.
+        # Keeping a second mirror here lets browser hydration restore a stale
+        # appearance value over the canonical plot value and can self-oscillate.
         mean_color_mode = graph_appearance_value("mean_color_mode", input$mean_color_mode),
         bar_fill_none_fixed = graph_appearance_value("bar_fill_none_fixed", input$bar_fill_none_fixed),
         mean_linetype = graph_appearance_value("mean_linetype", input$mean_linetype),
@@ -321,29 +322,27 @@
       if (!is.null(a$scatter_regression_group)) updateSelectInput(session, "scatter_regression_group", selected = json_chr(a$scatter_regression_group))
       if (!is.null(a$scatter_regression_color)) colourpicker::updateColourInput(session, "scatter_regression_color", value = json_chr(a$scatter_regression_color))
       if (!is.null(a$scatter_regression_linetype)) updateSelectInput(session, "scatter_regression_linetype", selected = json_chr(a$scatter_regression_linetype))
-      if (!is.null(a$scatter_regression_width)) updateSliderInput(session, "scatter_regression_width", value = as.numeric(a$scatter_regression_width))
+      if (!is.null(a$scatter_regression_width)) updateNumericInput(session, "scatter_regression_width", value = as.numeric(a$scatter_regression_width))
       if (!is.null(a$scatter_regression_se)) updateCheckboxInput(session, "scatter_regression_se", value = isTRUE(a$scatter_regression_se))
       if (!is.null(a$scatter_regression_se_alpha)) updateSliderInput(session, "scatter_regression_se_alpha", value = as.numeric(a$scatter_regression_se_alpha))
       if (!is.null(a$theme)) updateSelectInput(session, "theme", selected = a$theme)
-      if (!is.null(a$base_size)) updateSliderInput(session, "base_size", value = graph_style_canonical_base_size(a$base_size, 13))
-      if (!is.null(a$summary_type)) updateSelectInput(session, "summary_type", selected = a$summary_type)
-      if (!is.null(a$summary_unit)) {
-        updateRadioButtons(session, "summary_unit", selected = json_chr(a$summary_unit, "row"))
-      }
+      if (!is.null(a$base_size)) updateNumericInput(session, "base_size", value = graph_style_canonical_base_size(a$base_size, 13))
+      # Summary method/unit are intentionally not restored by Graph Style.
+      # Their sole canonical owner is GraphState$plot.
       if (!is.null(a$mean_color_mode)) {
         colourpicker::updateColourInput(session, "mean_color_mode", value = normalise_colour(a$mean_color_mode, "#000000"))
       }
       updateCheckboxInput(session, "bar_fill_none_fixed", value = isTRUE(a$bar_fill_none_fixed))
       if (!is.null(a$mean_linetype)) updateSelectInput(session, "mean_linetype", selected = a$mean_linetype)
       if (!is.null(a$mean_shape)) updateSelectInput(session, "mean_shape", selected = as.character(a$mean_shape))
-      if (!is.null(a$point_size)) updateSliderInput(session, "point_size", value = as.numeric(a$point_size))
+      if (!is.null(a$point_size)) updateNumericInput(session, "point_size", value = as.numeric(a$point_size))
       updateSliderInput(session, "scatter_point_alpha", value = as.numeric(a$scatter_point_alpha %||% 0.90))
       updateCheckboxInput(session, "scatter_jitter_enabled", value = isTRUE(a$scatter_jitter_enabled))
       updateNumericInput(session, "scatter_jitter_x", value = as.numeric(a$scatter_jitter_x %||% 0.10))
       updateNumericInput(session, "scatter_jitter_y", value = as.numeric(a$scatter_jitter_y %||% 0))
-      if (!is.null(a$line_width)) updateSliderInput(session, "line_width", value = as.numeric(a$line_width))
-      if (!is.null(a$line_group_dodge)) updateSliderInput(session, "line_group_dodge", value = as.numeric(a$line_group_dodge))
-      if (!is.null(a$line_x_spacing)) updateSliderInput(session, "line_x_spacing", value = as.numeric(a$line_x_spacing))
+      if (!is.null(a$line_width)) updateNumericInput(session, "line_width", value = as.numeric(a$line_width))
+      if (!is.null(a$line_group_dodge)) updateNumericInput(session, "line_group_dodge", value = as.numeric(a$line_group_dodge))
+      if (!is.null(a$line_x_spacing)) updateNumericInput(session, "line_x_spacing", value = as.numeric(a$line_x_spacing))
       if (!is.null(a$plot_width_px)) {
         pw <- safe_num1(a$plot_width_px, NA_real_)
         updateNumericInput(session, "plot_width_px_direct", value = pw)
@@ -354,16 +353,16 @@
         updateNumericInput(session, "plot_height_px_direct", value = ph)
         if (is.finite(ph) && ph >= 220 && ph <= 900) updateSliderInput(session, "plot_height_px", value = ph)
       }
-      if (!is.null(a$bar_width)) updateSliderInput(session, "bar_width", value = as.numeric(a$bar_width))
+      if (!is.null(a$bar_width)) updateNumericInput(session, "bar_width", value = as.numeric(a$bar_width))
       if (!is.null(a$bar_zero_touch)) updateCheckboxInput(session, "bar_zero_touch", value = isTRUE(a$bar_zero_touch))
-      if (!is.null(a$group_spacing)) updateSliderInput(session, "group_spacing", value = as.numeric(a$group_spacing))
-      if (!is.null(a$box_width_scale)) updateSliderInput(session, "box_width_scale", value = as.numeric(a$box_width_scale))
-      if (!is.null(a$x_category_spacing)) updateSliderInput(session, "x_category_spacing", value = as.numeric(a$x_category_spacing))
+      if (!is.null(a$group_spacing)) updateNumericInput(session, "group_spacing", value = as.numeric(a$group_spacing))
+      if (!is.null(a$box_width_scale)) updateNumericInput(session, "box_width_scale", value = as.numeric(a$box_width_scale))
+      if (!is.null(a$x_category_spacing)) updateNumericInput(session, "x_category_spacing", value = as.numeric(a$x_category_spacing))
       updateRadioButtons(session, "bar_border_mode", selected = json_chr(a$bar_border_mode, "fixed"))
       if (!is.null(a$bar_border_color)) {
         colourpicker::updateColourInput(session, "bar_border_color", value = normalise_colour(a$bar_border_color, "#000000"))
       }
-      if (!is.null(a$bar_border_width)) updateSliderInput(session, "bar_border_width", value = as.numeric(a$bar_border_width))
+      if (!is.null(a$bar_border_width)) updateNumericInput(session, "bar_border_width", value = as.numeric(a$bar_border_width))
       updateSelectInput(
         session, "bar_border_linetype",
         selected = json_chr(a$bar_border_linetype, "solid")
@@ -390,8 +389,8 @@
       if (!is.null(a$raw_alpha)) updateSliderInput(session, "raw_alpha", value = as.numeric(a$raw_alpha))
       if (!is.null(a$raw_shape_mode)) updateSelectInput(session, "raw_shape_mode", selected = a$raw_shape_mode)
       if (!is.null(a$raw_shape)) updateSelectInput(session, "raw_shape", selected = as.character(a$raw_shape))
-      if (!is.null(a$raw_point_size)) updateSliderInput(session, "raw_point_size", value = as.numeric(a$raw_point_size))
-      if (!is.null(a$jitter_width)) updateSliderInput(session, "jitter_width", value = as.numeric(a$jitter_width))
+      if (!is.null(a$raw_point_size)) updateNumericInput(session, "raw_point_size", value = as.numeric(a$raw_point_size))
+      if (!is.null(a$jitter_width)) updateNumericInput(session, "jitter_width", value = as.numeric(a$jitter_width))
       if (!is.null(a$id_line_color_mode)) {
         id_mode_saved <- json_chr(a$id_line_color_mode, "group_light")
         if (id_mode_saved %in% c("black", "gray30", "gray50", "white", "red3", "blue3", "darkgreen")) {
@@ -404,19 +403,19 @@
       if (!is.null(a$id_line_custom_color)) colourpicker::updateColourInput(session, "id_line_custom_color", value = normalise_colour(a$id_line_custom_color, "#4D4D4D"))
       if (!is.null(a$id_line_lighten)) updateSliderInput(session, "id_line_lighten", value = as.numeric(a$id_line_lighten))
       if (!is.null(a$id_linetype)) updateSelectInput(session, "id_linetype", selected = a$id_linetype)
-      if (!is.null(a$id_line_width)) updateSliderInput(session, "id_line_width", value = as.numeric(a$id_line_width))
+      if (!is.null(a$id_line_width)) updateNumericInput(session, "id_line_width", value = as.numeric(a$id_line_width))
       if (!is.null(a$id_line_alpha)) updateSliderInput(session, "id_line_alpha", value = as.numeric(a$id_line_alpha))
       if (!is.null(a$summary_on_top)) updateCheckboxInput(session, "summary_on_top", value = isTRUE(a$summary_on_top))
       if (!is.null(a$error_color_mode)) updateSelectInput(session, "error_color_mode", selected = a$error_color_mode)
       if (!is.null(a$error_color)) colourpicker::updateColourInput(session, "error_color", value = a$error_color)
-      if (!is.null(a$error_width)) updateSliderInput(session, "error_width", value = as.numeric(a$error_width))
-      if (!is.null(a$error_line_width)) updateSliderInput(session, "error_line_width", value = as.numeric(a$error_line_width))
+      if (!is.null(a$error_width)) updateNumericInput(session, "error_width", value = as.numeric(a$error_width))
+      if (!is.null(a$error_line_width)) updateNumericInput(session, "error_line_width", value = as.numeric(a$error_line_width))
       if (!is.null(a$y_break_enabled)) updateCheckboxInput(session, "y_break_enabled", value = isTRUE(a$y_break_enabled))
       if (!is.null(a$y_breaks_auto)) updateCheckboxInput(session, "y_breaks_auto", value = isTRUE(a$y_breaks_auto))
       if (!is.null(a$y_breaks_step)) updateNumericInput(session, "y_breaks_step", value = as.numeric(a$y_breaks_step))
       if (!is.null(a$y_break_from)) updateNumericInput(session, "y_break_from", value = as.numeric(a$y_break_from))
       if (!is.null(a$y_break_to)) updateNumericInput(session, "y_break_to", value = as.numeric(a$y_break_to))
-      if (!is.null(a$y_break_space)) updateSliderInput(session, "y_break_space", value = as.numeric(a$y_break_space))
+      if (!is.null(a$y_break_space)) updateNumericInput(session, "y_break_space", value = as.numeric(a$y_break_space))
       if (!is.null(a$y_break_symbol)) updateCheckboxInput(session, "y_break_symbol", value = isTRUE(a$y_break_symbol))
       updateCheckboxInput(
         session, "x_tick_labels_show",
@@ -471,17 +470,17 @@
       updateCheckboxInput(session, "legend_individual_title_show", value = isTRUE(a$legend_individual_title_show))
       updateTextInput(session, "legend_individual_title", value = a$legend_individual_title %||% "")
       updateSelectInput(session, "legend_wrap_mode", selected = a$legend_wrap_mode %||% "auto")
-      updateSliderInput(session, "legend_wrap_count", value = as.numeric(a$legend_wrap_count %||% 2L))
+      updateNumericInput(session, "legend_wrap_count", value = as.numeric(a$legend_wrap_count %||% 2L))
       updateNumericInput(session, "legend_item_spacing", value = as.numeric(a$legend_item_spacing %||% -1))
       updateNumericInput(session, "legend_text_size", value = as.numeric(a$legend_text_size %||% 0))
       if (!is.null(a$legend_key_width)) {
-        updateSliderInput(
+        updateNumericInput(
           session, "legend_key_width",
           value = as.numeric(a$legend_key_width)
         )
       }
       if (!is.null(a$facet_spacing_x)) {
-        updateSliderInput(session, "facet_spacing_x", value = as.numeric(a$facet_spacing_x))
+        updateNumericInput(session, "facet_spacing_x", value = as.numeric(a$facet_spacing_x))
       }
       if (!is.null(a$sticky_plot)) updateCheckboxInput(session, "sticky_plot", value = isTRUE(a$sticky_plot))
     } else {
@@ -507,7 +506,7 @@
       updateCheckboxInput(session, "legend_individual_title_show", value = FALSE)
       updateTextInput(session, "legend_individual_title", value = "")
       updateSelectInput(session, "legend_wrap_mode", selected = "auto")
-      updateSliderInput(session, "legend_wrap_count", value = 2)
+      updateNumericInput(session, "legend_wrap_count", value = 2)
       updateNumericInput(session, "legend_item_spacing", value = -1)
       updateNumericInput(session, "legend_text_size", value = 0)
     }

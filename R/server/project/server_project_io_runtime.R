@@ -88,21 +88,17 @@
     overrides_now <- isolate(figure_override_drafts())
     if (length(overrides_now)) {
       overrides_now <- lapply(overrides_now, figure_strip_slot_label_fields_from_override)
-      layout_ids <- unique(unlist(lapply(layout_now, function(row) {
-        vapply(row$cells %||% list(), function(cell) as.character(cell$id %||% ""), character(1))
-      }), use.names = FALSE))
-      keep_ids <- intersect(names(overrides_now), layout_ids[nzchar(layout_ids)])
+      keep_ids <- intersect(
+        names(overrides_now),
+        unique(c(as.character(meta_now$id), names(isolate(figure_external_assets()))))
+      )
       overrides_now <- overrides_now[keep_ids]
     }
     edit_states_now <- isolate(figure_edit_states())
     if (!is.list(edit_states_now)) edit_states_now <- list()
-    layout_internal_ids <- unique(unlist(lapply(layout_now, function(row) {
-      vapply(row$cells %||% list(), function(cell) {
-        if (identical(as.character(cell$source_type %||% "internal_graph"), "internal_graph")) as.character(cell$id %||% "") else ""
-      }, character(1))
-    }), use.names = FALSE))
-    layout_internal_ids <- layout_internal_ids[nzchar(layout_internal_ids)]
-    edit_states_now <- edit_states_now[intersect(names(edit_states_now), layout_internal_ids)]
+    # Figure-owned GraphState outlives panel placement. Persist every state whose
+    # source Graph still exists, including temporarily unplaced Figure Graphs.
+    edit_states_now <- edit_states_now[intersect(names(edit_states_now), as.character(meta_now$id))]
 
     list(
       version = 12L,
@@ -116,8 +112,8 @@
       external_assets = isolate(figure_external_assets()),
       canvas_width = min(max(cw, 300), 6000),
       canvas_height = min(max(ch, 300), 6000),
-      gap_x = min(max(gx, 0), 300),
-      gap_y = min(max(gy, 0), 300),
+      gap_x = max(gx, 0),
+      gap_y = max(gy, 0),
       column_ratios = figure_shared_column_ratios(layout_now),
       layout = figure_reindex_layout(layout_now),
       overrides = overrides_now,
@@ -160,7 +156,6 @@
     figure_loaded_exports(list())
     figure_loaded_assets(list())
     figure_persisted_previews(list())
-    project_legacy_graph_previews(list())
     clear_figure_svg_cache()
     clear_figure_geometry_cache()
     clear_figure_geometry_source_state()
@@ -277,7 +272,7 @@
     if (!autofit_policy %in% c("live", "manual", "lock")) autofit_policy <- "live"
     free_padding <- suppressWarnings(as.numeric(saved$free_canvas_padding %||% 24)[1])
     if (!is.finite(free_padding)) free_padding <- 24
-    free_padding <- min(max(free_padding, 0), 500)
+    free_padding <- max(free_padding, 0)
     external_assets <- saved$external_assets %||% list()
     if (!is.list(external_assets)) external_assets <- list()
     if (!is.finite(cw)) cw <- 1600
@@ -286,8 +281,8 @@
     if (!is.finite(gy)) gy <- 12
     cw <- min(max(cw, 300), 6000)
     ch <- min(max(ch, 300), 6000)
-    gx <- min(max(gx, 0), 300)
-    gy <- min(max(gy, 0), 300)
+    gx <- max(gx, 0)
+    gy <- max(gy, 0)
 
     layout <- saved$layout %||% figure_default_layout_state()
     # v3.80.8: Project payload stores the Figure-wide column vector explicitly.
@@ -409,15 +404,10 @@
     saved_edit_states <- saved$editable_graph_states %||% list()
     mapped_edit_states <- list()
     if (is.list(saved_edit_states) && length(saved_edit_states)) {
-      valid_layout_internal <- unique(unlist(lapply(layout, function(row) {
-        vapply(row$cells %||% list(), function(cell) {
-          if (identical(as.character(cell$source_type %||% "internal_graph"), "internal_graph")) as.character(cell$id %||% "") else ""
-        }, character(1))
-      }), use.names = FALSE))
-      valid_layout_internal <- valid_layout_internal[nzchar(valid_layout_internal)]
+      valid_graph_ids <- as.character(meta$id %||% character(0))
       for (old_id in names(saved_edit_states)) {
-        new_id <- if (old_id %in% names(id_map)) as.character(id_map[[old_id]]) else if (old_id %in% valid_layout_internal) old_id else ""
-        if (!nzchar(new_id) || !new_id %in% valid_layout_internal) next
+        new_id <- if (old_id %in% names(id_map)) as.character(id_map[[old_id]]) else if (old_id %in% valid_graph_ids) old_id else ""
+        if (!nzchar(new_id) || !new_id %in% valid_graph_ids) next
         st_edit <- saved_edit_states[[old_id]]
         if (is.list(st_edit)) {
           mapped_edit_states[[new_id]] <- graph_state_prepare_replay_snapshot(
@@ -569,8 +559,7 @@
       ),
       shared_style = list(
         schema_version = 1L,
-        library = shared_style_normalize_library(shiny::isolate(shared_style_library())),
-        figure_sync = isTRUE(shiny::isolate(figure_shared_style_sync()))
+        library = shared_style_normalize_library(shiny::isolate(shared_style_library()))
       ),
       graphs = graphs,
       figure = figure_state_for_save()
@@ -610,14 +599,13 @@
     ovs <- isolate(figure_requested_overrides())
     out <- list()
 
-    referenced_ids <- figure_referenced_graph_ids()
-    for (id in intersect(as.character(meta_now$id %||% character(0)), referenced_ids)) {
-      # Preserve Figure's explicit-refresh semantics across Project save/load.
-      # v3.72: unreferenced historical Figure snapshots are not serialized; a
-      # later re-add must import the current Graph rather than resurrect cache.
-      # Only an in-session Figure snapshot (or an older persisted Figure
-      # snapshot) is eligible here. A newer live Graph preview must NOT silently
-      # replace a Figure source that the user has not explicitly reloaded.
+    owned_ids <- unique(c(
+      names(isolate(figure_edit_states())), names(assets), names(plots), names(persisted)
+    ))
+    for (id in intersect(as.character(meta_now$id %||% character(0)), owned_ids)) {
+      # Preserve Figure ownership across temporary panel removal and Project
+      # save/load. Only Figure-owned state/assets are eligible; a newer live
+      # Graph preview must never replace an explicitly frozen Figure source.
       p <- assets[[id]]$plot %||% plots[[id]]
       ex <- assets[[id]]$meta %||% exports[[id]]
       if (is.null(p)) {
@@ -1092,7 +1080,6 @@
     project_read_error(NULL)
     project_bundle_pending_previews(list())
     project_bundle_pending_inset_previews(list())
-    project_bundle_pending_graph_previews(list())
     diag_log("PACK", paste0("read_project_file path=", basename(path), " bytes=", tryCatch(file.info(path)$size, error = function(e) NA)))
 
     # v3.3.54: packaged Project may contain files either at archive root or
@@ -1163,7 +1150,6 @@
               extracted[basename(extracted) == "manifest.rds"]
             )
             manifest_candidates <- unique(manifest_candidates[file.exists(manifest_candidates)])
-            graph_previews <- list()
             figure_previews <- list()
             inset_previews <- list()
             diag_log("PACK", paste0("manifest existing candidates=", length(manifest_candidates)))
@@ -1176,15 +1162,11 @@
                   NULL
                 }
               )
-              graph_entries <- man$previews %||% list()
-              # v1 packages had only one preview role. Treat that legacy asset
-              # as both Graph preview and Figure snapshot on load.
-              figure_entries <- man$figure_previews %||% graph_entries
+              figure_entries <- man$figure_previews %||% list()
               diag_log(
                 "PACK",
                 paste0(
                   "manifest=", manifest_path,
-                  " graph preview entries=", length(graph_entries),
                   " figure preview entries=", length(figure_entries)
                 )
               )
@@ -1218,6 +1200,10 @@
                   )
                   if (valid_svg) {
                     rec <- list(svg = svg, meta = ent$meta %||% list())
+                    if (identical(kind, "inset")) {
+                      rec$owner_id <- old_id
+                      rec$source_id <- as.character(ent$source_id %||% "")[1]
+                    }
                     if (identical(kind, "figure")) {
                       body_ent <- ent$body %||% NULL
                       if (is.list(body_ent)) {
@@ -1270,7 +1256,6 @@
                 }
                 out
               }
-              graph_previews <- read_preview_entries(graph_entries, "graph")
               figure_previews <- read_preview_entries(figure_entries, "figure")
               inset_previews <- read_preview_entries(man$figure_inset_previews %||% list(), "inset")
             } else {
@@ -1278,10 +1263,8 @@
             }
             diag_log(
               "PACK",
-              paste0("pending graph previews loaded=", length(graph_previews),
-                     " figure previews loaded=", length(figure_previews))
+              paste0("pending figure previews loaded=", length(figure_previews))
             )
-            project_bundle_pending_graph_previews(graph_previews)
             project_bundle_pending_previews(figure_previews)
             project_bundle_pending_inset_previews(inset_previews)
             return(cfg)
@@ -1308,17 +1291,15 @@
   # Project bootstrap is state-first. The persistent Editor already exists;
   # loading a Project replaces canonical GraphState and replays the selected
   # Graph values into that same Editor.
-  project_stage_state_target <- function(target, legacy_graph_preview_count, figure_preview_count) {
+  project_stage_state_target <- function(target, figure_preview_count) {
     target <- as.character(target %||% "")[1]
     if (!nzchar(target)) return(invisible(FALSE))
 
     figure_visible <- identical(as.character(isolate(input$workspace_main_tab) %||% "")[1], "figure_workspace")
     figure_geometry_bootstrap_deferred(!figure_visible)
 
-    # Project bootstrap is state-first. Old packaged Graph SVGs are accepted by
-    # the reader only for migration compatibility and are deliberately ignored
-    # as a display/runtime authority. Other Graphs remain state-only until they
-    # are selected; Figure and Export render directly from canonical state.
+    # Project bootstrap is state-first. Other Graphs remain state-only until
+    # they are selected; Figure and Export use only explicit Figure snapshots.
     active_graph(target)
     complete_project_load_lock("registry/Figure snapshots staged; selected persistent Editor attach")
 
@@ -1334,8 +1315,7 @@
     diag_log(
       "PROJECT-STATE-FIRST",
       sprintf(
-        "selected Editor attach started; ignored legacy Graph previews=%d Figure snapshots=%d",
-        as.integer(legacy_graph_preview_count %||% 0L),
+        "selected Editor attach started; Figure snapshots=%d",
         as.integer(figure_preview_count %||% 0L)
       ),
       id = target
@@ -1379,16 +1359,17 @@
     # been validated. A broken/unreadable file must not destroy the Figure the
     # user was already editing.
     reset_figure_workspace(reset_layout = TRUE)
+    session$sendCustomMessage("figure-collapse-workspace-controls", list(reason = "project-load"))
 
     shared_cfg <- cfg$shared_style %||% list()
     restored_library <- shared_style_normalize_library(shared_cfg$library %||% NULL)
-    restored_figure_sync <- isTRUE(shared_cfg$figure_sync)
     shared_style_library(restored_library)
-    figure_shared_style_sync(restored_figure_sync)
-    updateCheckboxInput(session, "figure_shared_style_sync", value = restored_figure_sync)
+    # Figure no longer has a Shared Style auto-sync mode. Older projects may
+    # contain shared_style$figure_sync; it is intentionally ignored so Figure
+    # remains a frozen owner until an explicit Common Settings apply.
     diag_log(
       "SHARED-STYLE-RESTORE",
-      paste0("items=", length(restored_library$items), " figure_sync=", restored_figure_sync)
+      paste0("items=", length(restored_library$items), " figure_sync=retired")
     )
 
     loaded_uuid <- as.character(cfg$project_uuid %||% "")
@@ -1441,8 +1422,6 @@
     # Project replacement is state-first. Dormant Graphs have no hidden UI/module
     # to tear down; replace the canonical Registry after invalidating the one
     # persistent Editor owner below.
-    project_legacy_graph_previews(list())
-
     # Project replacement invalidates the old Graph owner before the canonical
     # Registry is cleared.  This prevents the outgoing Graph from being
     # committed into the newly loaded Project when the new target attaches.
@@ -1548,10 +1527,8 @@
     id_map <- stats::setNames(created, source_ids)
     restore_figure_project_state(cfg$figure, id_map, new_meta)
 
-    # Remap packaged Graph previews and Figure snapshots independently. Graph
-    # workspace uses the latest Graph-owned SVG; Figure keeps the explicitly
-    # refreshed source snapshot it had when the Project was saved.
-    pending_graph_previews <- isolate(project_bundle_pending_graph_previews())
+    # Remap packaged Figure snapshots. Figure keeps the explicitly refreshed
+    # source snapshot it had when the Project was saved.
     pending_figure_previews <- isolate(project_bundle_pending_previews())
     map_preview_records <- function(records, kind) {
       mapped <- list()
@@ -1568,7 +1545,17 @@
           paste0("kind=", kind, " old=", old_id, " new=", new_id, " valid_record=", valid_rec),
           id = old_id
         )
-        if (nzchar(new_id) && valid_rec) mapped[[new_id]] <- records[[old_id]]
+        if (nzchar(new_id) && valid_rec) {
+          rec <- records[[old_id]]
+          if (identical(kind, "inset")) {
+            old_source <- as.character(rec$source_id %||% "")[1]
+            rec$owner_id <- new_id
+            rec$source_id <- if (old_source %in% names(id_map)) {
+              as.character(id_map[[old_source]])
+            } else old_source
+          }
+          mapped[[new_id]] <- rec
+        }
       }
       mapped
     }
@@ -1576,30 +1563,58 @@
       "PREVIEW-MAP",
       paste0(
         "source_ids=", paste(source_ids, collapse = ","),
-        " graph_pending_ids=", paste(names(pending_graph_previews), collapse = ","),
         " figure_pending_ids=", paste(names(pending_figure_previews), collapse = ","),
         " id_map=", paste(paste0(names(id_map), "->", as.character(id_map)), collapse = ",")
       )
     )
-    mapped_graph_previews <- map_preview_records(pending_graph_previews, "graph")
     mapped_figure_previews <- map_preview_records(pending_figure_previews, "figure")
-    # Legacy Graph previews may exist in older packages. Keep them only in a
-    # migration-only store used by the old Figure legend seed heuristic; never
-    # install them into the live Graph workspace.
-    project_legacy_graph_previews(mapped_graph_previews)
     figure_persisted_previews(mapped_figure_previews)
     mapped_inset_previews <- map_preview_records(isolate(project_bundle_pending_inset_previews()), "inset")
+    # Current packages key Inset snapshots by owner Graph. resume1 and older
+    # packages keyed them by source Graph and carried no source_id metadata.
+    # Fan that legacy frozen asset out to every restored owner that referenced
+    # the source, then continue with the single owner-keyed runtime model.
+    normalized_inset_previews <- list()
+    restored_overrides <- isolate(figure_override_drafts())
+    for (mapped_id in names(mapped_inset_previews)) {
+      rec <- mapped_inset_previews[[mapped_id]]
+      source_id <- as.character(rec$source_id %||% "")[1]
+      if (nzchar(source_id)) {
+        owner_id <- as.character(rec$owner_id %||% mapped_id)[1]
+        normalized_inset_previews[[owner_id]] <- rec
+        next
+      }
+      legacy_source_id <- mapped_id
+      for (owner_id in names(restored_overrides)) {
+        inset <- (restored_overrides[[owner_id]] %||% list())$inset %||% list()
+        if (!isTRUE(inset$enabled) ||
+            !identical(as.character(inset$source_type %||% "internal_graph")[1], "internal_graph") ||
+            !identical(as.character(inset$source_id %||% "")[1], legacy_source_id)) next
+        migrated <- rec
+        migrated$owner_id <- owner_id
+        migrated$source_id <- legacy_source_id
+        normalized_inset_previews[[owner_id]] <- migrated
+      }
+    }
+    mapped_inset_previews <- normalized_inset_previews
+    # Older Projects may have only a Main Figure preview for an Inset source.
+    # Resolve that migration once at restore time into the owner-keyed cache;
+    # Viewer, export, and Main replacement then use no source-key fallback.
+    for (source_id in names(mapped_figure_previews)) {
+      migrated <- figure_materialize_persisted_inset_fallbacks(
+        mapped_inset_previews,
+        restored_overrides,
+        source_id,
+        mapped_figure_previews[[source_id]]
+      )
+      mapped_inset_previews <- migrated$cache
+    }
     figure_inset_preview_cache(mapped_inset_previews)
     for (id in names(mapped_inset_previews)) bump_figure_snapshot_revision(id)
-    # v3.72 lifecycle rule: Figure owns state/cache only for sources that are
-    # currently referenced by the restored Figure layout (or enabled insets).
-    # This also cleans older packages that persisted snapshots for every Graph.
-    figure_gc_unreferenced_sources(reason = "project-restore")
     mapped_figure_previews <- isolate(figure_persisted_previews())
     if (length(mapped_figure_previews)) {
       for (id in names(mapped_figure_previews)) bump_figure_snapshot_revision(id)
     }
-    project_bundle_pending_graph_previews(list())
     project_bundle_pending_previews(list())
     project_bundle_pending_inset_previews(list())
 
@@ -1615,14 +1630,12 @@
     diag_log(
       "PROJECT",
       paste0("restore registry graphs=", length(created),
-             " legacy_graph_previews_ignored=", length(mapped_graph_previews),
              " mapped_figure_previews=", length(mapped_figure_previews),
              " target=", target),
       id = target
     )
     project_stage_state_target(
       target,
-      legacy_graph_preview_count = length(mapped_graph_previews),
       figure_preview_count = length(mapped_figure_previews)
     )
   })

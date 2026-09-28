@@ -63,8 +63,8 @@
       list(group="タイトル", label="Graph title", path="labels.title", section="axes-legend", input="title", apply=TRUE, editor=editor_text()),
       list(group="X軸", label="X軸タイトル", path="labels.xlab", section="axes-legend", input="xlab", apply=TRUE, shared_axis="x", editor=editor_text()),
       list(group="X軸", label="X軸のカテゴリ名を表示", path="style.appearance.x_tick_labels_show", section="axes-legend", input="x_tick_labels_show", apply=TRUE, editor=editor_boolean()),
-      list(group="X軸", label="カテゴリ間隔", path="style.appearance.x_category_spacing", section="appearance", input="x_category_spacing", apply=TRUE, editor=editor_number(0, 2.5, 0.05)),
-      list(group="X軸", label="Line X目盛間隔", path="style.appearance.line_x_spacing", section="axes-legend", input="line_x_spacing", apply=TRUE, editor=editor_number(0, 1, 0.05)),
+      list(group="X軸", label="カテゴリ間隔", path="style.appearance.x_category_spacing", section="appearance", input="x_category_spacing", apply=TRUE, editor=editor_number(0, NULL, 0.05)),
+      list(group="X軸", label="Line X目盛間隔", path="style.appearance.line_x_spacing", section="axes-legend", input="line_x_spacing", apply=TRUE, editor=editor_number(0, NULL, 0.05)),
       list(group="Y軸", label="Y軸タイトル", path="labels.ylab", section="axes-legend", input="ylab", apply=TRUE, shared_axis="y", editor=editor_text()),
       list(group="Y軸", label="Y最小", path="labels.ymin", section="axes-legend", input="ymin", apply=TRUE, editor=editor_axis_number()),
       list(group="Y軸", label="Y最大", path="labels.ymax", section="axes-legend", input="ymax", apply=TRUE, editor=editor_axis_number()),
@@ -72,8 +72,8 @@
       list(group="Y軸", label="目盛間隔 自動", path="style.appearance.y_breaks_auto", section="axes-legend", input="y_breaks_auto", apply=TRUE, editor=editor_boolean()),
       list(group="Y軸", label="目盛間隔", path="style.appearance.y_breaks_step", section="axes-legend", input="y_breaks_step", apply=TRUE, editor=editor_number(0.000001, NULL, 0.1)),
       list(group="Y軸", label="途中省略", path="style.appearance.y_break_enabled", section="axes-legend", input="y_break_enabled", apply=TRUE, editor=editor_boolean()),
-      list(group="サイズ", label="Plot横幅", path="style.appearance.plot_width_px", section="axes-legend", input="plot_width_px_direct", suffix=" px", apply=TRUE, editor=editor_number(250, 2000, 10)),
-      list(group="サイズ", label="Plot縦幅", path="style.appearance.plot_height_px", section="axes-legend", input="plot_height_px_direct", suffix=" px", apply=TRUE, editor=editor_number(180, 1400, 10)),
+      list(group="サイズ", label="Plot横幅", path="style.appearance.plot_width_px", section="axes-legend", input="plot_width_px_direct", suffix=" px", apply=TRUE, editor=editor_number(1, NULL, 10)),
+      list(group="サイズ", label="Plot縦幅", path="style.appearance.plot_height_px", section="axes-legend", input="plot_height_px_direct", suffix=" px", apply=TRUE, editor=editor_number(1, NULL, 10)),
       list(group="凡例", label="凡例位置", path="style.appearance.legend_pos", section="legend", input="legend_pos", apply=TRUE,
            editor=editor_select(c("right","left","top","bottom","none"), c("右","左","上","下","非表示"))),
       list(group="凡例", label="色凡例を表示", path="style.appearance.legend_colour_show", section="legend", input="legend_colour_show", apply=TRUE, editor=editor_boolean()),
@@ -97,24 +97,24 @@
       list(group="凡例", label="点形状凡例順", path="style.appearance.legend_shape_order", section="legend", input="legend_shape_order", apply=TRUE, editor=editor_select(as.character(1:4), as.character(1:4))),
       list(group="凡例", label="凡例折り返し", path="style.appearance.legend_wrap_mode", section="legend", input="legend_wrap_mode", apply=TRUE,
            editor=editor_select(c("auto","ncol","nrow"), c("自動","列数指定","行数指定"))),
-      list(group="凡例", label="凡例の列 / 行数", path="style.appearance.legend_wrap_count", section="legend", input="legend_wrap_count", apply=TRUE, editor=editor_number(1, 12, 1)),
-      list(group="凡例", label="凡例項目間隔", path="style.appearance.legend_item_spacing", section="legend", input="legend_item_spacing", suffix=" cm", apply=TRUE, editor=editor_number(-1, 2, 0.05)),
-      list(group="凡例", label="凡例文字サイズ", path="style.appearance.legend_text_size", section="legend", input="legend_text_size", suffix=" pt", apply=TRUE, editor=editor_number(0, 48, 0.5)),
-      list(group="凡例", label="凡例サンプル長", path="style.appearance.legend_key_width", section="legend", input="legend_key_width", apply=TRUE, editor=editor_number(0, 4, 0.1)),
+      list(group="凡例", label="凡例の列 / 行数", path="style.appearance.legend_wrap_count", section="legend", input="legend_wrap_count", apply=TRUE, editor=editor_number(1, NULL, 1)),
+      list(group="凡例", label="凡例項目間隔", path="style.appearance.legend_item_spacing", section="legend", input="legend_item_spacing", suffix=" cm", apply=TRUE, editor=editor_number(-1, NULL, 0.05)),
+      list(group="凡例", label="凡例文字サイズ", path="style.appearance.legend_text_size", section="legend", input="legend_text_size", suffix=" pt", apply=TRUE, editor=editor_number(0, NULL, 0.5)),
+      list(group="凡例", label="凡例サンプル長", path="style.appearance.legend_key_width", section="legend", input="legend_key_width", apply=TRUE, editor=editor_number(0, NULL, 0.1)),
       list(group="書式", label="Theme", path="style.appearance.theme", section="appearance", input="theme", apply=TRUE,
            editor=editor_select(c("classic","bw","minimal","gray"), c("classic","bw","minimal","gray"))),
       list(group="書式", label="Font", path="style.appearance.font_family_mode", section="appearance", input="font_family_mode", apply=TRUE, editor=editor_text(FALSE)),
-      list(group="書式", label="基本フォントサイズ", path="style.appearance.base_size", section="appearance", input="base_size", apply=TRUE, editor=editor_number(8, 24, 1)),
+      list(group="書式", label="基本フォントサイズ", path="style.appearance.base_size", section="appearance", input="base_size", apply=TRUE, editor=editor_number(1, NULL, 0.1)),
       # Palette selection alone does not apply colours in the Graph UI; the
       # separate "Colorへパレットを適用" action materializes color_styles.
       # Keep this row comparison/navigation-only rather than implying a direct
       # value write would recolour the plot.
       list(group="書式", label="Palette", path="style.appearance.palette_preset", section="appearance", input="palette_preset", apply=FALSE),
-      list(group="書式", label="Point size", path="style.appearance.point_size", section="appearance", input="point_size", apply=TRUE, editor=editor_number(0, 8, 0.1)),
-      list(group="書式", label="Line width", path="style.appearance.line_width", section="appearance", input="line_width", apply=TRUE, editor=editor_number(0, 3, 0.1)),
-      list(group="書式", label="Bar width", path="style.appearance.bar_width", section="appearance", input="bar_width", apply=TRUE, editor=editor_number(0, 3, 0.02)),
-      list(group="Error bar", label="Error bar幅", path="style.appearance.error_width", section="error-bars", input="error_width", apply=TRUE, editor=editor_number(0, 0.8, 0.05)),
-      list(group="Error bar", label="Error bar線幅", path="style.appearance.error_line_width", section="error-bars", input="error_line_width", apply=TRUE, editor=editor_number(0, 2, 0.05))
+      list(group="書式", label="Point size", path="style.appearance.point_size", section="appearance", input="point_size", apply=TRUE, editor=editor_number(0, NULL, 0.1)),
+      list(group="書式", label="Line width", path="style.appearance.line_width", section="appearance", input="line_width", apply=TRUE, editor=editor_number(0, NULL, 0.1)),
+      list(group="書式", label="Bar width", path="style.appearance.bar_width", section="appearance", input="bar_width", apply=TRUE, editor=editor_number(0, NULL, 0.02)),
+      list(group="Error bar", label="Error bar幅", path="style.appearance.error_width", section="error-bars", input="error_width", apply=TRUE, editor=editor_number(0, NULL, 0.05)),
+      list(group="Error bar", label="Error bar線幅", path="style.appearance.error_line_width", section="error-bars", input="error_line_width", apply=TRUE, editor=editor_number(0, NULL, 0.05))
     )
   }
 

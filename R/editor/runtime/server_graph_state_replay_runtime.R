@@ -147,6 +147,10 @@
           session, "scatter_connect_mode",
           selected = json_chr(pl$scatter_connect_mode, if (isTRUE(pl$connect_id)) "id" else "none")
         )
+        updateSelectInput(
+          session, "individual_connect_direction",
+          selected = json_chr(pl$individual_connect_direction, "auto")
+        )
       }
 
       if (isTRUE(rp$full) || isTRUE(rp$labels_changed)) {
@@ -384,7 +388,14 @@
     if (!is.list(cfg)) return(invisible(FALSE))
     snapshot <- graph_ui_snapshot_normalize(cfg$ui_snapshot)
 
-    previous_state <- isolate(attached_state_seed())
+    transaction_new_graph <- isTRUE((transaction %||% list())$new_graph)
+    # A genuinely new Graph owns a pristine canonical template.  The persistent
+    # Editor DOM may still display the previous Graph, so delta replay against
+    # attached_state_seed() is the wrong optimization boundary here: any stale
+    # browser control omitted from the delta can visually inherit the old Graph.
+    # New Graph creation therefore performs one full canonical hydration.
+    # Ordinary Graph switches and Duplicate keep the delta replay path.
+    previous_state <- if (isTRUE(transaction_new_graph)) NULL else isolate(attached_state_seed())
     replay_plan <- graph_editor_replay_plan(previous_state, cfg, editor_profile)
     if (!is.list(replay_plan)) return(invisible(FALSE))
 

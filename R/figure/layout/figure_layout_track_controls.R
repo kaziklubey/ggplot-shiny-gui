@@ -14,7 +14,7 @@ figure_shared_column_ratio_controls <- function(layout) {
         class = "form-control input-sm figure-column-ratio-edit",
         `data-col` = cc,
         value = format(ratios[[cc]], trim = TRUE, scientific = FALSE),
-        min = "0.1", max = "10", step = "0.1",
+        min = "0.1", step = "0.1",
         title = paste0("Fixed Canvasの全Row共通 Col ", cc, " 幅比")
       )
     )

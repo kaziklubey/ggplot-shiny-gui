@@ -109,8 +109,8 @@
     if (!is.finite(gy)) gy <- 12
     fw <- min(max(fw, 300), 6000)
     fh <- min(max(fh, 300), 6000)
-    gx <- min(max(gx, 0), 300)
-    gy <- min(max(gy, 0), 300)
+    gx <- max(gx, 0)
+    gy <- max(gy, 0)
 
     source_ids <- unique(unlist(lapply(layout, function(row) {
       vapply(row$cells %||% list(), function(cell) as.character(cell$id %||% ""), character(1))
@@ -301,7 +301,7 @@
       source_id, target_type = "inset", owner_id = owner_id
     )
     if (completed < expected_revision) return()
-    rec <- isolate(figure_inset_preview_cache())[[source_id]]
+    rec <- isolate(figure_inset_preview_cache())[[owner_id]]
     figure_inset_refresh_target(list(owner_id = "", source_id = "", revision = NA_integer_))
     if (!figure_source_snapshot_success(source_id, "inset", owner_id) ||
         is.null(rec) || !isTRUE(valid_graph_preview_record(rec))) {
@@ -312,29 +312,63 @@
     showNotification("InsetをGraphから更新しました。", type = "message", duration = 2)
   })
 
-  observeEvent(input$figure_graph_refresh_selected, {
+  output$figure_graph_sources_status <- renderUI({
+    ids <- as.character(figure_requested_ids() %||% character(0))
+    ids <- unique(ids[nzchar(ids)])
+    meta <- graph_meta()
+    states <- figure_edit_states()
+    selected_id <- as.character(figure_selected_graph() %||% "")[1]
+
+    if (!length(ids)) {
+      return(tags$div(class = "figure-graph-source-status-empty text-muted", "FigureにGraphが配置されていません。"))
+    }
+
+    rows <- lapply(ids, function(id) {
+      nm <- meta$name[match(id, meta$id)]
+      if (!length(nm) || is.na(nm) || !nzchar(nm)) nm <- id
+      loaded <- is.list(states[[id]])
+      tags$div(
+        class = paste("figure-graph-source-status-row", if (identical(id, selected_id)) "is-selected" else ""),
+        tags$span(class = "figure-graph-source-name", nm),
+        tags$span(
+          class = paste("figure-graph-source-state", if (loaded) "is-loaded" else "is-missing"),
+          if (loaded) "● Loaded" else "○ Not loaded"
+        )
+      )
+    })
+
+    tags$div(
+      class = "figure-graph-source-status",
+      tags$div(class = "figure-graph-source-status-heading", paste0("配置Graph: ", length(ids), " / 読込済み: ", sum(vapply(ids, function(id) is.list(states[[id]]), logical(1))))),
+      rows
+    )
+  })
+
+  observeEvent(input$figure_graph_load_selected, {
+    if (isTRUE(isolate(figure_load_pending()))) {
+      showNotification("Graph Sourcesの読み込み処理中です。", type = "message", duration = 2)
+      return()
+    }
     id <- as.character(isolate(figure_selected_graph() %||% ""))[1]
     key <- as.character(isolate(figure_selected_panel_key() %||% ""))[1]
     if (!nzchar(id) || !nzchar(key)) {
-      showNotification("更新するFigure Panelを選択してください。", type = "message", duration = 2)
+      showNotification("読み込むFigure Panelを選択してください。", type = "message", duration = 2)
       return()
     }
 
     ext <- isolate(figure_external_assets())
     if (id %in% names(ext)) {
-      showNotification("外部AssetはGraphから更新できません。", type = "warning", duration = 3)
+      showNotification("外部AssetはGraphから読み込めません。", type = "warning", duration = 3)
       return()
     }
 
-    # This action means "take the current canonical GraphState now". Packaged
-    # Figure SVGs and live Graph modules are never used as the source authority.
     clear_figure_svg_cache()
     expected_revision <- request_figure_source_snapshot(
       id, reason = "figure-panel-explicit-refresh", import_editor_state = TRUE
     )
     figure_panel_refresh_target(list(id = id, key = key, revision = expected_revision))
     diag_log("FIGURE-PANEL-REFRESH", paste0("queued Figure direct state build key=", key, " revision=", expected_revision), id = id)
-    showNotification("選択PanelのGraphを読み込み中です。", type = "message", duration = 2)
+    showNotification("選択GraphをFigureへ読み込み中です。", type = "message", duration = 2)
   }, ignoreInit = TRUE)
 
   observe({
@@ -349,41 +383,39 @@
     figure_panel_refresh_target(list(id = "", key = "", revision = NA_integer_))
     if (!figure_source_snapshot_success(id) || !isTRUE(figure_editor_snapshot_available(id))) {
       diag_log("FIGURE-PANEL-REFRESH", paste0("failed after direct state build key=", key), id = id)
-      showNotification("選択PanelのGraph snapshotを作成できませんでした。", type = "warning", duration = 3)
+      showNotification("選択GraphのFigure snapshotを作成できませんでした。", type = "warning", duration = 3)
       return()
     }
 
     diag_log("FIGURE-PANEL-REFRESH", paste0("READY-SNAPSHOT key=", key, " mode=direct-state"), id = id)
-    showNotification("選択PanelをGraphから更新しました。", type = "message", duration = 2)
+    showNotification("選択GraphをFigureへ読み込みました。", type = "message", duration = 2)
   })
 
-  observeEvent(input$figure_graph_load, {
-    # Main Figure Graph refresh only.  Inset sources have their own explicit
-    # update action and must not be refreshed as a side effect of this button.
-    ids <- as.character(isolate(figure_requested_ids()))
+  start_figure_graph_load <- function(ids, reason = "bulk-import-canonical") {
+    if (isTRUE(isolate(figure_load_pending()))) {
+      showNotification("Graph Sourcesの読み込み処理中です。", type = "message", duration = 2)
+      return(FALSE)
+    }
+    ids <- unique(as.character(ids %||% character(0)))
+    ids <- ids[nzchar(ids)]
     close_figure_load_progress()
     if (!length(ids)) {
       figure_queue(character(0))
       figure_load_pending(FALSE)
       figure_load_target_ids(character(0))
-      return()
+      figure_load_expected_revisions(list())
+      return(FALSE)
     }
 
-    # Freeze requested IDs for this explicit load run.
-    figure_load_target_ids(ids)
     clear_figure_svg_cache()
-
     expected <- list()
-
     diag_log("FIGURE-CACHE", paste0("direct-state load request ids=", paste(ids, collapse = ",")))
-
     for (id in ids) {
       expected[[id]] <- request_figure_source_snapshot(
-        id, reason = "bulk-import-canonical", import_editor_state = TRUE
+        id, reason = reason, import_editor_state = TRUE
       )
     }
 
-    ids <- unique(ids)
     figure_load_expected_revisions(expected)
     prog <- shiny::Progress$new(session, min = 0, max = length(ids))
     prog$set(
@@ -395,6 +427,44 @@
     figure_load_target_ids(ids)
     figure_load_pending(TRUE)
     figure_queue(ids)
+    TRUE
+  }
+
+  observeEvent(input$figure_graph_load_missing, {
+    ids <- as.character(isolate(figure_requested_ids()) %||% character(0))
+    states <- isolate(figure_edit_states())
+    ids <- unique(ids[nzchar(ids)])
+    missing_ids <- ids[!vapply(ids, function(id) is.list(states[[id]]), logical(1))]
+    if (!length(missing_ids)) {
+      showNotification("未読込Graphはありません。", type = "message", duration = 2)
+      return()
+    }
+    start_figure_graph_load(missing_ids, reason = "bulk-import-missing")
+  }, ignoreInit = TRUE)
+
+  observeEvent(input$figure_graph_load_all, {
+    ids <- unique(as.character(isolate(figure_requested_ids()) %||% character(0)))
+    ids <- ids[nzchar(ids)]
+    if (!length(ids)) {
+      showNotification("FigureにGraphが配置されていません。", type = "message", duration = 2)
+      return()
+    }
+    showModal(modalDialog(
+      title = "すべて元Graphから再読込",
+      "配置済みGraphのFigureStateを、現在の元Graphからすべて作り直します。Figure側で加えた個別編集は上書きされます。",
+      footer = tagList(
+        modalButton("キャンセル"),
+        actionButton("figure_graph_load_all_confirm", "すべて再読込", class = "btn-warning")
+      ),
+      easyClose = TRUE
+    ))
+  }, ignoreInit = TRUE)
+
+  observeEvent(input$figure_graph_load_all_confirm, {
+    removeModal()
+    ids <- unique(as.character(isolate(figure_requested_ids()) %||% character(0)))
+    ids <- ids[nzchar(ids)]
+    start_figure_graph_load(ids, reason = "bulk-refresh-all")
   }, ignoreInit = TRUE)
 
   # One GraphState snapshot job per turn; all plot inputs come from frozen canonical values.
@@ -476,7 +546,7 @@
         type = "warning", duration = 6
       )
     } else {
-      showNotification("全GraphをFigureへ読み込みました。以後のGraph更新は自動反映されません。", type = "message", duration = 3)
+      showNotification("指定したGraphをFigureへ読み込みました。以後のGraph更新は自動反映されません。", type = "message", duration = 3)
     }
   })
 
@@ -1293,19 +1363,19 @@
           inset_source_plot_type <- ""
           if (is.null(inset_asset)) {
             # F1-5b explicit snapshot contract: an internal Inset never follows
-            # the retired Graph SVG cache directly.  Its source changes only when the
-            # user presses the Inset update action.  A persisted Figure preview
-            # remains the cache-first fallback after Project reload.
-            figure_snapshot_revisions[[inset_id]]
-            inset_rec <- figure_inset_preview_cache()[[inset_id]]
-            figure_rec <- figure_persisted_previews()[[inset_id]]
+            # the retired Graph SVG cache directly. Its source changes only when the
+            # user presses the Inset update action. Project restore migrates any old
+            # Main-preview fallback into this owner-keyed cache before display.
+            figure_snapshot_revisions[[id]]
+            inset_rec <- figure_inset_preview_cache()[[id]]
+            if (is.list(inset_rec) &&
+                !identical(as.character(inset_rec$source_id %||% "")[1], inset_id)) {
+              inset_rec <- NULL
+            }
             rec <- NULL
             if (is.list(inset_rec) && nzchar(inset_rec$svg %||% "")) {
               rec <- inset_rec
               inset_source_kind <- "figure-inset-explicit"
-            } else if (is.list(figure_rec) && nzchar(figure_rec$svg %||% "")) {
-              rec <- figure_rec
-              inset_source_kind <- "figure-preview-persisted-fallback"
             }
             if (is.list(rec)) {
               inset_svg <- rec$svg %||% NULL
@@ -1436,39 +1506,47 @@
     session$sendCustomMessage("fit-figure-preview", list())
 
     div(
-      class = "figure-preview-viewport",
+      class = "figure-preview-shell",
       div(
-        class = "figure-preview-stage",
+        class = "figure-preview-viewport",
         div(
-          class = "figure-preview-canvas",
-        `data-canvas-width` = as.character(round(canvas_w)),
-        `data-canvas-height` = as.character(round(canvas_h)),
-        `data-layout-mode` = as.character(figure_requested_layout_mode()),
-        style = sprintf("width:%dpx;height:%dpx;", round(canvas_w), round(canvas_h)),
-        div(class = "figure-canvas-graph-layer", div(class = "figure-preview-grid", grid_cells)),
-        div(
-          class = "figure-canvas-inset-layer",
-          lapply(rects, function(rect) {
-            if (!nzchar(as.character(rect$id %||% ""))) return(NULL)
-            uiOutput(paste0("figure_cell_inset_layer_", rect$key))
-          })
-        ),
-        div(
-          class = "figure-canvas-legend-layer",
-          lapply(rects, function(rect) {
-            if (!nzchar(as.character(rect$id %||% ""))) return(NULL)
-            uiOutput(paste0("figure_cell_legend_layer_", rect$key))
-          })
-        ),
-        div(
-          class = "figure-canvas-label-layer",
-          lapply(rects, function(rect) {
-            if (!nzchar(as.character(rect$id %||% ""))) return(NULL)
-            uiOutput(paste0("figure_cell_label_layer_", rect$key))
-          })
-        ),
-          div(class = "figure-canvas-interaction-layer")
+          class = "figure-preview-stage",
+          div(
+            class = "figure-preview-canvas",
+            `data-canvas-width` = as.character(round(canvas_w)),
+            `data-canvas-height` = as.character(round(canvas_h)),
+            `data-layout-mode` = as.character(figure_requested_layout_mode()),
+            style = sprintf("width:%dpx;height:%dpx;", round(canvas_w), round(canvas_h)),
+            div(class = "figure-canvas-graph-layer", div(class = "figure-preview-grid", grid_cells)),
+            div(
+              class = "figure-canvas-inset-layer",
+              lapply(rects, function(rect) {
+                if (!nzchar(as.character(rect$id %||% ""))) return(NULL)
+                uiOutput(paste0("figure_cell_inset_layer_", rect$key))
+              })
+            ),
+            div(
+              class = "figure-canvas-legend-layer",
+              lapply(rects, function(rect) {
+                if (!nzchar(as.character(rect$id %||% ""))) return(NULL)
+                uiOutput(paste0("figure_cell_legend_layer_", rect$key))
+              })
+            ),
+            div(
+              class = "figure-canvas-label-layer",
+              lapply(rects, function(rect) {
+                if (!nzchar(as.character(rect$id %||% ""))) return(NULL)
+                uiOutput(paste0("figure_cell_label_layer_", rect$key))
+              })
+            ),
+            div(class = "figure-canvas-interaction-layer")
+          )
         )
+      ),
+      div(
+        class = "figure-preview-hscroll",
+        `aria-label` = "Figure horizontal scroll",
+        div(class = "figure-preview-hscroll-spacer", `aria-hidden` = "true")
       )
     )
   })

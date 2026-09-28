@@ -32,7 +32,22 @@ graph_ui_seeded_bindings <- function(ns, ui_seed) {
     checkboxInput = function(inputId, ...) call_seeded(shiny::checkboxInput, inputId, list(...), "value", 2L),
     checkboxGroupInput = function(inputId, ...) call_seeded(shiny::checkboxGroupInput, inputId, list(...), "selected", 3L),
     radioButtons = function(inputId, ...) call_seeded(shiny::radioButtons, inputId, list(...), "selected", 3L),
-    sliderInput = function(inputId, ...) call_seeded(shiny::sliderInput, inputId, list(...), "value", 4L),
+    sliderInput = function(inputId, ...) {
+      args <- list(...)
+      if (inputId %in% c("plot_width_px", "plot_height_px")) {
+        seed <- suppressWarnings(as.numeric(ui_seed[[inputId]])[1])
+        nms <- names(args) %||% rep("", length(args))
+        min_i <- which(nms == "min")
+        max_i <- which(nms == "max")
+        if (is.finite(seed) && length(min_i) && length(max_i)) {
+          min_v <- suppressWarnings(as.numeric(args[[min_i[1]]])[1])
+          max_v <- suppressWarnings(as.numeric(args[[max_i[1]]])[1])
+          if (is.finite(min_v) && seed < min_v) args[[min_i[1]]] <- seed
+          if (is.finite(max_v) && seed > max_v) args[[max_i[1]]] <- seed
+        }
+      }
+      call_seeded(shiny::sliderInput, inputId, args, "value", 4L)
+    },
     numericInput = function(inputId, ...) call_seeded(shiny::numericInput, inputId, list(...), "value", 2L),
     actionButton = function(inputId, ...) shiny::actionButton(ns(inputId), ...),
     downloadButton = function(outputId, ...) shiny::downloadButton(ns(outputId), ...),

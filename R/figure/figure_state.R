@@ -30,8 +30,8 @@ figure_make_cell <- function(row, col, id = "", width = 1, source_type = "intern
     # or their label geometry with the Graph/Asset content.
     panel_label = { z <- as.character(panel_label %||% ""); if (!length(z) || is.na(z[[1]])) "" else z[[1]] },
     panel_label_auto = isTRUE(panel_label_auto),
-    label_size = figure_num_or(label_size, 18, 6, 72),
-    top_gutter = figure_num_or(top_gutter, 32, 0, 240),
+    label_size = figure_num_or(label_size, 18, 1, Inf),
+    top_gutter = figure_num_or(top_gutter, 32, 0, Inf),
     label_mode = {
       z <- as.character(label_mode %||% "align")
       if (!length(z) || is.na(z[[1]]) || !z[[1]] %in% c("align", "free")) "align" else z[[1]]
@@ -41,10 +41,10 @@ figure_make_cell <- function(row, col, id = "", width = 1, source_type = "intern
       if (identical(a, "plot_axis")) a <- "panel"
       if (a %in% c("panel", "plot_left", "cell_left")) a else "panel"
     },
-    label_x_offset = figure_num_or(label_x_offset, 0, -300, 300),
-    label_y_offset = figure_num_or(label_y_offset, 0, -300, 300),
-    label_x = figure_num_or(label_x, 0.06, -0.2, 1.2),
-    label_y = figure_num_or(label_y, 0.02, -0.2, 1.2),
+    label_x_offset = figure_num_or(label_x_offset, 0),
+    label_y_offset = figure_num_or(label_y_offset, 0),
+    label_x = figure_num_or(label_x, 0.06),
+    label_y = figure_num_or(label_y, 0.02),
     row = as.integer(row),
     col = as.integer(col),
     key = paste0("r", row, "_c", col)
@@ -73,7 +73,7 @@ figure_reindex_layout <- function(st) {
     nc <- suppressWarnings(as.integer(row$ncol %||% length(cells))[1])
     if (!is.finite(nc) || nc < 1L) nc <- 1L
     nc <- min(nc, 12L)
-    hh <- figure_num_or(row$height, 1, 0.1, 10)
+    hh <- figure_num_or(row$height, 1, 0.1, Inf)
     basis_override <- figure_normalize_alignment_basis(row$size_basis %||% "inherit", fallback = "panel_legend", allow_inherit = TRUE)
     if (length(cells) < nc) {
       start <- length(cells) + 1L
@@ -89,27 +89,27 @@ figure_reindex_layout <- function(st) {
       if (!length(sid) || is.na(sid)) sid <- ""
       cells[[cc]] <- figure_make_cell(
         r, cc, sid,
-        width = figure_num_or(cell$width, 1, 0.1, 10),
+        width = figure_num_or(cell$width, 1, 0.1, Inf),
         source_type = stype, source_id = sid,
-        graph_width = figure_num_or(cell$graph_width, NA_real_, 80, 5000),
-        graph_height = figure_num_or(cell$graph_height, NA_real_, 80, 5000),
-        free_x = figure_num_or(cell$free_x, NA_real_, -10000, 10000),
-        free_y = figure_num_or(cell$free_y, NA_real_, -10000, 10000),
-        free_width = figure_num_or(cell$free_width, NA_real_, 20, 10000),
-        free_height = figure_num_or(cell$free_height, NA_real_, 20, 10000),
-        z_index = figure_num_or(cell$z_index, cc + (r - 1L) * 12L, -1000, 1000),
+        graph_width = figure_num_or(cell$graph_width, NA_real_, 1, Inf),
+        graph_height = figure_num_or(cell$graph_height, NA_real_, 1, Inf),
+        free_x = figure_num_or(cell$free_x, NA_real_),
+        free_y = figure_num_or(cell$free_y, NA_real_),
+        free_width = figure_num_or(cell$free_width, NA_real_, 1, Inf),
+        free_height = figure_num_or(cell$free_height, NA_real_, 1, Inf),
+        z_index = figure_num_or(cell$z_index, cc + (r - 1L) * 12L),
         panel_label = as.character(cell$panel_label %||% "")[1],
         panel_label_auto = if (is.null(cell$panel_label_auto)) TRUE else isTRUE(cell$panel_label_auto),
         # alpha2 stored these on the source override.  During migration prefer
         # slot values when present; old projects get stable slot defaults.
-        label_size = figure_num_or(cell$label_size, 18, 6, 72),
-        top_gutter = figure_num_or(cell$top_gutter, 48, 0, 240),
+        label_size = figure_num_or(cell$label_size, 18, 1, Inf),
+        top_gutter = figure_num_or(cell$top_gutter, 48, 0, Inf),
         label_mode = as.character(cell$label_mode %||% "align")[1],
         label_anchor = as.character(cell$label_anchor %||% "panel")[1],
-        label_x_offset = figure_num_or(cell$label_x_offset, 0, -300, 300),
-        label_y_offset = figure_num_or(cell$label_y_offset, 0, -300, 300),
-        label_x = figure_num_or(cell$label_x, 0.06, -0.2, 1.2),
-        label_y = figure_num_or(cell$label_y, 0.02, -0.2, 1.2)
+        label_x_offset = figure_num_or(cell$label_x_offset, 0),
+        label_y_offset = figure_num_or(cell$label_y_offset, 0),
+        label_x = figure_num_or(cell$label_x, 0.06),
+        label_y = figure_num_or(cell$label_y, 0.02)
       )
     }
     out[[r]] <- list(row = r, height = hh, ncol = nc, size_basis = basis_override, cells = cells)
@@ -127,14 +127,14 @@ figure_reindex_layout <- function(st) {
     if (length(raw_shared)) {
       take <- seq_len(min(length(raw_shared), max_col))
       ok <- is.finite(raw_shared[take]) & raw_shared[take] > 0
-      shared[take[ok]] <- pmin(pmax(raw_shared[take[ok]], 0.1), 10)
+      shared[take[ok]] <- pmax(raw_shared[take[ok]], 0.1)
     }
     for (cc in seq_len(max_col)) {
       if (!is.finite(shared[[cc]])) {
         vals <- vapply(out, function(row) {
           cells <- row$cells %||% list()
           if (length(cells) < cc) return(NA_real_)
-          figure_num_or(cells[[cc]]$width, NA_real_, 0.1, 10)
+          figure_num_or(cells[[cc]]$width, NA_real_, 0.1, Inf)
         }, numeric(1))
         vals <- vals[is.finite(vals)]
         shared[[cc]] <- if (length(vals)) vals[[1]] else 1
@@ -217,8 +217,8 @@ figure_slot_label_payload <- function(cell) {
   list(
     panel_label = { z <- as.character(cell$panel_label %||% ""); if (!length(z) || is.na(z[[1]])) "" else z[[1]] },
     panel_label_auto = if (is.null(cell$panel_label_auto)) TRUE else isTRUE(cell$panel_label_auto),
-    label_size = figure_num_or(cell$label_size, 18, 6, 72),
-    top_gutter = figure_num_or(cell$top_gutter, 48, 0, 240),
+    label_size = figure_num_or(cell$label_size, 18, 1, Inf),
+    top_gutter = figure_num_or(cell$top_gutter, 48, 0, Inf),
     label_mode = {
       z <- as.character(cell$label_mode %||% "align")
       if (!length(z) || is.na(z[[1]]) || !z[[1]] %in% c("align", "free")) "align" else z[[1]]
@@ -228,10 +228,10 @@ figure_slot_label_payload <- function(cell) {
       if (identical(a, "plot_axis")) a <- "panel"
       if (a %in% c("panel", "plot_left", "cell_left")) a else "panel"
     },
-    label_x_offset = figure_num_or(cell$label_x_offset, 0, -300, 300),
-    label_y_offset = figure_num_or(cell$label_y_offset, 0, -300, 300),
-    label_x = figure_num_or(cell$label_x, 0.06, -0.2, 1.2),
-    label_y = figure_num_or(cell$label_y, 0.02, -0.2, 1.2)
+    label_x_offset = figure_num_or(cell$label_x_offset, 0),
+    label_y_offset = figure_num_or(cell$label_y_offset, 0),
+    label_x = figure_num_or(cell$label_x, 0.06),
+    label_y = figure_num_or(cell$label_y, 0.02)
   )
 }
 
