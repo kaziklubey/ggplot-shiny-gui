@@ -22,6 +22,29 @@ graph_render_state_apply_semantics <- function(state) {
   }
 
   plot_type <- as.character(pl$type %||% "line")[[1]]
+  bar_layout <- if (identical(plot_type, "bar")) {
+    graph_plot_bar_layout_normalize(pl$bar_layout %||% "side_by_side")
+  } else {
+    "side_by_side"
+  }
+  if (identical(plot_type, "bar")) {
+    pl$bar_layout <- bar_layout
+    pl$bar_value_source <- graph_plot_bar_value_source_normalize(
+      pl$bar_value_source %||% "numeric_y"
+    )
+    pl$bar_proportion_display <- graph_plot_bar_proportion_display_normalize(
+      pl$bar_proportion_display %||% "percent"
+    )
+  } else {
+    pl$bar_layout <- NULL
+    pl$bar_value_source <- NULL
+    pl$bar_proportion_display <- NULL
+  }
+  bar_count_mode <- identical(plot_type, "bar") &&
+    graph_plot_bar_value_source_is_count(pl$bar_value_source %||% "numeric_y")
+  bar_layout_stacked <- identical(plot_type, "bar") && graph_plot_bar_layout_is_stacked(bar_layout)
+  bar_layout_percent <- identical(plot_type, "bar") && graph_plot_bar_layout_is_percent(bar_layout)
+  if (!bar_layout_percent) pl$bar_proportion_display <- NULL
   summary_type <- as.character(pl$summary %||% "mean")[[1]]
   external_mode <- as.character(pl$external_error_mode %||% "none")[[1]]
 
@@ -53,6 +76,8 @@ graph_render_state_apply_semantics <- function(state) {
   # Treat those representations as the same RenderState whenever the controls
   # are inactive.
   external_enabled <- plot_type %in% c("line", "bar") &&
+    !bar_count_mode &&
+    !bar_layout_stacked &&
     identical(summary_type, "value") &&
     external_mode %in% c("symmetric", "bounds")
 
@@ -66,6 +91,37 @@ graph_render_state_apply_semantics <- function(state) {
     mp$external_ymax <- NULL
   } else if (identical(external_mode, "bounds")) {
     mp$external_error <- NULL
+  }
+
+  if (bar_layout_stacked) {
+    # Raw points, individual connections and Shape are side-by-side overlay
+    # semantics. Keep their saved values in GraphState but collapse them in the
+    # render contract while a stacked layout is active.
+    pl$show_raw <- FALSE
+    pl$connect_id <- FALSE
+    pl$individual_connect_direction <- NULL
+    mp$shape <- NULL
+  }
+
+  if (bar_count_mode) {
+    # Numeric Y and observation-summary controls remain persisted in GraphState,
+    # but category counts depend only on X / Position / Color / Facet.
+    mp$y <- NULL
+    mp$id <- NULL
+    mp$shape <- NULL
+    pl$summary <- NULL
+    pl$summary_unit <- NULL
+    pl$show_raw <- FALSE
+    pl$connect_id <- FALSE
+    pl$individual_connect_direction <- NULL
+  }
+
+  if (bar_layout_percent && is.list(out$labels)) {
+    # Percentage bars own a fixed 0-100% axis. Manual numeric Y limits are
+    # preserved in GraphState and become active again outside this layout.
+    out$labels$ymin <- NULL
+    out$labels$ymax <- NULL
+    out$labels$y_top_to_tick <- NULL
   }
 
   out$plot <- pl
@@ -98,8 +154,16 @@ graph_render_state <- function(state) {
     ap$summary_unit <- NULL
     color_var <- as.character(mp0$color %||% "")[[1]]
     has_color_mapping <- nzchar(color_var) && !identical(color_var, "__fixed__")
+    bar_layout0 <- if (identical(plot_type0, "bar")) {
+      graph_plot_bar_layout_normalize(pl0$bar_layout %||% "side_by_side")
+    } else {
+      "side_by_side"
+    }
+    bar_percent0 <- identical(plot_type0, "bar") && graph_plot_bar_layout_is_percent(bar_layout0)
+    bar_count0 <- identical(plot_type0, "bar") &&
+      graph_plot_bar_value_source_is_count(pl0$bar_value_source %||% "numeric_y")
 
-    if (plot_type0 %in% c("bar", "box")) {
+    if (graph_plot_uses_fill(plot_type0)) {
       if (isTRUE(has_color_mapping)) {
         ap$bar_fill_none_fixed <- NULL
       } else {
@@ -123,6 +187,26 @@ graph_render_state <- function(state) {
     # individual-data raw colour tree is a dormant editor preference there and
     # must not block Graph activation. Likewise a fixed mean colour cannot
     # affect scatter while a colour Mapping is active.
+    if (identical(plot_type0, "bar") &&
+        (graph_plot_bar_layout_is_stacked(bar_layout0) || bar_count0)) {
+      st$raw_group_colors <- NULL
+      st$shape_styles <- NULL
+      for (nm in c(
+        "raw_color_mode", "raw_fixed_custom", "raw_lighten", "raw_alpha",
+        "raw_shape_mode", "raw_shape", "raw_point_size", "jitter_width",
+        "id_line_color_mode", "id_line_custom_color", "id_line_lighten",
+        "id_linetype", "id_line_width", "id_line_alpha", "summary_on_top",
+        "error_color_mode", "error_color", "error_width", "error_line_width"
+      )) ap[[nm]] <- NULL
+    }
+
+    if (bar_percent0) {
+      for (nm in c(
+        "bar_zero_touch", "y_break_enabled", "y_breaks_auto", "y_breaks_step",
+        "y_break_from", "y_break_to", "y_break_space", "y_break_symbol"
+      )) ap[[nm]] <- NULL
+    }
+
     if (identical(plot_type0, "scatter")) {
       st$raw_group_colors <- NULL
       ap$x_tick_labels_show <- NULL

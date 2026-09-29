@@ -3,23 +3,31 @@ compute_plot_data <- function() {
 
     x_now <- resolved_xvar()
     y_now <- resolved_yvar()
+    plot_type_now <- graph_plot_value("type", input$plot_type %||% "line")
+    requires_y <- graph_plot_requires_y(
+      plot_type_now,
+      graph_plot_value("bar_value_source", input$bar_value_source %||% "numeric_y")
+    )
+    bar_count_mode <- identical(plot_type_now, "bar") && !requires_y
 
-    shiny::validate(shiny::need(
-      !is.null(y_now) && length(y_now) && y_now %in% names(d),
-      "Y列を選択してください。"
-    ))
     shiny::validate(shiny::need(
       !is.null(x_now) && length(x_now) && x_now %in% names(d),
       "X列を選択してください。"
     ))
-    shiny::validate(shiny::need(
-      !identical(x_now, y_now),
-      "Mappingエラー: X と Y には別の列を指定してください。"
-    ))
+    if (requires_y) {
+      shiny::validate(shiny::need(
+        !is.null(y_now) && length(y_now) && y_now %in% names(d),
+        "Y列を選択してください。"
+      ))
+      shiny::validate(shiny::need(
+        !identical(x_now, y_now),
+        "Mappingエラー: X と Y には別の列を指定してください。"
+      ))
+    }
 
     # このreactive内では、UI再生成中でも最後の有効Mappingを使う。
     xvar_now <- as.character(x_now)[1]
-    yvar_now <- as.character(y_now)[1]
+    yvar_now <- if (bar_count_mode) "" else as.character(y_now)[1]
 
     # 現行GUIでは 横位置要因 / Color / ID / Facet は離散的な割り当て。
     # Yと同じ列を使うと後段でfactor化され、sd()等が失敗するため明示的に止める。
@@ -44,18 +52,20 @@ compute_plot_data <- function() {
     )
     categorical_map <- unique(categorical_map[nzchar(categorical_map)])
 
-    shiny::validate(shiny::need(
-      !yvar_now %in% categorical_map,
-      paste0(
-        "Mappingエラー: Y列「", yvar_now,
-        "」が 横位置要因 / Color / ID / Facet と重複しています。",
-        " Project復元時にこの表示が出た場合はMappingを確認して再保存してください。"
-      )
-    ))
+    if (requires_y) {
+      shiny::validate(shiny::need(
+        !yvar_now %in% categorical_map,
+        paste0(
+          "Mappingエラー: Y列「", yvar_now,
+          "」が 横位置要因 / Color / ID / Facet と重複しています。",
+          " Project復元時にこの表示が出た場合はMappingを確認して再保存してください。"
+        )
+      ))
 
-    d[[yvar_now]] <- suppressWarnings(as.numeric(d[[yvar_now]]))
-    d <- d[!is.na(d[[yvar_now]]), , drop = FALSE]
-    shiny::validate(shiny::need(nrow(d) > 0, "Y列に数値データがありません。"))
+      d[[yvar_now]] <- suppressWarnings(as.numeric(d[[yvar_now]]))
+      d <- d[!is.na(d[[yvar_now]]), , drop = FALSE]
+      shiny::validate(shiny::need(nrow(d) > 0, "Y列に数値データがありません。"))
+    }
 
     if (identical(graph_plot_value("type", input$plot_type %||% "line"), "scatter")) {
       x_num_test <- suppressWarnings(as.numeric(d[[xvar_now]]))
@@ -284,6 +294,14 @@ compute_summary_data <- function() {
         ci95 = ifelse(n > 1, stats::qt(0.975, df = n - 1) * sem, NA_real_),
         .groups = "drop"
       )
+  }
+
+compute_bar_count_data <- function() {
+    d <- plot_data()
+    grouping <- summary_grouping_vars()
+    d %>%
+      group_by(across(all_of(grouping))) %>%
+      summarise(.bar_count__ = dplyr::n(), .groups = "drop")
   }
 
 compute_direct_value_mode <- function() {

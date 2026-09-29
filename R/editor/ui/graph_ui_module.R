@@ -406,7 +406,28 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                   selected = "line"
                 ),
                 selectInput("xvar", "X軸", choices = character(0)),
-                selectInput("yvar", "Y軸", choices = character(0))
+                conditionalPanel(
+                  condition = "input.plot_type != 'bar' || input.bar_value_source != 'count'",
+                  selectInput("yvar", "Y軸", choices = character(0))
+                ),
+                conditionalPanel(
+                  condition = "input.plot_type == 'bar'",
+                  selectInput(
+                    "bar_value_source", "棒グラフの値",
+                    choices = c(
+                      "数値Yを使用" = "numeric_y",
+                      "カテゴリを件数集計" = "count"
+                    ),
+                    selected = "numeric_y"
+                  ),
+                  conditionalPanel(
+                    condition = "input.bar_value_source == 'count'",
+                    p(
+                      class = "help-block",
+                      "Y列は使わず、各行を1件として X × Color / Fill × 横並び要因 × Facet の組合せを数えます。100%積み上げでは X × 横並び要因 × Facet ごとにColorカテゴリの件数を100%へ正規化します。個体ごとの割合を計算して平均する機能ではありません。"
+                    )
+                  )
+                )
               ),
 
               div(
@@ -459,6 +480,8 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                       )
                     )
                   ),
+                  conditionalPanel(
+                    condition = "input.plot_type != 'bar' || (input.bar_value_source != 'count' && input.bar_layout == 'side_by_side')",
                   div(
                     class = "mapping-aesthetic-card",
                     div(
@@ -470,6 +493,7 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                       "shapevar", "分ける変数",
                       choices = c("色 / 塗りと同じ" = "__color__", "使わない（固定）" = "")
                     )
+                  )
                   )
                 )
               ),
@@ -553,11 +577,47 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
             div(
               class = "section-body",
 
+              conditionalPanel(
+                condition = "input.plot_type == 'bar'",
+                div(
+                  class = "editor-setting-group",
+                  tags$h5("バーの配置"),
+                  selectInput(
+                    "bar_layout", "表示方法",
+                    choices = c(
+                      "横並び" = "side_by_side",
+                      "積み上げ" = "stacked",
+                      "100%積み上げ" = "percent"
+                    ),
+                    selected = "side_by_side"
+                  ),
+                  conditionalPanel(
+                    condition = "input.bar_layout == 'percent'",
+                    selectInput(
+                      "bar_proportion_display", "割合のY軸表示",
+                      choices = c(
+                        "パーセント（0–100%）" = "percent",
+                        "比率（0–1.0）" = "ratio"
+                      ),
+                      selected = "percent"
+                    ),
+                    p(
+                      class = "help-block",
+                      "積み上げの計算はどちらも同じ比率です。Y軸だけを0〜100%表示または0〜1.0表示へ切り替えます。"
+                    )
+                  ),
+                  p(
+                    class = "help-block",
+                    "積み上げではColor / Fillの系列を同じバー内に積みます。追加の横並び要因を指定した場合は、その要因ごとに別の積み上げバーを横並びにします。Numeric Yの『値（集計しない）』で同じsegmentに複数行がある場合は数値Yを合計します。100%積み上げは各バー内の数値または件数を同じ比率へ正規化し、Y軸は0〜100%または0〜1.0で表示できます。積み上げ表示ではError bar・個体点・個体接続線を表示しません。"
+                  )
+                )
+              ),
+
               div(
                 class = "editor-setting-group",
                 tags$h5("集計"),
                 conditionalPanel(
-                  condition = "input.plot_type == 'line' || input.plot_type == 'bar'",
+                  condition = "input.plot_type == 'line' || (input.plot_type == 'bar' && input.bar_value_source != 'count')",
                   selectInput(
                     "summary_type", "集計方法",
                     choices = c(
@@ -568,10 +628,17 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                       "平均 ± 95% CI" = "ci95"
                     ),
                     selected = "sem"
+                  ),
+                  conditionalPanel(
+                    condition = "input.plot_type == 'bar' && input.bar_layout != 'side_by_side' && (input.summary_type == 'sd' || input.summary_type == 'sem' || input.summary_type == 'ci95')",
+                    p(
+                      class = "help-block",
+                      "積み上げ表示では棒の高さに平均値を使いますが、SD / SEM / 95% CI のError bar自体は表示しません。"
+                    )
                   )
                 ),
                 conditionalPanel(
-                  condition = "input.plot_type == 'box' || ((input.plot_type == 'line' || input.plot_type == 'bar') && input.summary_type != 'value')",
+                  condition = "input.plot_type == 'box' || ((input.plot_type == 'line' || (input.plot_type == 'bar' && input.bar_value_source != 'count')) && input.summary_type != 'value')",
                   radioButtons(
                     "summary_unit",
                     "集計単位",
@@ -589,11 +656,11 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                 class = "editor-setting-group",
                 tags$h5("重ね描き・接続"),
                 conditionalPanel(
-                  condition = "input.plot_type != 'scatter'",
+                  condition = "input.plot_type != 'scatter' && (input.plot_type != 'bar' || (input.bar_value_source != 'count' && input.bar_layout == 'side_by_side'))",
                   checkboxInput("show_raw", "個体値を重ねる", TRUE)
                 ),
                 conditionalPanel(
-                  condition = "input.plot_type == 'line' || input.plot_type == 'bar'",
+                  condition = "input.plot_type == 'line' || (input.plot_type == 'bar' && input.bar_value_source != 'count' && input.bar_layout == 'side_by_side')",
                   checkboxInput("connect_id", "IDごとに線で結ぶ", FALSE)
                 ),
                 conditionalPanel(
@@ -631,7 +698,7 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                   )
                 ),
                 conditionalPanel(
-                  condition = "((input.plot_type == 'line' || input.plot_type == 'bar') && input.connect_id == true) || (input.plot_type == 'scatter' && input.scatter_connect_mode == 'id')",
+                  condition = "((input.plot_type == 'line' || (input.plot_type == 'bar' && input.bar_value_source != 'count' && input.bar_layout == 'side_by_side')) && input.connect_id == true) || (input.plot_type == 'scatter' && input.scatter_connect_mode == 'id')",
                   selectInput(
                     "individual_connect_direction", "個体線の接続方向",
                     choices = c(
@@ -1069,7 +1136,7 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
           ),
 
           conditionalPanel(
-            condition = "(input.plot_type == 'line' || input.plot_type == 'bar') && (input.summary_type == 'value' || input.summary_type == 'sd' || input.summary_type == 'sem' || input.summary_type == 'ci95')",
+            condition = "(input.plot_type == 'line' || (input.plot_type == 'bar' && input.bar_value_source != 'count' && input.bar_layout == 'side_by_side')) && (input.summary_type == 'value' || input.summary_type == 'sd' || input.summary_type == 'sem' || input.summary_type == 'ci95')",
             tags$details(
               class = "control-section",
               `data-ui-section` = "error-bars",
@@ -1139,6 +1206,8 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
             )
           ),
 
+          conditionalPanel(
+            condition = "input.plot_type != 'bar' || (input.bar_value_source != 'count' && input.bar_layout == 'side_by_side')",
           tags$details(
             class = "control-section",
             `data-ui-section` = "individual",
@@ -1147,7 +1216,7 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
               class = "section-body",
 
               conditionalPanel(
-                condition = "input.plot_type != 'scatter'",
+                condition = "input.plot_type != 'scatter' && (input.plot_type != 'bar' || (input.bar_value_source != 'count' && input.bar_layout == 'side_by_side'))",
                 tags$details(
                   class = "control-subsection",
                   open = TRUE,
@@ -1249,7 +1318,7 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
               ),
 
               conditionalPanel(
-                condition = "input.plot_type == 'line' || input.plot_type == 'bar' || input.plot_type == 'scatter'",
+                condition = "input.plot_type == 'line' || (input.plot_type == 'bar' && input.bar_layout == 'side_by_side') || input.plot_type == 'scatter'",
                 tags$details(
                   class = "control-subsection",
                   tags$summary("個体接続線"),
@@ -1315,6 +1384,7 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                 )
               )
             )
+          ),
           ),
 
           tags$details(
@@ -1403,6 +1473,8 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                 tags$summary("Y軸範囲 / 目盛り / 途中省略"),
                 div(
                   class = "subsection-body",
+                  conditionalPanel(
+                    condition = "!(input.plot_type == 'bar' && input.bar_layout == 'percent')",
                   fluidRow(
                     column(6, textInput("ymin", "Y最小", value = "")),
                     column(6, textInput("ymax", "Y最大", value = ""))
@@ -1467,6 +1539,14 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                     p(
                       class = "help-block",
                       "例：2〜10を省略すると、2付近から10付近へ軸がジャンプします。≈ は値域を省略したことを示す目印です。データそのものは削除しません。"
+                    )
+                  )
+                  ),
+                  conditionalPanel(
+                    condition = "input.plot_type == 'bar' && input.bar_layout == 'percent'",
+                    p(
+                      class = "help-block",
+                      "100%積み上げではY軸範囲を比率0〜1に固定し、表示だけを0〜100%または0〜1.0から選べます。ここで保存されている通常のY軸範囲・目盛り・途中省略設定は変更せず、他の表示方法へ戻したときに再び有効になります。"
                     )
                   )
                 )

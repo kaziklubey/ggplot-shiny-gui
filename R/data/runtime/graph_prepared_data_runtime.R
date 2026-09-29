@@ -50,6 +50,10 @@
 
   summary_data <- reactive({ compute_summary_data() })
 
+  # Bar category-count mode owns a pre-aggregated row-count table. Numeric Y
+  # summary settings remain saved but are not consulted by this reactive.
+  bar_count_data <- reactive({ compute_bar_count_data() })
+
   # Line/Bar の「値（集計しない）」は入力行をそのまま描画する。
   # summary_unit や ID 内平均はこのモードでは一切適用しない。
   direct_value_mode <- reactive({ compute_direct_value_mode() })
@@ -59,7 +63,11 @@
   # external_error_bounds is shared by Graph and state snapshots.
 
   output$summary_unit_status <- renderUI({
-    if (identical(graph_plot_value("type", input$plot_type %||% "line"), "scatter") || isTRUE(direct_value_mode())) return(NULL)
+    plot_type_now <- graph_plot_value("type", input$plot_type %||% "line")
+    bar_count_now <- identical(plot_type_now, "bar") && graph_plot_bar_value_source_is_count(
+      graph_plot_value("bar_value_source", input$bar_value_source %||% "numeric_y")
+    )
+    if (identical(plot_type_now, "scatter") || bar_count_now || isTRUE(direct_value_mode())) return(NULL)
     d <- tryCatch(plot_data(), error = function(e) NULL)
     if (is.null(d)) return(NULL)
 
@@ -200,7 +208,13 @@
     group_now <- graph_mapping_value("position", input$groupvar %||% "")
     facet_now <- graph_mapping_value("facet", input$facetvar %||% "")
     summary_now <- graph_plot_value("summary", input$summary_type %||% "mean")
-    d <- if (identical(plot_type_now, "scatter") || isTRUE(direct_value_mode())) {
+    bar_count_now <- identical(plot_type_now, "bar") && graph_plot_bar_value_source_is_count(
+      graph_plot_value("bar_value_source", input$bar_value_source %||% "numeric_y")
+    )
+    bar_layout_now <- graph_plot_bar_layout_normalize(
+      graph_plot_value("bar_layout", input$bar_layout %||% "side_by_side")
+    )
+    d <- if (identical(plot_type_now, "scatter") || bar_count_now || isTRUE(direct_value_mode())) {
       plot_data()
     } else {
       display_observation_data()
@@ -224,7 +238,8 @@
       }
     }
 
-    if (identical(plot_type_now, "bar") && identical(summary_now, "value")) {
+    if (identical(plot_type_now, "bar") && !bar_count_now && identical(bar_layout_now, "side_by_side") &&
+        identical(summary_now, "value")) {
       grouping <- c(x_now)
       if (has_selection(group_now)) grouping <- c(grouping, group_now)
       if (has_selection(facet_now)) grouping <- c(grouping, facet_now)

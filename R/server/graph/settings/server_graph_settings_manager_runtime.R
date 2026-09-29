@@ -56,6 +56,9 @@
 
     list(
       list(group="基本", label="Plot type", path="plot.type", section="mapping", input="plot_type", apply=FALSE),
+      list(group="基本", label="Bar layout", path="plot.bar_layout", section="plot", input="bar_layout", apply=FALSE),
+      list(group="基本", label="Bar value/source", path="plot.bar_value_source", section="mapping", input="bar_value_source", apply=FALSE),
+      list(group="基本", label="Bar proportion display", path="plot.bar_proportion_display", section="plot", input="bar_proportion_display", apply=FALSE),
       list(group="Mapping", label="X", path="mapping.x", section="mapping", input="xvar", apply=FALSE),
       list(group="Mapping", label="Y", path="mapping.y", section="mapping", input="yvar", apply=FALSE),
       list(group="Mapping", label="Color", path="mapping.color", section="mapping", input="colorvar", apply=FALSE),

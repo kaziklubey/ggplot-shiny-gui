@@ -106,6 +106,10 @@ app_function_catalog <- function() {
       graph_plot_type_specs = list(kind = "pure contract", input = "none", output = "plot specs"),
       graph_plot_type_normalize = list(kind = "pure contract", input = "plot type", output = "canonical plot type"),
       graph_plot_supports_mapping = list(kind = "pure contract", input = "plot type + mapping", output = "logical"),
+      graph_plot_primary_aesthetic = list(kind = "pure contract", input = "plot type", output = "colour/fill"),
+      graph_plot_position_mode = list(kind = "pure contract", input = "plot type", output = "none/line_dodge/stable_slot"),
+      graph_plot_supports_position = list(kind = "pure contract", input = "plot type", output = "logical"),
+      graph_plot_uses_stable_slot = list(kind = "pure contract", input = "plot type", output = "logical")
     ),
     graph_ui = list(
       graph_ui_seeded_args = list(kind = "pure UI helper", input = "seed + args", output = "seeded args"),

@@ -171,7 +171,7 @@ figure_apply_layer_style_override <- function(p, app) {
     geom_classes <- class(layer$geom)
     if (identical(app$color_mode, "override")) {
       if (any(grepl("Geom(Point|Line|Path|Step|Errorbar|Segment|Smooth)", geom_classes))) layer$aes_params$colour <- app$color
-      if (any(grepl("Geom(Bar|Col|Boxplot|Violin|Area|Ribbon)", geom_classes))) layer$aes_params$fill <- app$color
+      if (any(grepl("Geom(Bar|Col|Boxplot|Area|Ribbon)", geom_classes))) layer$aes_params$fill <- app$color
     }
     if (identical(app$linetype_mode, "override") && any(grepl("Geom(Line|Path|Step|Errorbar|Segment|Smooth)", geom_classes))) layer$aes_params$linetype <- app$linetype
     if (identical(app$shape_mode, "override") && any(grepl("GeomPoint", geom_classes, fixed=TRUE))) layer$aes_params$shape <- app$shape

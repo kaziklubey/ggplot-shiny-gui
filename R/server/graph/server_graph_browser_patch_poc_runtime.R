@@ -16,7 +16,8 @@
     external_error_col = "mapping.external_error",
     external_ymin_col = "mapping.external_ymin",
     external_ymax_col = "mapping.external_ymax",
-    plot_type = "plot.type", summary_type = "plot.summary",
+    plot_type = "plot.type", bar_layout = "plot.bar_layout",
+    bar_value_source = "plot.bar_value_source", bar_proportion_display = "plot.bar_proportion_display", summary_type = "plot.summary",
     summary_unit = "plot.summary_unit", external_error_mode = "plot.external_error_mode",
     show_raw = "plot.show_raw", connect_id = "plot.connect_id",
     scatter_connect_mode = "plot.scatter_connect_mode",
@@ -49,7 +50,7 @@
       "reshape_x_name", "reshape_y_name",
       "xvar", "yvar", "colorvar", "linetypevar", "shapevar", "idvar",
       "facetvar", "groupvar", "line_series_mode", "line_series_var",
-      "external_error_mode", "plot_type", "summary_type", "summary_unit",
+      "external_error_mode", "plot_type", "bar_layout", "bar_value_source", "bar_proportion_display", "summary_type", "summary_unit",
       "show_raw", "connect_id", "scatter_connect_mode"
     )
   }

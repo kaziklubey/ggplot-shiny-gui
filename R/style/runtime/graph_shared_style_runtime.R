@@ -272,7 +272,7 @@
         ), style = list(appearance = list(
           series_style_override = graph_appearance_value("series_style_override", input$series_style_override)
         ))))
-        title_input <- if (graph_plot_value("type", input$plot_type %||% "line") %in% c("bar", "box")) "legend_fill_title" else "legend_colour_title"
+        title_input <- if (graph_plot_uses_fill(graph_plot_value("type", input$plot_type %||% "line"))) "legend_fill_title" else "legend_colour_title"
         current_legend_title <- graph_appearance_value(title_input, input[[title_input]] %||% "")
         if (identical(legend_key, key) && !identical(current_legend_title, item$display)) {
           updateTextInput(session, "legend_group_title", value = item$display)
@@ -316,7 +316,7 @@
     current_ylab <- graph_label_value("ylab", input$ylab %||% "")
     current_colour_title <- graph_appearance_value("legend_colour_title", input$legend_colour_title %||% "")
     current_fill_title <- graph_appearance_value("legend_fill_title", input$legend_fill_title %||% "")
-    current_title <- if (graph_plot_value("type", input$plot_type %||% "line") %in% c("bar", "box")) current_fill_title else current_colour_title
+    current_title <- if (graph_plot_uses_fill(graph_plot_value("type", input$plot_type %||% "line"))) current_fill_title else current_colour_title
 
     # Axis controls are browser-owned and may be applied programmatically by the
     # Library. They become write-through candidates only when this event itself

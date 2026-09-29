@@ -20,7 +20,8 @@ graph_mapping_value <- function(key, fallback = "") {
 graph_plot_value <- function(key, fallback = "") {
     input_key <- switch(
       as.character(key %||% "")[1],
-      type = "plot_type", summary = "summary_type", summary_unit = "summary_unit",
+      type = "plot_type", bar_layout = "bar_layout", bar_value_source = "bar_value_source",
+      summary = "summary_type", summary_unit = "summary_unit",
       external_error_mode = "external_error_mode", show_raw = "show_raw",
       connect_id = "connect_id", scatter_connect_mode = "scatter_connect_mode",
       individual_connect_direction = "individual_connect_direction",
@@ -234,7 +235,7 @@ series_combo_levels <- function() {
 
 effective_position_var <- function(d = NULL) {
     plot_now <- input$plot_type %||% "line"
-    if (!plot_now %in% c("line", "bar", "box")) return("")
+    if (!graph_plot_supports_position(plot_now)) return("")
     v <- input$groupvar %||% ""
     if (!has_selection(v)) return("")
     if (!is.null(d) && !v %in% names(d)) return("")
@@ -249,7 +250,7 @@ resolve_color_var <- function(d) {
 
 resolve_linetype_var <- function(d) {
     # LinetypeはLine、またはScatterの接続線で使用する。
-    if (!(input$plot_type %||% "line") %in% c("line", "scatter")) return("")
+    if (!graph_plot_supports_mapping(input$plot_type %||% "line", "linetype")) return("")
     mode <- input$linetypevar %||% "__color__"
     if (identical(mode, "__color__")) {
       return(resolve_color_var(d))

@@ -166,7 +166,7 @@ graph_mapping_level_count <- function(data, variable) {
 graph_mapping_diagnostics <- function(data, plot_type, xvar, position_var = "",
                                       color_var = "", linetype_var = "", shape_var = "",
                                       facet_var = "", line_series_mode = "auto",
-                                      line_series_var = "") {
+                                      line_series_var = "", bar_layout = "side_by_side") {
   if (!is.data.frame(data) || !nrow(data) || !nzchar(xvar) || !xvar %in% names(data)) {
     return(list(messages = character(0), severity = character(0)))
   }
@@ -178,8 +178,12 @@ graph_mapping_diagnostics <- function(data, plot_type, xvar, position_var = "",
     severity <<- c(severity, level)
   }
 
-  if (plot_type %in% c("bar", "box")) {
-    vars <- graph_effective_slot_vars(data, xvar, c(position_var, color_var), facet_var)
+  if (graph_plot_uses_stable_slot(plot_type)) {
+    slot_candidates <- c(
+      position_var,
+      if (!(identical(plot_type, "bar") && graph_plot_bar_layout_is_stacked(bar_layout))) color_var else ""
+    )
+    vars <- graph_effective_slot_vars(data, xvar, slot_candidates, facet_var)
     if (length(vars)) {
       key <- if (length(vars) == 1L) as.character(data[[vars]]) else do.call(
         interaction, c(lapply(vars, function(v) data[[v]]), list(drop = TRUE, lex.order = TRUE))
@@ -187,7 +191,7 @@ graph_mapping_diagnostics <- function(data, plot_type, xvar, position_var = "",
       n_tracks <- length(unique(as.character(key[!is.na(key)])))
       if (n_tracks >= 8L) add(paste0("横並び系列が ", n_tracks, " 本あります。太さ・中心間隔・Plot横幅で調整できます。"), "warn")
     }
-    redundant <- graph_mapping_clean_vars(data, c(position_var, color_var))
+    redundant <- graph_mapping_clean_vars(data, slot_candidates)
     redundant <- redundant[vapply(redundant, function(v) graph_mapping_is_x_determined(data, xvar, v, facet_var), logical(1))]
     if (length(redundant)) add(paste0("Xと完全に連動するMapping（", paste(unique(redundant), collapse = ", "), "）は横並びslotを増やしません。"), "info")
   }
@@ -196,7 +200,7 @@ graph_mapping_diagnostics <- function(data, plot_type, xvar, position_var = "",
   nl <- graph_mapping_level_count(data, linetype_var)
   ns <- graph_mapping_level_count(data, shape_var)
   if (nc > 8L) add(paste0("Color / Fill は ", nc, " 水準です。固定パレットの標準8色を超える分は自動拡張されます。識別性を確認し、必要なら個別色も調整してください。"), "info")
-  if (plot_type %in% c("line", "scatter") && nl > 6L) add(paste0("Linetype は ", nl, " 水準です。既定の6種類を超えます。"), "warn")
+  if (graph_plot_supports_mapping(plot_type, "linetype") && nl > 6L) add(paste0("Linetype は ", nl, " 水準です。既定の6種類を超えます。"), "warn")
   if (plot_type %in% c("line", "scatter") && ns > 10L) add(paste0("Shape は ", ns, " 水準です。既定の10種類を超えます。"), "warn")
 
   if (identical(plot_type, "line")) {

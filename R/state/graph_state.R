@@ -51,6 +51,9 @@ graph_ui_seed_from_state <- function(cfg) {
 
   if (is.list(cfg$plot)) {
     put("plot_type", cfg$plot$type)
+    put("bar_layout", cfg$plot$bar_layout %||% "side_by_side")
+    put("bar_value_source", cfg$plot$bar_value_source %||% "numeric_y")
+    put("bar_proportion_display", cfg$plot$bar_proportion_display %||% "percent")
     put("summary_type", cfg$plot$summary)
     put("summary_unit", cfg$plot$summary_unit)
     put("external_error_mode", cfg$plot$external_error_mode)

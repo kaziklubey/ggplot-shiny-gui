@@ -26,6 +26,9 @@
       ),
       plot = list(
         type = graph_plot_value("type", input$plot_type %||% "line"),
+        bar_layout = graph_plot_value("bar_layout", input$bar_layout %||% "side_by_side"),
+        bar_value_source = graph_plot_value("bar_value_source", input$bar_value_source %||% "numeric_y"),
+        bar_proportion_display = graph_plot_value("bar_proportion_display", input$bar_proportion_display %||% "percent"),
         summary = graph_plot_value("summary", input$summary_type %||% "mean"),
         summary_unit = graph_plot_value("summary_unit", input$summary_unit %||% "row"),
         external_error_mode = graph_plot_value("external_error_mode", input$external_error_mode %||% "none"),

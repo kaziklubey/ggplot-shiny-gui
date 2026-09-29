@@ -59,7 +59,8 @@
       shape_var = s0,
       facet_var = f0,
       line_series_mode = graph_mapping_value("line_series_mode", input$line_series_mode %||% "auto"),
-      line_series_var = graph_mapping_value("line_series_var", input$line_series_var %||% "")
+      line_series_var = graph_mapping_value("line_series_var", input$line_series_var %||% ""),
+      bar_layout = graph_plot_value("bar_layout", input$bar_layout %||% "side_by_side")
     )
     if (!length(info$messages)) return(NULL)
 

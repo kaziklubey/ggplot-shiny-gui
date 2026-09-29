@@ -1,6 +1,24 @@
     # Shared Graph/Figure plot calculation; input is a value provider supplied by the caller.
     use_value <- isTRUE(direct_value_mode())
-    d <- if (identical(input$plot_type, "scatter") || use_value) {
+    bar_layout_now <- if (identical(input$plot_type, "bar")) {
+      graph_plot_bar_layout_normalize(input$bar_layout %||% "side_by_side")
+    } else {
+      "side_by_side"
+    }
+    bar_layout_stacked <- identical(input$plot_type, "bar") &&
+      graph_plot_bar_layout_is_stacked(bar_layout_now)
+    bar_layout_percent <- identical(input$plot_type, "bar") &&
+      graph_plot_bar_layout_is_percent(bar_layout_now)
+    bar_proportion_display_now <- graph_plot_bar_proportion_display_normalize(
+      input$bar_proportion_display %||% "percent"
+    )
+    bar_proportion_ratio <- bar_layout_percent &&
+      graph_plot_bar_proportion_display_is_ratio(bar_proportion_display_now)
+    bar_count_mode <- identical(input$plot_type, "bar") &&
+      !graph_plot_requires_y(input$plot_type, input$bar_value_source %||% "numeric_y")
+    bar_stack_y_extent <- numeric(0)
+
+    d <- if (identical(input$plot_type, "scatter") || use_value || bar_count_mode) {
       plot_data()
     } else {
       display_observation_data()
@@ -217,7 +235,8 @@
     }
 
     effective_has_linetype <- nzchar(linetype_map_var)
-    effective_has_shape <- nzchar(shape_map_var)
+    effective_has_shape <- nzchar(shape_map_var) && !bar_count_mode
+    primary_aesthetic <- graph_plot_primary_aesthetic(input$plot_type)
 
     uses_mapped_linetype <- identical(input$plot_type, "line")
     if (identical(input$plot_type, "scatter")) {
@@ -226,14 +245,17 @@
     }
     uses_mapped_shape <- isTRUE(effective_has_shape) && (
       input$plot_type %in% c("line", "scatter") ||
-        (input$plot_type %in% c("bar", "box") &&
+        (graph_plot_uses_fill(input$plot_type) &&
+           graph_plot_supports_raw_overlay(input$plot_type) &&
+           !bar_count_mode &&
+           !bar_layout_stacked &&
            isTRUE(input$show_raw) && identical(input$raw_shape_mode, "group"))
     )
 
     legend_policy <- graph_build_legend_policy(
       mapping = list(
-        colour = if (input$plot_type %in% c("line", "scatter")) color_map_var else "",
-        fill = if (input$plot_type %in% c("bar", "box")) color_map_var else "",
+        colour = if (identical(primary_aesthetic, "colour")) color_map_var else "",
+        fill = if (identical(primary_aesthetic, "fill")) color_map_var else "",
         linetype = if (uses_mapped_linetype) linetype_map_var else "",
         shape = if (uses_mapped_shape) shape_map_var else ""
       ),
@@ -927,11 +949,19 @@
     # BAR
     # ---------------------------------------
     if (input$plot_type == "bar") {
-      sbar <- if (use_value) d else decorate_style(summary_data())
-      value_col <- if (use_value) y else "mean"
+      sbar <- if (bar_count_mode) {
+        decorate_style(bar_count_data())
+      } else if (use_value) {
+        d
+      } else {
+        decorate_style(summary_data())
+      }
+      value_col <- if (bar_count_mode) ".bar_count__" else if (use_value) y else "mean"
       has_errorbar <- FALSE
 
-      if (!use_value) {
+      if (bar_count_mode) {
+        errcol <- NULL
+      } else if (!use_value) {
         errcol <- switch(input$summary_type, sd="sd", sem="sem", ci95="ci95", NULL)
         if (!is.null(errcol)) {
           sbar$.ymin <- sbar$mean - sbar[[errcol]]
@@ -963,9 +993,36 @@
         xl
       )
 
+      if (!bar_count_mode && use_value && bar_layout_stacked) {
+        # Direct-value stacked bars have explicit additive semantics: repeated
+        # rows for the same X × Position × Fill segment are summed before
+        # stacking. Side-by-side mode retains its historical one-row-per-bar
+        # behavior and warning.
+        stack_segment_vars <- unique(c(
+          x,
+          if (has_group) g else "",
+          if (has_color) color_map_var else "",
+          if (nzchar(facet)) facet else ""
+        ))
+        stack_segment_vars <- stack_segment_vars[nzchar(stack_segment_vars)]
+        stack_segment_data <- sbar
+        stack_segment_data$.stack_value__ <- suppressWarnings(as.numeric(stack_segment_data[[y]]))
+        sbar <- stack_segment_data %>%
+          group_by(across(all_of(stack_segment_vars))) %>%
+          summarise(
+            .segment_value__ = if (all(is.na(.stack_value__))) NA_real_ else sum(.stack_value__, na.rm = TRUE),
+            .groups = "drop"
+          )
+        sbar[[y]] <- sbar$.segment_value__
+        sbar$.segment_value__ <- NULL
+      }
+
+      # Side-by-side bars use both Position and Color/Fill as horizontal
+      # tracks. Stacked modes keep Position as the horizontal track and stack
+      # Color/Fill segments inside that track.
       slot_vars <- unique(c(
         if (has_group) g else "",
-        if (has_color) color_map_var else ""
+        if (!bar_layout_stacked && has_color) color_map_var else ""
       ))
       slot_vars <- slot_vars[nzchar(slot_vars)]
 
@@ -980,6 +1037,38 @@
       sbar <- apply_slot_layout(sbar, slot_obj)
 
       slot_width <- slot_obj$slot_width
+
+      if (bar_layout_stacked) {
+        stack_values <- suppressWarnings(as.numeric(sbar[[value_col]]))
+        raw_stack_values <- if (bar_count_mode) numeric(0) else suppressWarnings(as.numeric(d[[y]]))
+        if (bar_layout_percent && any(is.finite(raw_stack_values) & raw_stack_values < 0)) {
+          stop("100%積み上げ棒グラフでは負の値を使用できません。Yを0以上にしてください。")
+        }
+        if (bar_layout_percent && any(is.finite(stack_values) & stack_values < 0)) {
+          stop("100%積み上げ棒グラフでは負の値を使用できません。Yまたは集計結果を0以上にしてください。")
+        }
+        if (!bar_layout_percent) {
+          stack_extent_data <- sbar
+          stack_extent_data$.stack_value__ <- stack_values
+          stack_group_vars <- unique(c(
+            ".x_group__",
+            if (nzchar(facet) && facet %in% names(stack_extent_data)) facet else ""
+          ))
+          stack_group_vars <- stack_group_vars[nzchar(stack_group_vars)]
+          stack_extent_summary <- stack_extent_data %>%
+            group_by(across(all_of(stack_group_vars))) %>%
+            summarise(
+              .stack_positive__ = sum(pmax(.stack_value__, 0), na.rm = TRUE),
+              .stack_negative__ = sum(pmin(.stack_value__, 0), na.rm = TRUE),
+              .groups = "drop"
+            )
+          bar_stack_y_extent <- c(
+            stack_extent_summary$.stack_negative__,
+            stack_extent_summary$.stack_positive__
+          )
+          bar_stack_y_extent <- bar_stack_y_extent[is.finite(bar_stack_y_extent)]
+        }
+      }
 
       d <- add_stable_spread(
         d, x_col=x, group_col=".bar_slot__", facet_col=if (nzchar(facet)) facet else NULL,
@@ -1019,7 +1108,7 @@
         mapping = bar_map,
         data = sbar,
         width = slot_width * input$bar_width,
-        position = "identity",
+        position = if (bar_layout_percent) "fill" else if (bar_layout_stacked) "stack" else "identity",
         linewidth = input$bar_border_width,
         linetype = graph_bar_box_border_linetype(
           input$bar_border_linetype, input$bar_border_dash, input$bar_border_gap
@@ -1034,7 +1123,7 @@
       }
       p <- ggplot() + do.call(geom_col, bar_args)
 
-      if (isTRUE(has_errorbar)) {
+      if (isTRUE(has_errorbar) && !bar_layout_stacked) {
         err_colour_var <- if (identical(input$error_color_mode,"group") && has_color) color_map_var else ""
         err_map <- dynamic_aes(xcol=".x_group__", ymincol=".ymin", ymaxcol=".ymax", colourcol=err_colour_var)
         err_args <- list(mapping=err_map, data=sbar, width=input$error_width,
@@ -1044,13 +1133,13 @@
         p <- p + do.call(geom_errorbar, err_args)
       }
 
-      if (isTRUE(input$connect_id) && has_id && isTRUE(bar_id_plan$active)) {
+      if (!bar_count_mode && !bar_layout_stacked && isTRUE(input$connect_id) && has_id && isTRUE(bar_id_plan$active)) {
         p <- add_id_line_layers(
           p, d, xcol = ".x_raw", ycol = y, groupcol = ".id_group__",
           split_color = bar_id_color_split
         )
       }
-      if (isTRUE(input$show_raw)) {
+      if (!bar_count_mode && !bar_layout_stacked && isTRUE(input$show_raw)) {
         raw_shape_var <- if (identical(input$raw_shape_mode,"group") && effective_has_shape) shape_map_var else ""
         p <- add_raw_point_layers(p,d,xcol=".x_raw",ycol=y,shape_var=raw_shape_var)
       }
@@ -1067,7 +1156,7 @@
           sbar$.x_group__ + bar_half_width
         )
 
-        if (isTRUE(has_errorbar)) {
+        if (isTRUE(has_errorbar) && !bar_layout_stacked) {
           err_half_width <- 0.5 * suppressWarnings(as.numeric(input$error_width))
           if (!is.finite(err_half_width)) err_half_width <- 0
           x_extent <- c(
@@ -1077,7 +1166,8 @@
           )
         }
 
-        if ((isTRUE(input$show_raw) || (isTRUE(input$connect_id) && has_id)) &&
+        if (!bar_count_mode && !bar_layout_stacked &&
+            (isTRUE(input$show_raw) || (isTRUE(input$connect_id) && has_id)) &&
             ".x_raw" %in% names(d)) {
           x_extent <- c(x_extent, d$.x_raw)
         }
@@ -1385,7 +1475,7 @@
     # Manual colour / linetype / shape scales
     # ---------------------------------------
     if (has_color) {
-      if (input$plot_type %in% c("bar", "box")) {
+      if (graph_plot_uses_fill(input$plot_type)) {
         fill_values <- styles$color
         fill_levels_now <- display_levels
 
@@ -1416,8 +1506,8 @@
         }
       }
 
-      needs_colour_scale <- input$plot_type %in% c("line", "scatter")
-      if (input$plot_type %in% c("bar", "box") &&
+      needs_colour_scale <- identical(primary_aesthetic, "colour")
+      if (graph_plot_uses_fill(input$plot_type) &&
           identical(input$bar_border_mode %||% "fixed", "fill") &&
           nzchar(color_map_var) && color_map_var %in% names(d)) {
         needs_colour_scale <- TRUE
@@ -1526,7 +1616,15 @@
     # Labels / legend guide policy
     label_args <- list(
       x = if (nzchar(input$xlab)) normalize_multiline_label(input$xlab) else x,
-      y = if (nzchar(input$ylab)) normalize_multiline_label(input$ylab) else y,
+      y = if (nzchar(input$ylab)) {
+        normalize_multiline_label(input$ylab)
+      } else if (bar_layout_percent) {
+        if (bar_proportion_ratio) "割合" else "割合 (%)"
+      } else if (bar_count_mode) {
+        "件数"
+      } else {
+        y
+      },
       title = if (nzchar(input$title)) input$title else NULL
     )
     p <- p + do.call(labs, label_args) + theme_object()
@@ -1555,7 +1653,9 @@
     # ---------------------------------------
     # Stable Y range
     # ---------------------------------------
-    if (use_value) {
+    if (bar_count_mode) {
+      y_candidates <- sbar[[value_col]]
+    } else if (use_value) {
       y_candidates <- d[[y]]
       ext_range <- external_error_bounds(d, y)
       if (!is.null(ext_range)) {
@@ -1572,6 +1672,11 @@
       y_candidates <- d[[y]]
     }
 
+    if (identical(input$plot_type, "bar") && bar_layout_stacked && !bar_layout_percent &&
+        length(bar_stack_y_extent)) {
+      y_candidates <- bar_stack_y_extent
+    }
+    if (bar_layout_percent) y_candidates <- c(0, 1)
     if (input$plot_type == "bar") y_candidates <- c(y_candidates, 0)
     y_candidates <- y_candidates[is.finite(y_candidates)]
     bar_all_nonnegative <- !length(y_candidates) || min(y_candidates) >= 0
@@ -1588,6 +1693,14 @@
     user_ymax <- suppressWarnings(as.numeric(input$ymax))
     final_ymin <- if (is.finite(user_ymin)) user_ymin else auto_min
     final_ymax <- if (is.finite(user_ymax)) user_ymax else auto_max
+    if (bar_layout_percent) {
+      # Percentage composition has a fixed semantic axis. Manual Y limits stay
+      # persisted but are dormant until the user returns to another layout.
+      user_ymin <- NA_real_
+      user_ymax <- NA_real_
+      final_ymin <- 0
+      final_ymax <- 1
+    }
 
     # 論文図向け: Y軸上端を最終目盛りに合わせる。
     # 手動stepでは現在上端以上の最初のtickへ、autoではpretty breakの
@@ -1619,7 +1732,7 @@
     break_from <- suppressWarnings(as.numeric(input$y_break_from))
     break_to <- suppressWarnings(as.numeric(input$y_break_to))
 
-    if (isTRUE(input$y_break_enabled) &&
+    if (!bar_layout_percent && isTRUE(input$y_break_enabled) &&
         is.finite(break_from) && is.finite(break_to) &&
         break_to > break_from &&
         break_from > final_ymin &&
@@ -1665,8 +1778,14 @@
       if (final_ymax > final_ymin) {
         p <- p +
           scale_y_continuous(
-            breaks = y_break_values(final_ymin, final_ymax),
-            expand = expansion(mult = c(if (zero_touch) 0 else 0.05, if (isTRUE(input$y_top_to_tick)) 0 else 0.05))
+            breaks = if (bar_layout_percent) seq(0, 1, by = 0.25) else y_break_values(final_ymin, final_ymax),
+            labels = if (bar_layout_percent) {
+              if (bar_proportion_ratio) c("0", "0.25", "0.50", "0.75", "1.0") else scales::label_percent(accuracy = 1)
+            } else ggplot2::waiver(),
+            expand = expansion(mult = c(
+              if (zero_touch || bar_layout_percent) 0 else 0.05,
+              if (bar_layout_percent || isTRUE(input$y_top_to_tick)) 0 else 0.05
+            ))
           ) +
           coord_cartesian(
             ylim = c(final_ymin, final_ymax),

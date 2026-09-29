@@ -135,9 +135,20 @@
 
     if (isTRUE(rp$shared_scalar_transport)) {
       if (isTRUE(rp$full) || isTRUE(rp$plot_changed)) {
-        target_type <- json_chr(pl$type, "line")
-        if (identical(target_type, "violin")) target_type <- "box"
+        target_type <- graph_plot_type_normalize(json_chr(pl$type, "line"))
         updateSelectInput(session, "plot_type", selected = target_type)
+        updateSelectInput(
+          session, "bar_layout",
+          selected = graph_plot_bar_layout_normalize(json_chr(pl$bar_layout, "side_by_side"))
+        )
+        updateSelectInput(
+          session, "bar_value_source",
+          selected = graph_plot_bar_value_source_normalize(json_chr(pl$bar_value_source, "numeric_y"))
+        )
+        updateSelectInput(
+          session, "bar_proportion_display",
+          selected = graph_plot_bar_proportion_display_normalize(json_chr(pl$bar_proportion_display, "percent"))
+        )
         updateSelectInput(session, "summary_type", selected = json_chr(pl$summary, "mean"))
         updateRadioButtons(session, "summary_unit", selected = json_chr(pl$summary_unit, "row"))
         updateRadioButtons(session, "external_error_mode", selected = json_chr(pl$external_error_mode, "none"))
@@ -180,10 +191,36 @@
     invisible(TRUE)
   }
 
+  # Ace Data text deliberately stays off the generic browser-direct scalar
+  # payload. shinyAce owns its server->browser update contract, just as it owns
+  # browser->Shiny transport for user edits. Queue the canonical Data text only
+  # for replay generations whose Data owner changed (or for a full attach).
+  # The caller performs the generation check immediately before invoking this
+  # helper, so a superseded Graph switch cannot enqueue a stale Ace hydrate.
+  graph_replay_hydrate_data_text_native <- function(cfg, replay_plan, generation) {
+    if (!graph_editor_profile_has(editor_profile, "full_shell")) return(invisible(FALSE))
+    rp <- replay_plan %||% list(full = TRUE)
+    if (!isTRUE(rp$full) && !isTRUE(rp$data_changed)) return(invisible(FALSE))
+
+    text_value <- graph_state_scalar(cfg$data_text, "")
+    shinyAce::updateAceEditor(session, "text", value = text_value)
+    diag(
+      "DATA-TEXT-HYDRATE",
+      paste0(
+        "queued generation=", as.integer(generation %||% 0L),
+        " chars=", nchar(text_value, type = "chars")
+      )
+    )
+    invisible(TRUE)
+  }
+
   graph_browser_direct_hydration_payload <- function(cfg, replay_plan, transaction = NULL) {
     values <- utils::modifyList(graph_snapshot_input_defaults(), graph_ui_seed_from_state(cfg))
     values$project_name <- graph_state_scalar(cfg$project_name, "")
-    values$text <- graph_state_scalar(cfg$data_text, "")
+    # graph_ui_seed_from_state() intentionally includes Data text for ordinary
+    # UI seeding. Browser-direct replay must remove it again: Ace is hydrated
+    # separately through shinyAce::updateAceEditor(), not the scalar batch.
+    values$text <- NULL
     values$reshape_wide <- isTRUE((cfg$reshape %||% list())$enabled)
     values$reshape_row_id <- isTRUE((cfg$reshape %||% list())$row_id)
     values$reshape_x_name <- graph_state_scalar((cfg$reshape %||% list())$x_name, "Time")
@@ -301,7 +338,7 @@
     color_branch <- (st$color_styles %||% list())[[color_var]] %||% list()
     fill_levels <- graph_bar_box_fill_none_levels(st$fill_none_styles %||% list(), color_var)
     plot_type <- json_chr((cfg$plot %||% list())$type, "line")
-    bar_box <- plot_type %in% c("bar", "box")
+    bar_box <- graph_plot_uses_fill(plot_type)
     graph_slot_pool_publish("color_style", "color_fill", lapply(color_levels, function(lv) list(
       key = lv, label = lv, value = as.character(color_branch[[lv]] %||% "#333333")[1], fillNone = lv %in% fill_levels
     )), context_key = paste(c(color_var, color_levels, paste0("barbox=", bar_box)), collapse = "\u001f"),
@@ -491,6 +528,7 @@
       session$onFlushed(function() {
         if (!isTRUE(isolate(graph_state_replay_active())) ||
             !identical(as.integer(isolate(graph_state_replay_generation()) %||% -1L), generation)) return(invisible(NULL))
+        graph_replay_hydrate_data_text_native(cfg, replay_plan, generation)
         session$sendCustomMessage("graph-state-browser-hydrate", app_json_safe_tree(payload))
         if (!is.null(main_tab_target) && length(main_tab_target) == 1L && nzchar(main_tab_target)) {
           # Do not emulate tab selection by mutating browser scalar/input state.

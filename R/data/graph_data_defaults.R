@@ -235,6 +235,16 @@ graph_state_migrate_v5 <- function(state) {
   if (is.null(pl$summary_unit) && !is.null(legacy_ap$summary_unit)) {
     pl$summary_unit <- graph_state_scalar(legacy_ap$summary_unit, "row")
   }
+  pl$type <- graph_plot_type_normalize(graph_state_scalar(pl$type, "line"))
+  pl$bar_layout <- graph_plot_bar_layout_normalize(
+    graph_state_scalar(pl$bar_layout, "side_by_side")
+  )
+  pl$bar_value_source <- graph_plot_bar_value_source_normalize(
+    graph_state_scalar(pl$bar_value_source, "numeric_y")
+  )
+  pl$bar_proportion_display <- graph_plot_bar_proportion_display_normalize(
+    graph_state_scalar(pl$bar_proportion_display, "percent")
+  )
   connect_direction <- as.character(graph_state_scalar(pl$individual_connect_direction, "auto") %||% "auto")[1]
   if (is.na(connect_direction) || !connect_direction %in% c("auto", "x", "color", "position", "linetype", "shape")) {
     connect_direction <- "auto"
@@ -344,4 +354,3 @@ graph_sample_graph_state <- function(base_state) {
   state$ui_snapshot <- graph_ui_snapshot_normalize(state$ui_snapshot)
   state
 }
-

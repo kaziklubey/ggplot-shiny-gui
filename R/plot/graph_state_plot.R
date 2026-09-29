@@ -15,7 +15,8 @@ graph_build_plot <- function(context) {
 # values, including empty strings and FALSE, always take precedence.
 graph_snapshot_input_defaults <- function() {
   list(
-    plot_type = "line", summary_type = "sem", summary_unit = "row",
+    plot_type = "line", bar_layout = "side_by_side", bar_value_source = "numeric_y", bar_proportion_display = "percent",
+    summary_type = "sem", summary_unit = "row",
     show_raw = TRUE, connect_id = FALSE, scatter_connect_mode = "none",
     individual_connect_direction = "auto", line_breaks = character(0),
     xvar = "", yvar = "", groupvar = "", colorvar = "",
@@ -76,7 +77,7 @@ graph_snapshot_inputs <- function(state) {
     key <- if (identical(name, "summary")) "summary_type" else name
     if (!is.null(value)) values[[key]] <- value
   }
-  if (!values$plot_type %in% c("line", "bar", "scatter", "box")) {
+  if (!values$plot_type %in% graph_plot_type_ids()) {
     stop("Unsupported saved plot type: ", values$plot_type)
   }
   values
@@ -84,7 +85,7 @@ graph_snapshot_inputs <- function(state) {
 
 graph_snapshot_data <- function(state) {
   raw <- graph_parse_pasted_data(graph_state_scalar(state$data_text, ""))
-  if (!is.data.frame(raw) || ncol(raw) < 2L) stop("2列以上のデータが必要です。")
+  if (!is.data.frame(raw) || ncol(raw) < 1L) stop("1列以上のデータが必要です。")
   reshape <- state$reshape %||% list()
   recipe <- graph_plot_data_transform_recipe(
     enabled = isTRUE(graph_state_scalar(reshape$enabled, FALSE)),
@@ -151,7 +152,8 @@ graph_snapshot_context <- function(state) {
       input$font_family_mode, input$font_family_custom)
   }), envir = scope)
   for (name in c("plot_data", "summary_grouping_vars", "id_mean_data",
-                 "display_observation_data", "summary_data", "direct_value_mode", "theme_object")) {
+                 "display_observation_data", "summary_data", "bar_count_data",
+                 "direct_value_mode", "theme_object")) {
     scope[[name]] <- graph_snapshot_memo(scope[[paste0("compute_", name)]])
   }
   scope

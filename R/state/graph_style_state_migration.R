@@ -173,7 +173,7 @@ graph_style_migration_mapping_vars <- function(state, prepared_data) {
   line_mode <- graph_style_migration_scalar_chr(mp$linetype, "__color__")
   line_var <- if (identical(line_mode, "__color__")) color_var else line_mode
   plot_type <- graph_style_migration_scalar_chr(pl$type, "line")
-  if (!plot_type %in% c("line", "scatter") || !line_var %in% names(prepared_data)) line_var <- ""
+  if (!graph_plot_supports_mapping(plot_type, "linetype") || !line_var %in% names(prepared_data)) line_var <- ""
 
   list(color = color_var, shape = shape_var, linetype = line_var)
 }

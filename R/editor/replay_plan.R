@@ -64,7 +64,7 @@ graph_editor_replay_plan <- function(previous_state, target_state, profile) {
   if (isTRUE(shared_scalar_transport)) {
     if (isTRUE(full) || isTRUE(plot_changed)) {
       add_inputs(c(
-        "plot_type", "summary_type", "summary_unit", "external_error_mode",
+        "plot_type", "bar_layout", "bar_value_source", "bar_proportion_display", "summary_type", "summary_unit", "external_error_mode",
         "show_raw", "connect_id", "scatter_connect_mode",
         "individual_connect_direction", "line_breaks"
       ))

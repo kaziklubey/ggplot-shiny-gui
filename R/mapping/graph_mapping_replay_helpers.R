@@ -8,10 +8,10 @@ graph_replay_mapping_plan <- function(cfg) {
       graph_parse_pasted_data(json_chr(cfg$data_text, "")),
       error = function(e) NULL
     )
-    if (!is.data.frame(raw) || ncol(raw) < 2L) return(NULL)
+    if (!is.data.frame(raw) || ncol(raw) < 1L) return(NULL)
 
     raw_cols <- graph_usable_column_names(raw)
-    if (length(raw_cols) < 2L) return(NULL)
+    if (length(raw_cols) < 1L) return(NULL)
     reshape_cols <- as.character(r$columns %||% character(0))
     reshape_cols <- reshape_cols[reshape_cols %in% raw_cols]
     recipe <- graph_plot_data_transform_recipe(

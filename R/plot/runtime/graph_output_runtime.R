@@ -274,6 +274,23 @@
     shape_now <- graph_mapping_value("shape", input$shapevar %||% "__color__")
     facet_now <- graph_mapping_value("facet", input$facetvar %||% "")
     summary_now <- graph_plot_value("summary", input$summary_type %||% "mean")
+    bar_layout_now <- graph_plot_bar_layout_normalize(
+      graph_plot_value("bar_layout", input$bar_layout %||% "side_by_side")
+    )
+    bar_value_source_now <- graph_plot_bar_value_source_normalize(
+      graph_plot_value("bar_value_source", input$bar_value_source %||% "numeric_y")
+    )
+    bar_count_now <- identical(plot_type_now, "bar") &&
+      graph_plot_bar_value_source_is_count(bar_value_source_now)
+    bar_proportion_display_now <- graph_plot_bar_proportion_display_normalize(
+      graph_plot_value("bar_proportion_display", input$bar_proportion_display %||% "percent")
+    )
+    bar_layout_label <- switch(
+      bar_layout_now,
+      stacked = "積み上げ",
+      percent = "100%積み上げ",
+      "横並び"
+    )
     summary_label <- switch(summary_now,
                             value = "値（集計しない）",
                             mean = "平均",
@@ -282,7 +299,9 @@
                             ci95 = "平均 ± 95% CI",
                             "")
 
-    summary_unit_label <- if (isTRUE(direct_value_mode())) {
+    summary_unit_label <- if (bar_count_now) {
+      "使用しない（全行を件数集計）"
+    } else if (isTRUE(direct_value_mode())) {
       "使用しない（入力行をそのまま使用）"
     } else if (identical(graph_plot_value("summary_unit", input$summary_unit %||% "row"), "id_mean")) {
       "ID mean -> between-ID summary"
@@ -290,7 +309,12 @@
       "row"
     }
 
-    external_error_label <- if (isTRUE(direct_value_mode())) {
+    external_error_label <- if (bar_count_now) {
+      "無効（カテゴリ件数）"
+    } else if (identical(plot_type_now, "bar") &&
+                                !identical(bar_layout_now, "side_by_side")) {
+      "無効（積み上げ表示）"
+    } else if (isTRUE(direct_value_mode())) {
       switch(
         graph_plot_value("external_error_mode", input$external_error_mode %||% "none"),
         symmetric = paste0("Y ± ", graph_mapping_value("external_error", input$external_error_col %||% "")),
@@ -313,10 +337,13 @@
     paste0(
       "# GUIで作成した図の主要設定\n",
       "# Plot: ", plot_type_now, "\n",
-      "# X: ", x, " / Y: ", y, if (nzchar(g)) paste0(" / Position: ", g) else "", if (nzchar(color_now)) paste0(" / Color: ", color_now) else "",
+      if (identical(plot_type_now, "bar")) paste0("# Bar layout: ", bar_layout_label, "\n") else "",
+      if (identical(plot_type_now, "bar")) paste0("# Bar value/source: ", if (bar_count_now) "Count categories" else "Numeric Y", "\n") else "",
+      if (identical(plot_type_now, "bar") && graph_plot_bar_layout_is_percent(bar_layout_now)) paste0("# Proportion axis: ", if (identical(bar_proportion_display_now, "ratio")) "0-1.0" else "0-100%", "\n") else "",
+      "# X: ", x, if (!bar_count_now) paste0(" / Y: ", y) else " / Y: not used", if (nzchar(g)) paste0(" / Position: ", g) else "", if (nzchar(color_now)) paste0(" / Color: ", color_now) else "",
       if (nzchar(linetype_now) && linetype_now != "__color__") paste0(" / Linetype: ", linetype_now) else "",
       if (nzchar(shape_now) && shape_now != "__color__") paste0(" / Shape: ", shape_now) else "", "\n",
-      "# Summary: ", summary_label, "\n",
+      "# Summary: ", if (bar_count_now) "row count (numeric summary dormant)" else summary_label, "\n",
       "# Summary unit: ", summary_unit_label, "\n",
       "# Error bar: ", external_error_label, "\n",
       "# X order: ", paste(x_levels(), collapse = ", "), "\n",

@@ -16,7 +16,7 @@
       !is.null(x),
       "データを読み込めませんでした。タブ区切り、または空白区切りか確認してください。"
     ))
-    shiny::validate(shiny::need(ncol(x) >= 2, "2列以上のデータが必要です。"))
+    shiny::validate(shiny::need(ncol(x) >= 1, "1列以上のデータが必要です。"))
     header_status <- graph_data_column_name_status(x)
     shiny::validate(shiny::need(
       isTRUE(header_status$valid),
@@ -307,7 +307,6 @@
     all_names <- as.character(names(d) %||% rep("", ncol(d)))
     numeric_flags <- vapply(d, is.numeric, logical(1))
     numeric_cols <- unique(all_names[numeric_flags & all_names %in% cols])
-    if (!length(numeric_cols)) return()
     if (!graph_mapping_choices_changed("mapping", d)) return()
 
     defaults <- graph_default_mapping_for_data(d)
@@ -520,8 +519,8 @@
 
   observe({
     pt <- graph_plot_value("type", input$plot_type %||% "line")
-    if (!pt %in% c("line", "bar", "box")) restore_position_seed(NULL)
-    if (!pt %in% c("line", "scatter")) restore_linetype_seed(NULL)
+    if (!graph_plot_supports_position(pt)) restore_position_seed(NULL)
+    if (!graph_plot_supports_mapping(pt, "linetype")) restore_linetype_seed(NULL)
   })
 
   # groupvar is one persistent Mapping input for line/bar/box.
@@ -547,7 +546,8 @@
   graph_plot_value <- function(key, fallback = "") {
     input_key <- switch(
       as.character(key %||% "")[1],
-      type = "plot_type", summary = "summary_type", summary_unit = "summary_unit",
+      type = "plot_type", bar_layout = "bar_layout", bar_value_source = "bar_value_source",
+      summary = "summary_type", summary_unit = "summary_unit",
       external_error_mode = "external_error_mode", show_raw = "show_raw",
       connect_id = "connect_id", scatter_connect_mode = "scatter_connect_mode",
       individual_connect_direction = "individual_connect_direction",
@@ -589,7 +589,7 @@
 
   effective_position_var <- function(d = NULL) {
     plot_now <- graph_plot_value("type", input$plot_type %||% "line")
-    if (!plot_now %in% c("line", "bar", "box")) return("")
+    if (!graph_plot_supports_position(plot_now)) return("")
     v <- graph_mapping_value("position", input$groupvar %||% "")
     if (!has_selection(v)) return("")
     if (!is.null(d) && !v %in% names(d)) return("")
@@ -604,7 +604,7 @@
 
   resolve_linetype_var <- function(d) {
     # LinetypeはLine、またはScatterの接続線で使用する。
-    if (!graph_plot_value("type", input$plot_type %||% "line") %in% c("line", "scatter")) return("")
+    if (!graph_plot_supports_mapping(graph_plot_value("type", input$plot_type %||% "line"), "linetype")) return("")
     mode <- graph_mapping_value("linetype", input$linetypevar %||% "__color__")
     if (identical(mode, "__color__")) {
       return(resolve_color_var(d))

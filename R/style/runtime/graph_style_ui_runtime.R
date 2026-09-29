@@ -9,7 +9,7 @@
   observe({
     style_restore_epoch()
     d <- dat(); v <- resolve_color_var(d); lev <- style_levels()
-    bar_box_now <- graph_plot_value("type", input$plot_type %||% "line") %in% c("bar", "box")
+    bar_box_now <- graph_plot_uses_fill(graph_plot_value("type", input$plot_type %||% "line"))
     if (!nzchar(v) || !length(lev)) {
       graph_slot_pool_publish(
         "color_style", "color_fill", list(),
@@ -440,7 +440,7 @@
           br[[key]] <- z; tree[[v]] <- br; color_styles(tree)
           shared_style_mark_user_edit("color-style")
         }
-      } else if (identical(field, "fillNone") && json_chr((canonical$plot %||% list())$type, "line") %in% c("bar", "box")) {
+      } else if (identical(field, "fillNone") && graph_plot_uses_fill(json_chr((canonical$plot %||% list())$type, "line"))) {
         tree <- isolate(fill_none_styles())
         old <- key %in% graph_bar_box_fill_none_levels(tree, v)
         z <- isTRUE(value)

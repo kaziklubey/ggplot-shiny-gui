@@ -427,8 +427,8 @@ graphServer <- function(id, style_clipboard = NULL, diag_log = NULL, ui_preseede
       # Same-Graph topology refreshes must not write the potentially very large
       # Ace text back to the browser. The current Ace value is already the user
       # working copy whose accepted patch produced `state`; only dependent
-      # choices/scalars need refreshing. Graph switching still uses the normal
-      # full replay path above and therefore restores Data text normally.
+      # choices/scalars need refreshing. Graph switching restores Data text
+      # separately through shinyAce's native replay hydrate, never this batch.
       payload$values$text <- NULL
       session$sendCustomMessage("graph-state-browser-hydrate", app_json_safe_tree(payload))
       graph_browser_direct_publish_pools(state)
