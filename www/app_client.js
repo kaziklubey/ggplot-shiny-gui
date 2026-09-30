@@ -427,6 +427,16 @@ function ggplotGuiBrowserPatchReset(id, seed, preserveHydration) {
   }
 }
 
+function ggplotGuiBrowserPatchPendingKeys(st) {
+  var pending = {};
+  if (!st) return pending;
+  if (st.inflight && st.inflight.key) pending[String(st.inflight.key)] = true;
+  (st.queue || []).forEach(function(item) {
+    if (item && item.key) pending[String(item.key)] = true;
+  });
+  return pending;
+}
+
 function ggplotGuiBrowserPatchComparable(value) {
   if (Array.isArray(value)) return 'array:' + JSON.stringify(value.map(function(x) { return String(x); }));
   if (value === null || typeof value === 'undefined') return 'scalar:';
@@ -1486,6 +1496,19 @@ Shiny.addCustomMessageHandler('graph-state-browser-hydrate', function(msg) {
   }
   var values = msg.values && typeof msg.values === 'object' ? msg.values : {};
   var choices = msg.choices && typeof msg.choices === 'object' ? msg.choices : {};
+  // Same-Graph topology refreshes can arrive while a user has a newer edit of
+  // the same browser-owned control in flight/queued. Canonical hydration must
+  // not visually rewind that optimistic working copy; preserve pending values
+  // and let the revisioned patch queue reconcile them in order. Graph switches
+  // have no pending queue and therefore still hydrate strictly from canonical.
+  var pendingKeys = (!figureMode && graphId && String(st.graphId || '') === graphId) ?
+    ggplotGuiBrowserPatchPendingKeys(st) : {};
+  if (Object.keys(pendingKeys).length) {
+    values = Object.assign({}, values);
+    Object.keys(pendingKeys).forEach(function(key) {
+      if (Object.prototype.hasOwnProperty.call(st.working || {}, key)) values[key] = st.working[key];
+    });
+  }
 
   // replace every choice topology first. Phase 2 then applies all
   // selected values. This prevents select/selectize from temporarily trying

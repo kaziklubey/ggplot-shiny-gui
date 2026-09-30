@@ -2675,3 +2675,90 @@
   margin-top: 4px;
   font-weight: normal;
 }
+
+/* Plot Filter rule accordion. This is presentation-only: rule ownership stays in GraphState. */
+.plot-filter-rule {
+  border: 1px solid #d9dfe5;
+  border-radius: 6px;
+  margin: 7px 0;
+  background: #fff;
+  overflow: hidden;
+}
+.plot-filter-rule > summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 7px 9px;
+  cursor: pointer;
+  list-style: none;
+  background: #f6f8fa;
+  user-select: none;
+}
+.plot-filter-rule > summary::-webkit-details-marker {
+  display: none;
+}
+.plot-filter-rule > summary::before {
+  content: '▸';
+  flex: 0 0 auto;
+  width: 1em;
+  font-size: 12px;
+  line-height: 1;
+  transition: transform 0.12s ease;
+}
+.plot-filter-rule[open] > summary::before {
+  transform: rotate(90deg);
+}
+.plot-filter-rule > summary:hover {
+  background: #edf3f8;
+}
+.plot-filter-rule[open] > summary {
+  border-bottom: 1px solid #e1e5e9;
+}
+.plot-filter-rule-column {
+  min-width: 0;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.plot-filter-kind-badge {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border: 1px solid #d5dbe1;
+  border-radius: 999px;
+  background: #fff;
+  color: #68717b;
+  font-size: 11px;
+  font-weight: 500;
+}
+.plot-filter-rule-summary-state {
+  margin-left: auto;
+  min-width: 0;
+  color: #59636e;
+  font-size: 12px;
+  font-weight: 500;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+.plot-filter-rule-body {
+  padding: 9px 10px 8px 10px;
+}
+.plot-filter-mode-control {
+  display: block;
+  margin-bottom: 7px;
+}
+.plot-filter-comparison-controls,
+.plot-filter-values {
+  margin-bottom: 6px;
+}
+.plot-filter-actions {
+  display: flex;
+  gap: 5px;
+  margin-bottom: 6px;
+}
+.plot-filter-rule-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 7px;
+}
