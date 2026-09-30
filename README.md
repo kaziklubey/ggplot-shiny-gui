@@ -1,282 +1,449 @@
-# ggplot Shiny GUI v4.0.2
+ ggplot Shiny GUI
 
-R/Shiny ベースの ggplot 作図・Figure 編集 GUI です。Windows での対話的な作図、複数 Graph の管理、Figure レイアウト、Statistics、画像・Office 出力を1つの Project として扱います。
+**R / Shiny と ggplot2 を使った、研究・論文・発表用グラフの作成補助のための、GUIアプリケーションです。**
 
-このファイルは **README / Release Notes / Validation / 開発引継ぎ** を1つに統合した v4.0.2 の基準ドキュメントです。配布ZIP内の開発用 Markdown はこの `README.md` に集約しています。
+[![Release](https://img.shields.io/badge/release-v4.1-blue)](https://github.com/kaziklubey/ggplot-shiny-gui/releases)
+[![R](https://img.shields.io/badge/R-4.4.3%20tested-276DC3?logo=r&logoColor=white)](https://www.r-project.org/)
+[![Shiny](https://img.shields.io/badge/Shiny-RStudio-blue)](https://shiny.posit.co/)
 
-## 起動
+**Current release: v4.1 — 2026-09-30**
 
-Windows ではフォルダ直下の `run.bat` を実行してください。
-
-- R 4.4 系で開発・実機確認しています。
-- 必要パッケージは `req.txt` を基準に確認・導入します。
-- 既定ポートは `4006` です。必要なら環境変数 `GGPLOT_GUI_PORT` で変更できます。
-- runtime version owner は `R/bootstrap/app_config.R` の `APP_VERSION` です。
-- `server.R` の起動ログは `app_version()` を読むため、通常は `server.R` 側のversion文字列を直接変更しません。
-
-Current release: **v4.0.2**
+> 主な実機確認環境は **Windows / R 4.4.3** です。ほかのOS・Rバージョンでの完全な動作確認はまだ行っていません。
 
 ---
 
-## Release Notes — v4.0.2
+## Overview
 
-v4.0.2 は、v4.0.1 で確立した persistent single Graph Editor / GraphState canonical / Figure frozen ownership を維持しながら、Bar の積み上げ・カテゴリ件数・割合表示を正式機能として追加したリリースです。
+ggplot Shiny GUI は、データを貼り付けて変数を割り当て、見た目を調整し、Figureを組み、必要に応じて統計解析まで行うためのGUIです。
 
-### Bar layout
+Rコードを毎回書かなくても、Graphごとに設定を保持しながら、次のような流れをひとつのProjectとして扱えます。
 
-Bar は次の表示方法に対応します。
+```text
+Data
+  ↓
+Reshape / Plot Filter
+  ↓
+Mapping
+  ↓
+Plot / Style / Error bar / Individual data
+  ↓
+Graph
+  ↓
+Figure layout / Legend / Inset / External assets
+  ↓
+PNG / PDF / SVG / editable PowerPoint
+```
 
-- **横並び**: 従来のBar表示。
-- **積み上げ**: Color / Fill の系列を同じBar内へ積み上げ。
-- **100%積み上げ**: 各Bar内を割合へ正規化。
-
-`Position` mapping は従来どおりX内の追加横並び要因です。積み上げ時は `X × Position` ごとに独立したBarを作り、その内部を Color / Fill で積み上げます。Facetとも併用できます。
-
-### Bar の値ソース
-
-UI表示は日本語へ統一しています。
-
-- **棒グラフの値**
-  - **数値Yを使用** (`numeric_y`)
-  - **カテゴリを件数集計** (`count`)
-
-内部state value (`numeric_y`, `count`) は保存互換性のため変更しません。
-
-#### 数値Yを使用
-
-従来の数値Yを使用します。平均等のsummary semanticsを維持し、積み上げ時はsummary後のsegment値を積み上げます。`値（集計しない）` で同一segmentに複数行がある場合はYを合計します。
-
-積み上げ中は Error bar / 個体点 / 個体接続線などを描画しませんが、設定値は休眠保持し、横並びへ戻すと復帰します。
-
-#### カテゴリを件数集計
-
-Y列を使わず、各行を1件として `X × Color/Fill × Position × Facet` 単位でカウントします。
-
-100%積み上げでは `X × Position × Facet` ごとに Color / Fill カテゴリの件数を100%へ正規化します。
-
-これは **全行を直接countした割合**です。以下は未実装です。
-
-- 各個体で割合を計算する処理
-- 個体割合を群で平均する処理
-- そのSEM / CI表示
-
-これらは統計的に別処理なので、今後追加する場合も Count categories と混ぜず、別のsummary semanticsとして設計します。
-
-### 100%積み上げのY軸表示
-
-同じ0〜1の割合geometryを、2種類の軸表現から選択できます。
-
-- **パーセント**: 0%〜100%
-- **比率**: 0〜1.0
-
-表示切替でsegmentの高さや割合計算は変わりません。通常Bar用のY軸範囲・tick・axis break設定は100%積み上げ中は休眠保持し、別layoutへ戻すと再利用されます。旧Projectで設定が存在しない場合はパーセント表示をdefaultにします。
-
-### Category order
-
-積み上げBarでも既存Category orderを利用し、Color / Fillカテゴリ順、stack順、legend順を変更できます。5カテゴリーの積み上げと並べ替えはユーザー実機で確認済みです。
-
-### Plot contract cleanup
-
-現行Plot typeは **Line / Bar / Scatter / Box** です。旧 `violin` 別名互換はproductionから削除済みで、Violin追加予定はありません。
-
-`graph_plot_type_specs()` には plot type ID、primary aesthetic、position semantics、stable-slot support、snapshot acceptance など、意味が一致する小さな判定だけを集約しています。Line / Scatter固有の描画やgeom branchは無理に一般化しません。
-
-### Data欄 Project restore 修正
-
-v4.0.2実機テストで、Project保存→読込後にGraphは正常に復元する一方、左側の Data欄（shinyAce）だけが空になる表示不具合が見つかりました。
-
-保存された `GraphState$data_text` 自体は正常で、問題は GraphState → persistent Editor replay 時の Ace hydrate漏れでした。
-
-修正版では `data_text` を generic browser-direct scalar payload に戻さず、canonical `GraphState$data_text` を `shinyAce::updateAceEditor()` で明示hydrateします。
-
-- replay generation確認後にhydrate
-- 空Dataは `""` で明示clear
-- 同一Graphの通常Data commitでは不要なechoをしない
-- canonical再commitや不要なrender revisionを起こさない
-- large Data textは引き続き shinyAce native transport が所有
-
-この修正は `v4.0.2-data-text-hydrate1` で導入され、v4.0.2最終配布物へ統合する前提です。
+Graph編集とFigure編集は分離されています。Figureへ取り込んだGraphは **frozen snapshot** として保持されるため、元Graphを後から変更してもFigureが意図せず変化しません。
 
 ---
 
-## State ownership / Architecture
+## Quick start
 
-### Graph Editor
+### 1. Release ZIPを入手
 
-- Full Graph Editor は全Graph共通の **persistent single Editor 1個**。
-- Graphごとの hidden editor/module、warm DOM、hidden materializationを復活させない。
-- Graph切替は GraphState → persistent Editor の transactional replay。
-- Browserは optimistic working copy。**GraphState Registry がcanonical truth**。
-- browser-direct replay / path-local optimistic rebase を維持する。
+GitHubの [Releases](https://github.com/kaziklubey/ggplot-shiny-gui/releases) から最新版をダウンロードして展開します。
 
-### Data
+### 2. Rをインストール
 
-- `data_text` は canonical GraphState が所有。
-- 大きなData textをgeneric browser patch / scalar replayへ載せない。
-- Data編集は shinyAce native transport → canonical commit。
-- Project load / Graph switch時の表示復元も shinyAce native hydrate。
-- Data schema変更時のMapping reconcileはcanonical側で行う。
+[R](https://cran.r-project.org/) をインストールしてください。
+
+v4.1 は **R 4.4.3 / Windows** を中心に実機確認しています。
+
+### 3. `run.bat` を実行
+
+Windowsでは、展開したフォルダの **`run.bat`** をダブルクリックします。
+
+- `Rscript.exe` をPATHまたは標準的なRインストール先から自動探索します。
+- `req.txt` に記載されたRパッケージが不足している場合は、CRANから自動インストールを試みます。
+- 起動後、既定では `http://127.0.0.1:4006` をブラウザで開きます。
+
+コマンドラインから起動する場合は、アプリのフォルダで次を実行します。
+
+```bash
+Rscript run.R
+```
+
+ポートを変更する場合は環境変数 `GGPLOT_GUI_PORT` を設定できます。
+
+---
+
+## Main features
+
+### Graph editor
+
+現在のGraph typeは次の4種類です。
+
+| Graph | 主な機能 |
+|---|---|
+| **Line** | summary、Error bar、個体点、個体接続線、系列指定、接続しないX区間 |
+| **Bar** | 横並び、積み上げ、100%積み上げ、数値Y、カテゴリ件数集計 |
+| **Scatter** | Color / Shape、jitter、回帰直線、Facet |
+| **Box** | stable slot、個体点、Color / Fill、Facet |
+
+Mappingでは、Graph typeに応じて以下を組み合わせられます。
+
+- X / Y
+- Color / Fill
+- Linetype
+- Shape
+- 横ずらし / 横並び要因
+- 個体ID
+- Facet
+
+さらに、Category order、軸・目盛り、途中省略、ラベル、凡例、フォント、線幅、点サイズ、透明度などをGUIから調整できます。
+
+### Data / Wide → Long
+
+Graphごとにデータを保持します。
+
+- Data textは `shinyAce` を使用
+- Wide → Long Reshape
+- Reshape後の列もMappingやPlot Filterで利用可能
+- GraphごとにData / Reshape設定を保存
+- Project保存・読込に対応
+
+### Plot Filter — v4.1
+
+v4.1 では、**元データを書き換えず、Plotに使う行だけを絞り込むFilter** を追加しました。
+
+処理順は次のとおりです。
+
+```text
+Graph raw data
+  ↓
+Reshape
+  ↓
+Plot Filter
+  ↓
+active_plot_data
+  ↓
+Data View / Mapping / Summary / Plot
+```
+
+対応例:
+
+- categorical: 使用する値を選択
+- numeric: `>`, `>=`, `<`, `<=`, 範囲内, 範囲外
+- numeric: 範囲指定と離散値選択の併用
+- Date / DateTime: 比較・範囲指定
+- ClockTime: 時間範囲と時刻選択
+- `22:00 → 06:00` のような日跨ぎ時間範囲
+- 欠損値を含める / 除外する
+- 複数列の条件をANDで適用
+
+Filter ON時はData Viewに **used / total** の行数を表示します。
+
+Category order自体はFilterによって破壊されず、Filterを解除すると保存済みの順序へ戻ります。
+
+---
+
+## Bar graph
+
+Barは次のlayoutを選択できます。
+
+- **横並び**
+- **積み上げ**
+- **100%積み上げ**
+
+値の作り方は次の2種類です。
+
+- **数値Yを使用**
+- **カテゴリを件数集計**
+
+100%積み上げでは表示を **0–100%** または **0–1** から選択できます。
+
+> 「カテゴリを件数集計」は各行を1件として数える機能です。個体ごとに割合を算出してから群平均する処理とは異なります。
+
+---
+
+## Individual data and error bars
+
+Line / Bar / Boxでは、summaryだけでなく元の個体データも重ねて表示できます。
+
+- 個体点
+- IDによる対応点の接続
+- point jitter / dodge
+- SD / SEM / 95% CIなどのsummary表示
+- 計算済みError bar列の利用
+- Error barの色・線幅・横幅調整
+
+Lineでは、除外したカテゴリ間を通常接続するほか、必要な箇所だけ明示的に線を切る「接続しないX区間」を設定できます。
+
+---
+
+## Figure editor
+
+複数のGraphをひとつのFigureへ配置できます。
+
+主な機能:
+
+- GraphをFigureへ明示的にImport / Refresh
+- 複数Panelの配置
+- Auto / Fixed / Free layout
+- panel基準の自動整列
+- 行間・列間の調整
+- 行高比・列幅比
+- Graphごとのcrop / position調整
+- Legendの表示位置変更・自由配置
+- Inset
+- Figure label
+- 共通設定の適用
+- Shared Style
+- 外部画像 / SVGの追加
+- 外部Graph / 凡例のみのAsset
+
+### Frozen snapshot model
+
+Figureは元Graphのlive mirrorではありません。
+
+```text
+Graph ── Import / Refresh ──> Figure snapshot
+```
+
+Import後にGraphを編集しても、Figureは自動更新されません。更新したいときだけ明示的に再読込します。
+
+この設計により、完成済みFigureが別Graphの編集で意図せず変化することを防ぎます。
+
+---
+
+## Statistics
+
+Statistics workspaceでは、Graphを見ながらAnalysisを作成できます。
+
+対応している解析:
+
+- **ANOVA**
+  - 1要因
+  - 2要因
+  - 3要因
+  - Greenhouse–Geisser / Huynh–Feldt
+  - Holm / Shaffer 多重比較
+- **t検定**
+  - Welch two-sample t-test
+  - paired t-test
+- **Correlation**
+  - Pearson
+  - Spearman
+
+AnalysisごとにData sourceを選べます。
+
+1. **このGraphの元データ**
+2. **現在のプロット用データ（Reshape + Plot Filter後）**
+3. **別データを貼り付ける**
+
+そのため、表示中のFilter済みGraphと同じ対象データで解析することも、元データを使って独立に解析することもできます。
+
+Statistics側にはAnalysis専用のWide → Long Data preparationも用意されています。
+
+---
+
+## Export
+
+GraphとFigureは次の形式へ出力できます。
+
+- **PNG**
+- **PDF**
+- **SVG**
+- **PowerPoint (`.pptx`)**
+
+PowerPoint出力は `officer` + `rvg` を利用し、Graph / Figureを **編集可能なDrawingML** として出力する経路を持っています。
+
+---
+
+## Project files
+
+作業状態は **`.ggplotpack`** として保存できます。
+
+Projectには、GraphのData・Mapping・Style・Plot Filter、StatisticsのAnalysis state、Figure layout / snapshotなどが保存されます。
+
+上部のProject操作から、次を利用できます。
+
+- 開く
+- 名前を付けて保存
+- 上書き保存
+- 閉じる
+- 追加Projectウィンドウを開く
+
+対応ブラウザでは、「保存先を記憶する」を使って上書き保存先をProject単位で保持できます。
+
+---
+
+## Required R packages
+
+不足パッケージは起動時に `req.txt` を基準としてCRANから導入を試みます。
+
+<details>
+<summary>v4.1 dependencies</summary>
+
+```text
+shiny
+shinyAce
+ggplot2
+dplyr
+tidyr
+shinyjs
+scales
+svglite
+base64enc
+colourpicker
+jsonlite
+ggbeeswarm
+ggbreak
+zip
+ggh4x
+rsvg
+officer
+rvg
+xml2
+```
+
+</details>
+
+---
+
+## Update check
+
+Windowsの `run.bat` から起動した場合、`check_update.ps1` がGitHub Releasesの最新版を確認します。
+
+更新確認に失敗してもアプリの起動は継続します。
+
+更新確認を無効にしたい場合は、環境変数を設定できます。
+
+```text
+GGPLOT_GUI_SKIP_UPDATE_CHECK=1
+```
+
+---
+
+## Architecture
+
+v4系では、Graph数が増えてもEditorをGraphごとに複製しない構造を採用しています。
+
+### Graph
+
+- Graph Editorは全Graph共通の **persistent single editor** 1個
+- **GraphState Registry** がcanonical truth
+- browser側は optimistic working copy
+- Graph切替は `GraphState → persistent Editor` の transactional replay
+- Data textはshinyAce native transport
+- hidden per-Graph editor / warm DOM / hidden materializationは使用しない
 
 ### Figure
 
-- FigureはGraphのlive mirrorではなく **Figure-owned frozen snapshot**。
-- Graph編集後もFigureは自動追従しない。
-- Graph→Figureは明示 Import / Refresh。
-- Figure→Graph Applyは Mapping / Plot / Labels / Style / appearance / size のeditable subsetだけ。
-- Figure→Graphで新しいGraph側の Data / reshape / Statistics を上書きしない。
-- Panel assignmentはlayout操作であり、自動importではない。
-- FigureStateはpanel removal後も保持する。
-- Inset snapshotはowner Figure Graph単位で独立保持する。
+- Figureは **Figure-owned frozen snapshot**
+- Graph → Figureは明示的Import / Refresh
+- Graph編集はFigureへ自動伝播しない
+- Figure専用のPlot Filter ownershipは持たない
 
-### Shared Style
+### Statistics
 
-- Library → Graph と Graph → Library はdirectional flow。
-- Graph-local binding stateを維持する。
-- FigureはfrozenなのでShared Style変更へ自動追従させない。
+- Analysis stateはStatistics側で独立保持
+- Graph raw data / active plot data / custom dataを明示的に選択
+- Plot MappingやStyleをStatisticsのdata ownershipへ混在させない
 
-### 実装上の禁止事項
-
-- hidden per-Graph editor
-- warm DOM復活
-- dormant Graph materialization
-- polling
-- sleep / timeout頼み
-- warning suppressionで問題を隠す
-- browser DOM / Shiny input mirrorをcanonical truthにする
-- 大規模既存関数への継ぎ足し。責務が増える場合はfocused helper/runtimeへ分離する。
+このownership分離は、Project save/loadやGraph切替時の再現性を維持し、古いUI stateが別Graphへ混入することを防ぐための中核設計です。
 
 ---
 
-## v4.0.1から継承する主要機能
+## Repository structure
 
-- Data / Mapping canonicalization
-- browser-direct replay
-- path-local optimistic rebase
-- Scatter jitter
-- Category order
-- Bar/Box stable slot
-- Line Series mode
-- Shared Style directional flow / binding isolation
-- Figure explicit Graph Sources import / refresh
-- Figure Common Settings
-- Figure auto panel alignment
-- Figure Preview horizontal scroll rail
-- continuous numeric policy
-- fractional base font
-- draw-time error boundary
-- JSON safe-tree serialization cleanup
+```text
+.
+├─ R/
+│  ├─ bootstrap/       # app config / package bootstrap / source manifest
+│  ├─ data/            # Data, Reshape, Plot Filter
+│  ├─ editor/          # persistent Graph Editor / replay
+│  ├─ mapping/         # Mapping / Category order
+│  ├─ plot/            # plot calculation / plot-specific runtime
+│  ├─ state/           # GraphState / render state
+│  ├─ figure/          # Figure state / renderer / layout
+│  ├─ statistics/      # ANOVA / t-test / correlation
+│  ├─ export/          # PNG / PDF / SVG / editable PPTX
+│  ├─ server/          # Graph / Figure / Project server runtimes
+│  ├─ style/           # Graph style / Shared Style
+│  └─ ui/              # top-level UI shell
+├─ www/                # browser runtime / CSS / Plot Filter JS
+├─ tests/              # regression tests
+├─ run.R
+├─ run.bat
+├─ server.R
+├─ ui.R
+└─ req.txt
+```
 
----
+開発時に最初に確認するファイル:
 
-## Validation
-
-### v4.0.2本体
-
-- JavaScript regression: **47 / 47 PASS**
-- JavaScript syntax: **49 / 49 PASS**
-- R structural scan: **129 files / 0 errors**
-- FILE_LAYOUT: **95 / 95**
-- literal source refs: **86 / 0 missing**
-- patch recreation: PASS
-- ZIP CRC: PASS
-- fresh extraction: PASS
-
-### Data-text hydrate修正
-
-- JavaScript regression: **48 / 48 PASS**
-- JavaScript syntax: **50 / 50 PASS**
-- FILE_LAYOUT: **95 / 95**
-- production source refs: **116 / 0 missing**
-- patch recreation: PASS
-- ZIP CRC: PASS
-- fresh extraction: PASS
-
-このビルド環境にはR/Rscriptがないため、R runtime regressionはここでは実行していません。Windows / R 4.4.3 のユーザー実機で、v4.0.2本体の stacked / count / category order / save-load は確認されています。
-
----
-
-## 実機確認済み / 次の確認
-
-確認済み:
-
-- Line / Bar / Scatter / Box 切替
-- stacked Bar
-- 100% stacked
-- Count categories
-- 5カテゴリー積み上げ
-- Category order変更
-- Project save / loadでGraph自体が復元
-- 100%表示のパーセント / 比率 state変更と再描画
-
-次に確認する項目:
-
-1. Dataを貼る。
-2. Project保存。
-3. Projectを閉じる、またはアプリを再起動。
-4. Project読込。
-5. Data欄へ元テキストが復元されること。
-6. Graph A → B → Aで各Graph固有Dataへ切り替わること。
-7. Dataが空のGraphでは前GraphのDataが残らず空になること。
-8. 可能なら高速A→B→A切替で古いhydrateが刺さらないこと。
-
----
-
-## 既知の保留事項
-
-### Font warning
-
-一部Windows fontで `font family '...' not found in PostScript font database` warningが出る場合があります。Figure Preview clippingとは別問題です。warning suppressionは行わず、font metric / backend cleanup候補として保留します。
-
-### Update checker metadata
-
-v4.0.2実機ログで `Current: v4.0.2 / Latest: v4.0.1` と表示されたため、公開時はremote/latest version metadataの更新が必要です。
-
-### 将来のBar候補
-
-- 個体ごとのカテゴリ割合 → 群平均
-- そのSEM / CI表示
-- stack segment内の件数 / 割合label
-
-現在の Count categories は **全行count** という意味を明確に維持します。
-
----
-
-## 開発引継ぎ
-
-### 現在の基準
-
-この配布物は以下を統合した v4.0.2 最終候補です。
-
-- v4.0.2 Bar stacked / count / proportion display
-- Data text native hydrate fix
-- Bar value/source UIの日本語化
-
-### 最初に読むファイル
-
-- `R/bootstrap/app_config.R` — APP_VERSION
-- `server.R` — startup / top-level server orchestration
-- `R/editor/runtime/server_graph_state_replay_runtime.R` — GraphState replay / Data text native hydrate
-- `R/editor/graph_module.R` — persistent Graph Editor module
-- `R/editor/ui/graph_ui_module.R` — Graph Editor UI
+- `R/bootstrap/app_config.R` — version / non-reactive config
+- `R/editor/graph_module.R` — Graph Editor module
+- `R/editor/runtime/server_graph_state_replay_runtime.R` — Graph replay
+- `R/state/runtime/graph_state_runtime.R` — canonical GraphState
+- `R/data/graph_plot_filter.R` — Plot Filter semantics
 - `R/plot/graph_plot_contract.R` — Plot type contract
-- `R/plot/calculation/graph_plot_data_calculation.R` — Bar count data preparation
-- `R/plot/calculation/graph_plot_calculation.R` — geom / stacked rendering
-- `R/state/runtime/graph_state_runtime.R` — canonical GraphState runtime
-- `R/state/graph_render_state.R` — active render-state collapse
-- `R/server/figure/server_figure_source_snapshot_runtime.R` — Graph→Figure snapshot
-- `R/server/figure/server_figure_workspace_runtime.R` — Figure workspace / explicit refresh
-- `R/server/project/server_project_io_runtime.R` — Project save/load
-
-### バージョン表記
-
-`APP_VERSION <- "v4.0.2"` は `R/bootstrap/app_config.R` が唯一のruntime ownerです。
-
-`server start v4.0.2` は `server.R` の `diag_log("SESSION", paste0("server start ", app_version()))` から出力されます。
+- `R/server/figure/server_figure_source_snapshot_runtime.R` — Graph → Figure snapshot
+- `R/server/project/server_project_io_runtime.R` — `.ggplotpack` save/load
 
 ---
 
-## Documentation policy
+## Validation status — v4.1
 
-配布ZIPを簡潔に保つため、以前の多数の `VALIDATION-*`, `IMPLEMENTATION_NOTES-*`, `CLEANUP_REPORT-*`, `UI_CHANGELOG-*`, `docs/history/*.md` はこのREADMEへ要点を統合しました。
+2026-09-30時点のrelease packagingで確認した内容:
 
-詳細な履歴が必要な場合はGit履歴 / 過去の開発成果物を参照し、配布ZIP内に古いMarkdownを再び増やさない方針とします。
+- JavaScript regression: **49 / 49 PASS**
+- JavaScript syntax check (`www` + `tests`): **52 / 52 PASS**
+- ZIP CRC / fresh extraction: PASS
+- Windows / R 4.4.3でPlot Filter UI、numeric値選択、主要Filter条件をsmoke test
+
+Packaging環境にはRscriptがなかったため、その環境ではR regression suiteを実行していません。
+
+詳細は [`RELEASE_NOTES_v4.1.md`](RELEASE_NOTES_v4.1.md) を参照してください。
+
+---
+
+## v4.1 highlights
+
+v4.1では、v4.0.2のGraph / Figure architectureを維持したまま、主に次を追加・改善しました。
+
+- Graph-owned Plot Filter
+- Filter rule accordion UI
+- numericの範囲 + 値選択
+- ClockTimeの時間範囲 + 時刻選択
+- 日跨ぎ時間Filter
+- Data Viewのused / total表示
+- Wide → Longなどの高速multi-select race対策
+- Statisticsの「現在のプロット用データ」source
+- PlotとStatisticsで使用中のデータ差を明示
+
+詳細: [`RELEASE_NOTES_v4.1.md`](RELEASE_NOTES_v4.1.md)
+
+---
+
+## Known notes
+
+- 主な実機検証環境はWindowsです。
+- 一部Windows fontではPostScript font database関連のwarningが出る場合があります。
+- 現在のPlot typeは **Line / Bar / Scatter / Box** です。
+- Count categoriesは全行countであり、個体ごとの割合を平均する解析ではありません。
+
+---
+
+## Bug reports
+
+不具合報告では、可能であれば次の情報を添えてください。
+
+- ggplot Shiny GUIのversion
+- Rのversion
+- OS
+- 再現手順
+- 使用したGraph type / Data形式
+- コンソールログ
+- 問題がProject save/loadに関係する場合は、その操作順
+
+GitHub Issues: <https://github.com/kaziklubey/ggplot-shiny-gui/issues>
+
+---
+
+## Release notes
+
+- [v4.1 Release Notes](RELEASE_NOTES_v4.1.md)
+- [GitHub Releases](https://github.com/kaziklubey/ggplot-shiny-gui/releases)
