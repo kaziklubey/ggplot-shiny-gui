@@ -77,3 +77,12 @@ graph_category_order_control <- function(input_id, kind, variable, label, values
     tags$div(class = "category-order-list", tagList(rows))
   )
 }
+
+# Filter only changes the active view. Reordering visible levels writes their
+# permutation back into the corresponding slots of the full saved order.
+graph_category_merge_active_order <- function(saved, moved, observed) {
+  full <- unique(c(as.character(saved), as.character(observed)))
+  positions <- which(full %in% observed)
+  full[positions] <- moved
+  full
+}

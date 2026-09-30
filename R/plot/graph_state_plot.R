@@ -83,7 +83,7 @@ graph_snapshot_inputs <- function(state) {
   values
 }
 
-graph_snapshot_data <- function(state) {
+graph_snapshot_reshaped_data <- function(state) {
   raw <- graph_parse_pasted_data(graph_state_scalar(state$data_text, ""))
   if (!is.data.frame(raw) || ncol(raw) < 1L) stop("1列以上のデータが必要です。")
   reshape <- state$reshape %||% list()
@@ -96,6 +96,10 @@ graph_snapshot_data <- function(state) {
   )
   # Preserve normal Graph transform behavior, including its raw-data fallback.
   graph_apply_data_transform(raw, recipe)$data
+}
+
+graph_snapshot_data <- function(state) {
+  graph_plot_filter_apply(graph_snapshot_reshaped_data(state), state$plot_filter)
 }
 
 # These are ordinary private value closures, not reactive state. Style default

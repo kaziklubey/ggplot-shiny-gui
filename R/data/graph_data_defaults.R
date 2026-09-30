@@ -273,6 +273,7 @@ graph_state_migrate_v5 <- function(state) {
 graph_state_prepare_replay_snapshot <- function(state) {
   if (!is.list(state)) return(state)
   state <- graph_normalize_legend_state(state)
+  state$plot_filter <- graph_plot_filter_normalize(state$plot_filter)
 
   # Replay does not require saved choice vectors or a browser-readback gate.
   # Choices are derived from canonical data/reshape at replay time and ordinary
@@ -329,6 +330,7 @@ graph_sample_graph_state <- function(base_state) {
   if (!is.data.frame(sample_data) || !ncol(sample_data)) return(NULL)
 
   state$data_text <- sample_text
+  state$plot_filter <- graph_plot_filter_default()
   state$reshape <- modifyList(
     if (is.list(state$reshape)) state$reshape else list(),
     list(

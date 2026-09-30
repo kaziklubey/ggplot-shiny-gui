@@ -229,7 +229,7 @@
     # plot_source_data() now depends on the attached canonical GraphState. A
     # malformed/incomplete paste therefore invalidates here through the same
     # source as Plot/Statistics; the last valid Data View is retained below.
-    dnow <- tryCatch(plot_source_data(), error = function(e) NULL)
+    dnow <- tryCatch(active_plot_data(), error = function(e) NULL)
 
     if (!is.null(dnow) && is.data.frame(dnow)) {
       last_valid_data_view(dnow)
@@ -242,7 +242,15 @@
   })
 
   output$data_view_status <- renderUI({
-    if (!isTRUE(data_view_is_stale())) return(NULL)
+    if (!isTRUE(data_view_is_stale())) {
+      state <- attached_state_seed() %||% list()
+      if (!isTRUE(graph_plot_filter_normalize(state$plot_filter)$enabled)) return(NULL)
+      used <- nrow(data_view_data())
+      total <- nrow(plot_source_data())
+      return(div(class = "plot-filter-data-view-status",
+        style = "background:#eaf5f7;border:1px solid #a9ced6;padding:6px 9px;margin-bottom:8px;",
+        paste0("フィルター適用中  ", used, " / ", total, " 行")))
+    }
     div(
       class = "alert alert-warning",
       style = "padding:6px 9px; margin-bottom:8px;",

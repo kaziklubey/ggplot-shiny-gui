@@ -3,7 +3,7 @@
 # Each module owns its own input/reactive/style/data state.
 # ============================================================
 
-graphServer <- function(id, style_clipboard = NULL, diag_log = NULL, ui_preseeded = FALSE, on_state_change = NULL, profile = c("full", "figure_controls"), render_gate = NULL, persistent_shell = FALSE, shared_style_library = NULL, on_shared_style_library_change = NULL, statistics_plot_preview = NULL, browser_patch_override = NULL, on_data_text_commit = NULL) {
+graphServer <- function(id, style_clipboard = NULL, diag_log = NULL, ui_preseeded = FALSE, on_state_change = NULL, profile = c("full", "figure_controls"), render_gate = NULL, persistent_shell = FALSE, shared_style_library = NULL, on_shared_style_library_change = NULL, statistics_plot_preview = NULL, browser_patch_override = NULL, on_data_text_commit = NULL, on_plot_filter_commit = NULL) {
   editor_profile <- graph_editor_profile(match.arg(profile))
   init_timing_outer_ms <- as.numeric(proc.time()[["elapsed"]]) * 1000
   init_timing_last_ms <- init_timing_outer_ms
@@ -175,6 +175,7 @@ graphServer <- function(id, style_clipboard = NULL, diag_log = NULL, ui_preseede
   sys.source(file.path(getwd(), "R/mapping/runtime/graph_mapping_transaction_runtime.R"), envir = environment())
   init_timing_emit("DATA-BEGIN")
   sys.source(file.path(getwd(), "R/data/runtime/graph_data_runtime.R"), envir = environment())
+  sys.source(file.path(getwd(), "R/data/runtime/graph_plot_filter_runtime.R"), envir = environment())
   init_timing_emit("ORDER-UI-BEGIN")
   sys.source(file.path(getwd(), "R/mapping/runtime/graph_order_ui_runtime.R"), envir = environment())
   init_timing_emit("STYLE-UI-BEGIN")
@@ -453,6 +454,7 @@ graphServer <- function(id, style_clipboard = NULL, diag_log = NULL, ui_preseede
       if (!is.list(state)) return(invisible(FALSE))
       graph_apply_state_replay(state, transaction = transaction)
     },
+    filter_generation = function() isolate(graph_state_replay_generation()),
     replay_active = reactive({ isTRUE(graph_state_replay_active()) }),
     replay_error = reactive({ graph_state_replay_error() })
   )

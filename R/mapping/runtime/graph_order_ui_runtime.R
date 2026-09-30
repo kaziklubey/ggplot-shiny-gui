@@ -91,7 +91,8 @@
     current <- get_saved_order(kind, variable, observed)
     moved <- graph_category_order_move(current, idx, direction)
     if (identical(current, moved)) return()
-    set_saved_order(kind, variable, moved)
+    saved <- (graph_normalize_order_state(isolate(order_state()))[[kind]] %||% list())[[variable]] %||% character(0)
+    set_saved_order(kind, variable, graph_category_merge_active_order(saved, moved, observed))
 
     if (identical(kind, "x") && identical(variable, as.character(graph_mapping_value("x", input$xvar %||% ""))[1]) &&
         exists("line_break_prune_to_levels", mode = "function")) {

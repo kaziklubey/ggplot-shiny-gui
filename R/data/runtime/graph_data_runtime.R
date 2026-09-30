@@ -221,11 +221,11 @@
     res$data
   })
 
-  # Compatibility name used by the existing Plot pipeline. New non-Plot
-  # consumers should choose raw_dat() or plot_source_data() explicitly.
-  dat <- reactive({
-    plot_source_data()
+  # Shared Plot pipeline: reshape, then Filter. Statistics defaults to raw_dat(), but an Analysis can explicitly opt into active_plot_data().
+  active_plot_data <- reactive({
+    graph_plot_filter_apply(plot_source_data(), (attached_state_seed() %||% list())$plot_filter)
   })
+  dat <- reactive({ active_plot_data() })
 
   # Incompatible selected columns (for example numeric phase2 + character
   # phase) are not a valid wide measurement selection. The first failure is

@@ -13,6 +13,8 @@ graph_render_state_apply_semantics <- function(state) {
   pl <- out$plot %||% list()
   mp <- out$mapping %||% list()
   rs <- out$reshape %||% list()
+  filter <- graph_plot_filter_normalize(out$plot_filter)
+  out$plot_filter <- if (filter$enabled) filter else graph_plot_filter_default()
 
   # Wide->Long configuration changes the plot only while reshape is enabled.
   # The browser keeps hidden checkbox/select/text values alive when the mode is

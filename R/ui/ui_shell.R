@@ -4,9 +4,9 @@
 
 app_head_ui <- function() {
 tags$head(
-      tags$link(rel = "stylesheet", type = "text/css", href = paste0("app_styles.css?v=", utils::URLencode(APP_VERSION, reserved = TRUE))),
-      tags$script(src = paste0("app_client.js?v=", utils::URLencode(APP_VERSION, reserved = TRUE))),
-      tags$script(src = paste0("graph_settings_popout.js?v=", utils::URLencode(APP_VERSION, reserved = TRUE)))
+      tags$link(rel = "stylesheet", type = "text/css", href = paste0("app_styles.css?v=", utils::URLencode(APP_ASSET_VERSION, reserved = TRUE))),
+      tags$script(src = paste0("app_client.js?v=", utils::URLencode(APP_ASSET_VERSION, reserved = TRUE))),
+      tags$script(src = paste0("graph_settings_popout.js?v=", utils::URLencode(APP_ASSET_VERSION, reserved = TRUE)))
     )
 }
 

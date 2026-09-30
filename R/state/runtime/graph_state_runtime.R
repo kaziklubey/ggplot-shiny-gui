@@ -80,10 +80,12 @@
       if (is.list(canonical_data)) {
         live$data_text <- graph_state_scalar(canonical_data$data_text, "")
         live$reshape <- canonical_data$reshape %||% list()
+        live$plot_filter <- graph_plot_filter_normalize(canonical_data$plot_filter)
       } else {
         # Startup/replay normally returns above before reaching this branch. Keep
         # a defensive fallback for an unexpectedly unattached Full Editor.
         live$data_text <- input$text
+        live$plot_filter <- graph_plot_filter_default()
         live$reshape <- list(
           enabled = input$reshape_wide,
           row_id = input$reshape_row_id,

@@ -26,6 +26,7 @@ graph_replay_mapping_plan <- function(cfg) {
       error = function(e) NULL
     )
     d <- if (is.list(transformed) && is.data.frame(transformed$data)) transformed$data else raw
+    d <- graph_plot_filter_apply(d, cfg$plot_filter)
     cols <- graph_usable_column_names(d)
     all_names <- as.character(names(d) %||% rep("", ncol(d)))
     numeric_flags <- vapply(d, is.numeric, logical(1))

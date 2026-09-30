@@ -137,7 +137,7 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                   tags$b("Statistics data"),
                   tags$br(),
                   tags$small(
-                    "検定はPlot Mappingとは独立です。各Analysisは元データから独自のData preparationを適用します。"
+                    "検定はPlot Mappingとは独立です。各Analysisごとに元データ／現在のプロット用データ／別データを選び、必要ならAnalysis専用Data preparationを追加できます。"
                   )
                 )
               ),
@@ -189,10 +189,12 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                         "Data",
                         choices = c(
                           "このGraphの元データを使う" = "graph",
+                          "現在のプロット用データを使う（Reshape + Filter後）" = "plot",
                           "別データを貼り付ける" = "custom"
                         ),
                         selected = "graph"
                       ),
+                      uiOutput("stats_data_source_status"),
 
                       conditionalPanel(
                         condition = "input.stats_data_source == 'custom'",
@@ -242,7 +244,7 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                           uiOutput("stats_transform_status"),
                           p(
                             class = "help-block",
-                            "この設定はAnalysisごとに保存され、Plot側のWide→Long設定とは連動しません。"
+                            "この設定はAnalysisごとに保存されます。「現在のプロット用データ」を選んだ場合は、Plot側のReshape + Filter後の表を起点に、ここでさらにAnalysis専用変換を追加できます。"
                           )
                         )
                       ),
@@ -381,7 +383,10 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                   class = "help-block",
                   "選択した列名（例：Pre, Post）が横軸の水準になります。選択した列の元の並び順を横軸順として使用します。"
                 )
-              )
+              ),
+              tags$hr(),
+              h4("プロット用データフィルター"),
+              uiOutput("plot_filter_ui")
             )
           )
           ),
@@ -1753,7 +1758,7 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
 
             tabPanel("Data View",
               br(),
-              p(class = "help-block", "現在のPlotへ実際に渡しているデータ（Plot側Wide→Long適用後）を表示します。"),
+              p(class = "help-block", "Plotへ渡すReshape後のデータを表示します。フィルター使用時は適用後の行を表示します。"),
               uiOutput("data_view_status"),
               tableOutput("data_view")
             ),

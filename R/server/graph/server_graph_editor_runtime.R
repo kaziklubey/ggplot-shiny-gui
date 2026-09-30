@@ -306,6 +306,39 @@
         }
         NULL
       },
+      on_plot_filter_commit = function(event, generation) {
+        if (isTRUE(isolate(graph_single_editor_loading()))) return(invisible(FALSE))
+        owner <- as.character(graph_single_owner() %||% "")[1]
+        if (!nzchar(owner) || !cache_has(owner) || !graph_single_ready(owner) ||
+            !graph_single_revision_is_current(owner)) return(invisible(FALSE))
+        mod_now <- graph_single_mod()
+        if (is.null(mod_now) || !is.function(mod_now$filter_generation) ||
+            !identical(as.integer(generation), as.integer(mod_now$filter_generation()))) return(invisible(FALSE))
+        old <- cache_get(owner)
+        if (!is.list(old)) return(invisible(FALSE))
+        d <- tryCatch(graph_snapshot_reshaped_data(old), error = function(e) NULL)
+        if (!is.data.frame(d)) return(invisible(FALSE))
+        next_filter <- graph_plot_filter_transition(old$plot_filter, event, d)
+        if (identical(next_filter, graph_plot_filter_normalize(old$plot_filter))) return(invisible(TRUE))
+        candidate <- old
+        candidate$plot_filter <- next_filter
+        result <- graph_settings_manager_commit_exact(owner, candidate, source = "plot-filter")
+        if (isTRUE(result$changed)) {
+          canonical_now <- cache_get(owner)
+          if (!is.list(canonical_now)) return(invisible(FALSE))
+          if (is.function(mod_now$accept_canonical))
+            mod_now$accept_canonical(canonical_now, reason = "plot-filter", seed_render = FALSE)
+          if (is.function(mod_now$refresh_browser_pools))
+            mod_now$refresh_browser_pools(canonical_now)
+          graph_single_claim_revision(owner, reason = "plot-filter")
+          graph_single_mark_editor_visit(owner)
+          session$sendCustomMessage("graph-browser-patch-rebase", app_json_safe_tree(list(
+            graphId = owner, revision = graph_render_state_revision_value(owner))))
+          if (isTRUE(result$render) && is.function(mod_now$release_render_state))
+            mod_now$release_render_state(canonical_now, reason = "plot-filter")
+        }
+        invisible(isTRUE(result$changed))
+      },
       on_data_text_commit = function(text_now) {
         if (isTRUE(isolate(graph_single_editor_loading()))) return(invisible(FALSE))
         owner <- as.character(graph_single_owner() %||% "")[1]
@@ -318,7 +351,11 @@
         if (identical(text_now, graph_state_scalar(old$data_text, ""))) return(invisible(TRUE))
 
         candidate <- old
+        parsed <- tryCatch(graph_parse_pasted_data(text_now), error = function(e) NULL)
+        if (!is.data.frame(parsed) || ncol(parsed) < 1L ||
+            !isTRUE(graph_data_column_name_status(parsed)$valid)) return(invisible(FALSE))
         candidate$data_text <- text_now
+        candidate$plot_filter <- graph_plot_filter_default()
         reconciled <- graph_reconcile_mapping_after_data_change(old, candidate)
         candidate <- reconciled$state
 

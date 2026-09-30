@@ -158,6 +158,7 @@
       if (!is.null(r[[nm]])) out[[nm]] <- stats_scalar_chr(r[[nm]], out[[nm]])
     }
 
+    out$data_source <- if (out$data_source %in% c("graph", "plot", "custom")) out$data_source else "graph"
     out$transform_type <- if (out$transform_type %in% c("as_is", "wide_to_long")) out$transform_type else "as_is"
     out$transform_columns <- unique(as.character(unlist(r$transform_columns %||% out$transform_columns, use.names = FALSE)))
     out$transform_columns <- out$transform_columns[nzchar(out$transform_columns)]
@@ -223,22 +224,32 @@
     d
   })
 
-  stats_base_data <- reactive({
-    canonical_context <- isTRUE(stats_canonical_context_active())
+  stats_data_source_mode <- function(canonical_context = isTRUE(stats_canonical_context_active())) {
     r <- if (isTRUE(canonical_context)) stats_selected_recipe() else isolate(stats_selected_recipe())
-    source_mode <- if (isTRUE(canonical_context)) {
+    mode <- if (isTRUE(canonical_context)) {
       r$data_source %||% "graph"
     } else {
       input$stats_data_source %||% r$data_source %||% "graph"
     }
-    if (identical(source_mode, "custom")) {
-      return(stats_custom_parsed_data())
+    if (!mode %in% c("graph", "plot", "custom")) mode <- "graph"
+    mode
+  }
+
+  stats_base_data <- reactive({
+    source_mode <- stats_data_source_mode()
+    if (identical(source_mode, "custom")) return(stats_custom_parsed_data())
+    if (identical(source_mode, "plot")) {
+      # Explicit opt-in to the same Reshape -> Plot Filter table used by Plot.
+      # Mapping/style remain outside Statistics; only the row/column data table
+      # is shared. Changes to the Graph Plot Filter intentionally propagate.
+      return(active_plot_data())
     }
 
-    # Statistics starts from the original Graph dataset. Plot mapping/style and
-    # Plot Wide→Long are intentionally outside this dependency boundary.
+    # Backward-compatible default: Statistics starts from the original Graph
+    # dataset. Plot reshape/filter affect Statistics only when source_mode=plot.
     raw_dat()
   })
+
 
   stats_selected_recipe <- reactive({
     id <- stats_selected_id()
@@ -298,7 +309,12 @@
   output$stats_transform_status <- renderUI({
     r <- stats_transform_recipe()
     if (!identical(r$type, "wide_to_long")) {
-      return(tags$small(class = "text-muted", "Original dataset をそのまま解析に使用します。"))
+      source_mode <- stats_data_source_mode()
+      label <- switch(source_mode,
+        plot = "現在のプロット用データ（Reshape + Plot Filter適用後）をそのまま解析に使用します。",
+        custom = "別データをそのまま解析に使用します。",
+        "このGraphの元データをそのまま解析に使用します。")
+      return(tags$small(class = "text-muted", label))
     }
 
     res <- tryCatch(stats_source_result(), error = function(e) NULL)
@@ -314,6 +330,50 @@
         " → ", r$names_to, " / ", r$values_to
       )
     )
+  })
+
+  output$stats_data_source_status <- renderUI({
+    mode <- stats_data_source_mode()
+    if (identical(mode, "custom")) {
+      d <- tryCatch(stats_custom_parsed_data(), error = function(e) NULL)
+      if (!is.data.frame(d)) return(tags$small(class = "text-muted", "Statistics: 別データ"))
+      return(tags$small(class = "text-muted", paste0("Statistics: ", nrow(d), "行（別データ）")))
+    }
+
+    raw <- tryCatch(raw_dat(), error = function(e) NULL)
+    raw_n <- if (is.data.frame(raw)) nrow(raw) else NA_integer_
+    plot_d <- tryCatch(active_plot_data(), error = function(e) NULL)
+    plot_n <- if (is.data.frame(plot_d)) nrow(plot_d) else NA_integer_
+    base <- attached_state_seed() %||% list()
+    pf <- graph_plot_filter_normalize(base$plot_filter)
+    reshape_on <- isTRUE((base$reshape %||% list())$enabled)
+    filter_on <- isTRUE(pf$enabled) && length(pf$rules) > 0L
+
+    if (identical(mode, "plot")) {
+      if (is.finite(plot_n)) {
+        return(tags$small(
+          class = "text-muted",
+          paste0(
+            "Statistics: ", plot_n, "行（現在のプロット用データ",
+            if (reshape_on || filter_on) "：Reshape / Plot Filter適用後" else "",
+            "）"
+          )
+        ))
+      }
+      return(tags$small(class = "text-muted", "Statistics: 現在のプロット用データ"))
+    }
+
+    if (is.finite(raw_n) && is.finite(plot_n) && (reshape_on || filter_on)) {
+      return(tags$div(
+        class = "alert alert-info statistics-data-source-warning",
+        style = "padding:6px 9px; margin-top:4px; margin-bottom:8px;",
+        tags$b("Statisticsは元データを使用中です。Plot側のReshape / Filterは適用されません。"),
+        tags$br(),
+        tags$small(paste0("Statistics: ", raw_n, "行（元データ） / Plot: ", plot_n, "行（Reshape / Filter後）"))
+      ))
+    }
+    if (is.finite(raw_n)) return(tags$small(class = "text-muted", paste0("Statistics: ", raw_n, "行（元データ）")))
+    tags$small(class = "text-muted", "Statistics: 元データ")
   })
 
   output$stats_transform_columns_ui <- renderUI({
@@ -382,11 +442,11 @@
       tags$br(),
       tags$small(
         paste0(
-          if (identical(r$data_source %||% "graph", "graph")) {
+          switch(r$data_source %||% "graph",
+            plot = "Data: current Plot data (Reshape + Plot Filter)",
+            custom = "Data: custom data",
             "Data: original Graph dataset"
-          } else {
-            "Data: custom data"
-          },
+          ),
           if (identical(r$transform_type %||% "as_is", "wide_to_long")) {
             paste0(" / Preparation: Wide→Long (", paste(r$transform_columns %||% character(0), collapse = ", "), ")")
           } else {
@@ -1544,11 +1604,11 @@
       opts$s2r <- TRUE
     }
 
-    data_label <- if (identical(input$stats_data_source %||% "graph", "graph")) {
+    data_label <- switch(input$stats_data_source %||% "graph",
+      plot = "current Plot data (Reshape + Plot Filter)",
+      custom = "custom data",
       "original Graph dataset"
-    } else {
-      "custom data"
-    }
+    )
 
     run_one_anova <- function(dd, split_label = NULL) {
       if (!nrow(dd)) {
