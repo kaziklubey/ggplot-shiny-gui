@@ -204,10 +204,11 @@ graph_default_mapping_for_data <- function(data) {
 # appearance/style shell. Data and Mapping are deterministic and therefore do
 # not depend on whether browser selectInput values have round-tripped yet.
 
-# Current canonical GraphState schema 5 migration. Runtime only consumes schema 5 fields;
+# Current canonical GraphState schema migration. Runtime consumes schema 6;
 # compatibility is resolved once at the replay/load boundary.
-graph_state_migrate_v5 <- function(state) {
+graph_state_migrate_current <- function(state) {
   if (!is.list(state)) return(state)
+  state <- graph_state_canonicalize_axis_owner(state)
   old_schema <- suppressWarnings(as.integer(graph_state_scalar(state$schema_version, 0L)))
   if (!is.finite(old_schema)) old_schema <- 0L
 
@@ -261,8 +262,11 @@ graph_state_migrate_v5 <- function(state) {
   st$appearance <- ap
   state$style <- st
 
+  state$data_document <- graph_data_document_normalize(
+    state$data_document, graph_state_scalar(state$data_text, "")
+  )
   state$version <- "4.0-rc2"
-  state$schema_version <- max(5L, old_schema)
+  state$schema_version <- max(6L, old_schema)
   state
 }
 
@@ -272,6 +276,30 @@ graph_state_migrate_v5 <- function(state) {
 # ui_snapshot remains presentation-only and no browser semantic readback is used.
 graph_state_prepare_replay_snapshot <- function(state) {
   if (!is.list(state)) return(state)
+  # Historical Statistics graph-source recipes inherit Plot reshape only once,
+  # at import. Runtime Statistics owns an explicit independent transform.
+  recipes <- state$statistics_recipes
+  if (is.list(recipes)) for (i in seq_along(recipes)) {
+    recipe <- recipes[[i]]
+    if (!is.list(recipe)) next
+    if (is.null(recipe$transform_type)) {
+      reshape <- state$reshape %||% list()
+      inherit <- identical(graph_state_scalar(recipe$data_source, "graph"), "graph") &&
+        isTRUE(reshape$enabled)
+      recipe$transform_type <- if (inherit) "wide_to_long" else "as_is"
+      if (inherit) {
+        recipe$transform_columns <- reshape$columns %||% character(0)
+        recipe$transform_row_id <- isTRUE(reshape$row_id)
+        recipe$transform_names_to <- graph_state_scalar(reshape$x_name, "Time")
+        recipe$transform_values_to <- graph_state_scalar(reshape$y_name, "Value")
+      }
+      recipes[[i]] <- recipe
+    }
+  }
+  state$statistics_recipes <- recipes
+  state$project_name <- NULL
+  state$graph_main_tab <- NULL
+  state <- graph_import_group_styles(state)
   state <- graph_normalize_legend_state(state)
   state$plot_filter <- graph_plot_filter_normalize(state$plot_filter)
 
@@ -282,7 +310,7 @@ graph_state_prepare_replay_snapshot <- function(state) {
   state$ui_snapshot <- graph_ui_snapshot_normalize(state$ui_snapshot)
   old_schema <- suppressWarnings(as.integer(graph_state_scalar(state$schema_version, 0L)))
   if (!is.finite(old_schema)) old_schema <- 0L
-  if (old_schema >= 4L) return(graph_state_migrate_v5(state))
+  if (old_schema >= 4L) return(graph_state_migrate_current(state))
 
   raw <- tryCatch(
     graph_parse_pasted_data(as.character(state$data_text %||% "")[1]),
@@ -290,7 +318,7 @@ graph_state_prepare_replay_snapshot <- function(state) {
   )
   if (!is.data.frame(raw) || !ncol(raw)) {
     state$schema_version <- max(4L, old_schema)
-    return(graph_state_migrate_v5(state))
+    return(graph_state_migrate_current(state))
   }
 
   scalar_chr <- function(x, default = "") {
@@ -312,9 +340,54 @@ graph_state_prepare_replay_snapshot <- function(state) {
     error = function(e) NULL
   )
   prepared <- if (is.list(transformed) && is.data.frame(transformed$data)) transformed$data else raw
-  graph_state_migrate_v5(
+  graph_state_migrate_current(
     graph_state_materialize_dynamic_style_defaults(state, prepared_data = prepared)
   )
+}
+
+# Fill only absent startup control values from the existing direct-state input
+# default contract. This is not a second default table: graph_snapshot_input_defaults()
+# already defines the control defaults used by Figure/export rendering, while
+# graph_browser_input_paths() is the one input -> GraphState path contract.
+# Explicit module-owned values always win.
+graph_sample_fill_missing_control_defaults <- function(state) {
+  if (!is.list(state)) return(state)
+  defaults <- graph_snapshot_input_defaults()
+  paths <- graph_browser_input_paths(state)
+
+  path_parts <- function(path) {
+    z <- strsplit(as.character(path %||% "")[[1]], ".", fixed = TRUE)[[1]]
+    z[nzchar(z)]
+  }
+  path_value <- function(node, parts) {
+    cur <- node
+    for (key in parts) {
+      if (!is.list(cur) || !key %in% (names(cur) %||% character(0))) return(NULL)
+      cur <- cur[[key]]
+    }
+    cur
+  }
+  path_fill <- function(node, parts, value) {
+    if (!length(parts)) return(node)
+    key <- parts[[1]]
+    if (!is.list(node)) node <- list()
+    if (length(parts) == 1L) {
+      if (!key %in% (names(node) %||% character(0)) || is.null(node[[key]])) {
+        node[key] <- list(value)
+      }
+      return(node)
+    }
+    child <- if (key %in% (names(node) %||% character(0)) && is.list(node[[key]])) node[[key]] else list()
+    node[key] <- list(path_fill(child, parts[-1], value))
+    node
+  }
+
+  for (input_id in intersect(names(defaults), names(paths))) {
+    parts <- path_parts(paths[[input_id]])
+    if (!length(parts) || !is.null(path_value(state, parts))) next
+    state <- path_fill(state, parts, defaults[[input_id]])
+  }
+  state
 }
 
 graph_sample_graph_state <- function(base_state) {
@@ -324,12 +397,14 @@ graph_sample_graph_state <- function(base_state) {
     unserialize(serialize(base_state, NULL, version = 3)),
     error = function(e) base_state
   )
+  state <- graph_sample_fill_missing_control_defaults(state)
 
   sample_text <- graph_sample_data_text()
   sample_data <- graph_parse_pasted_data(sample_text)
   if (!is.data.frame(sample_data) || !ncol(sample_data)) return(NULL)
 
   state$data_text <- sample_text
+  state$data_document <- graph_data_document_default(sample_text)
   state$plot_filter <- graph_plot_filter_default()
   state$reshape <- modifyList(
     if (is.list(state$reshape)) state$reshape else list(),

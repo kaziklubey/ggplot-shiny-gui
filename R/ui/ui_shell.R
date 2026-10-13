@@ -5,9 +5,27 @@
 app_head_ui <- function() {
 tags$head(
       tags$link(rel = "stylesheet", type = "text/css", href = paste0("app_styles.css?v=", utils::URLencode(APP_ASSET_VERSION, reserved = TRUE))),
+      tags$script(src = paste0("startup_lifecycle.js?v=", utils::URLencode(APP_ASSET_VERSION, reserved = TRUE))),
+      tags$script(src = paste0("project_display_lifecycle.js?v=", utils::URLencode(APP_ASSET_VERSION, reserved = TRUE))),
       tags$script(src = paste0("app_client.js?v=", utils::URLencode(APP_ASSET_VERSION, reserved = TRUE))),
+      tags$script(src = paste0("data_document.js?v=", utils::URLencode(APP_ASSET_VERSION, reserved = TRUE))),
       tags$script(src = paste0("graph_settings_popout.js?v=", utils::URLencode(APP_ASSET_VERSION, reserved = TRUE)))
     )
+}
+
+startup_load_overlay_ui <- function() {
+  div(
+    id = "startup_load_overlay",
+    class = "project-load-overlay visible",
+    role = "status", `aria-live` = "polite",
+    div(class = "project-load-card",
+      div(class = "project-load-spinner", `aria-hidden` = "true"),
+      div(class = "project-load-title", "アプリを起動しています"),
+      div(class = "project-load-message", "初期グラフを準備しています…"),
+      tags$button(type = "button", class = "btn btn-danger project-load-reload",
+        onclick = "window.location.reload();", "アプリを再読み込み")
+    )
+  )
 }
 
 project_load_overlay_ui <- function() {
@@ -43,8 +61,16 @@ div(
 }
 
 project_manager_ui <- function() {
-div(
+  div(
     class = "project-manager",
+    tags$button(
+      type = "button",
+      class = "btn btn-default btn-sm app-author-comment-launch",
+      `data-toggle` = "modal",
+      `data-target` = "#app_author_comment_dialog",
+      `aria-haspopup` = "dialog",
+      "製作者コメント"
+    ),
 
     # Project
     div(
@@ -237,6 +263,63 @@ div(
   )
 }
 
+app_author_comment_ui <- function() {
+  div(
+    id = "app_author_comment_dialog",
+    class = "modal fade app-author-comment-dialog",
+    tabindex = "-1",
+    role = "dialog",
+    `aria-labelledby` = "app_author_comment_title",
+    div(
+      class = "modal-dialog modal-lg",
+      role = "document",
+      div(
+        class = "modal-content",
+        div(
+          class = "modal-header",
+          tags$button(
+            type = "button", class = "close", `data-dismiss` = "modal",
+            `aria-label` = "閉じる", tags$span(`aria-hidden` = "true", HTML("&times;"))
+          ),
+          h3(id = "app_author_comment_title", class = "modal-title", "本アプリケーションについて")
+        ),
+        div(
+          class = "modal-body",
+          p(
+            "本アプリケーションは、Rの ", tags$code("ggplot2"),
+            " をより簡便に利用し、グラフ作成を支援することを目的として作成したものです。"
+          ),
+          h4("統計解析について"),
+          p(
+            "分散分析には井関龍太先生の ",
+            tags$a(
+              href = "https://riseki.cloudfree.jp/?ANOVA%E5%90%9B",
+              target = "_blank", rel = "noopener noreferrer", "ANOVA君"
+            ),
+            " を使用しています。"
+          ),
+          p(
+            "t検定および相関分析には、Rの標準関数である ",
+            tags$code("stats::t.test()"), " および ", tags$code("stats::cor.test()"),
+            " を使用しています。"
+          ),
+          p(
+            "本アプリケーションは、入力データおよびユーザーが指定した設定に基づいてグラフを生成しますが、",
+            "解析内容、図の妥当性、表示内容の正確性を保証するものではありません。"
+          ),
+          p("論文、学会発表、報告書等に使用する場合は、必ず元データおよび生成された図の内容を利用者自身で確認してください。"),
+          p("本アプリケーションの利用により生じた誤り、損失、不利益、その他いかなる損害についても、製作者は責任を負いません。"),
+          p(strong("本アプリケーションは作図作業の補助ツールとしてご利用ください。"))
+        ),
+        div(
+          class = "modal-footer",
+          tags$button(type = "button", class = "btn btn-default", `data-dismiss` = "modal", "閉じる")
+        )
+      )
+    )
+  )
+}
+
 graph_workspace_ui <- function() {
 tabsetPanel(
     id = "workspace_main_tab",
@@ -272,11 +355,6 @@ tabsetPanel(
           type = "button", class = "btn btn-default btn-sm graph-workspace-section",
           `data-graph-main-tab` = "Data View", onclick = "return window.ggplotGuiSelectGraphMainTab ? window.ggplotGuiSelectGraphMainTab('Data View') : false;",
           "Data View"
-        ),
-        tags$button(
-          type = "button", class = "btn btn-default btn-sm graph-workspace-section",
-          `data-graph-main-tab` = "製作者コメント", onclick = "return window.ggplotGuiSelectGraphMainTab ? window.ggplotGuiSelectGraphMainTab('製作者コメント') : false;",
-          "製作者コメント"
         )
       ),
       div(
@@ -306,9 +384,13 @@ appUI <- function() {
   fluidPage(
     useShinyjs(),
     app_head_ui(),
-    titlePanel("ggplot GUI"),
+    startup_load_overlay_ui(),
     project_load_overlay_ui(),
-    project_manager_ui(),
-    graph_workspace_ui()
+    div(id = "app_startup_content", inert = "",
+      titlePanel("ggplot GUI"),
+      project_manager_ui(),
+      app_author_comment_ui(),
+      graph_workspace_ui()
+    )
   )
 }

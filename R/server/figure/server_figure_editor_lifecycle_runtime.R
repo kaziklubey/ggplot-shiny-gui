@@ -256,8 +256,7 @@ show_figure_editor_wrapper <- function(id = "") {
           "UI inserted editor_id=", editor_id,
           " profile=", fig_profile$name,
           " editable_data=", graph_editor_profile_has(fig_profile, "editable_data"),
-          " statistics=", graph_editor_profile_has(fig_profile, "statistics"),
-          " replay_required={", paste(graph_editor_profile_required_inputs(fig_profile), collapse=","), "}"
+          " statistics=", graph_editor_profile_has(fig_profile, "statistics")
         ),
         id = id
       )
@@ -424,4 +423,3 @@ show_figure_editor_wrapper <- function(id = "") {
       id = id
     )
   })
-

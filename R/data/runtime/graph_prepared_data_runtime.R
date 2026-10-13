@@ -63,6 +63,7 @@
   # external_error_bounds is shared by Graph and state snapshots.
 
   output$summary_unit_status <- renderUI({
+    graph_cold_diag_measure("output$summary_unit_status", function() {
     plot_type_now <- graph_plot_value("type", input$plot_type %||% "line")
     bar_count_now <- identical(plot_type_now, "bar") && graph_plot_bar_value_source_is_count(
       graph_plot_value("bar_value_source", input$bar_value_source %||% "numeric_y")
@@ -102,6 +103,7 @@
     } else {
       p(class = "help-block", "現在の条件セルでは各IDは1行なので、2つの集計単位は同じ平均になります。")
     }
+    })
   })
 
   # Selectize bindings can report NULL briefly and later re-report the visual
@@ -142,6 +144,7 @@
   }
 
   observe({
+    if (!graph_activation_current()) return()
     mode <- app_normalize_font_family_mode(graph_appearance_value("font_family_mode", input$font_family_mode %||% "sans"))
     old <- isolate(font_family_mode_effective())
     if (!identical(old, mode)) {
@@ -151,6 +154,7 @@
   })
 
   observe({
+    if (!graph_activation_current()) return()
     fam <- app_normalize_font_family_custom(graph_appearance_value("font_family_custom", input$font_family_custom %||% ""))
     old <- isolate(font_family_custom_effective())
     if (!identical(old, fam)) {
@@ -173,6 +177,7 @@
   })
 
   output$font_family_warning_ui <- renderUI({
+    graph_cold_diag_measure("output$font_family_warning_ui", function() {
     fam <- selected_font_family()
     backend <- as.character(app_font_catalog$backend %||% "fallback")
     if (identical(backend, "systemfonts")) {
@@ -191,6 +196,7 @@
       class = "help-block", style = "color:#8a6d3b;",
       "systemfontsを利用できないため、フォントの実在確認は行わず互換候補を表示しています。"
     )
+    })
   })
 
   theme_object <- reactive({ compute_theme_object() })
@@ -252,6 +258,7 @@
   })
 
   output$plot_note <- renderUI({
+    graph_cold_diag_measure("output$plot_note", function() {
     # Plot notes are advisory only. During browser-direct Graph hydration the
     # bound Shiny mapping inputs can lag the already-accepted canonical state
     # by a flush, while the Preview itself renders correctly from GraphState.
@@ -269,4 +276,5 @@
     )
     if (is.null(note)) return(NULL)
     div(class = "alert alert-warning plot-note-wrap", note)
+    })
   })

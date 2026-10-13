@@ -7,34 +7,14 @@
   # Color / Linetype / Shape use persistent browser slot pools.
   # No per-level Shiny inputs are created or rebound when Graph/mapping changes.
   observe({
-    style_restore_epoch()
-    d <- dat(); v <- resolve_color_var(d); lev <- style_levels()
-    bar_box_now <- graph_plot_uses_fill(graph_plot_value("type", input$plot_type %||% "line"))
-    if (!nzchar(v) || !length(lev)) {
-      graph_slot_pool_publish(
-        "color_style", "color_fill", list(),
-        context_key = paste0("none|barbox=", bar_box_now),
-        empty_text = "Colorに使う列がありません。",
-        options = list(showFillNone = bar_box_now)
-      )
+    # Replay has one explicit pool hydration using the target-derived data plan.
+    # Do not let the ordinary live Style observer publish a second/stale pool
+    # from the previous attached Graph during that transaction.
+    if (isTRUE(isolate(graph_state_replay_active()))) {
+      graph_cold_diag_record("style-observer-color", detail = "guarded")
       return()
     }
-    ensure_style_branch("color", v, lev)
-    br <- (color_styles())[[v]] %||% list()
-    fill_tree <- fill_none_styles()
-    fill_levels <- graph_bar_box_fill_none_levels(fill_tree, v)
-    entries <- lapply(lev, function(lv) list(
-      key = lv,
-      label = lv,
-      value = as.character(br[[lv]] %||% "#333333")[1],
-      fillNone = lv %in% fill_levels
-    ))
-    graph_slot_pool_publish(
-      "color_style", "color_fill", entries,
-      context_key = paste(c(v, lev, paste0("barbox=", bar_box_now)), collapse = "\u001f"),
-      empty_text = "Colorに使う列がありません。",
-      options = list(showFillNone = bar_box_now)
-    )
+    graph_slot_pool_live_publish("color_style")
   })
 
   observeEvent(input$apply_palette, {
@@ -70,67 +50,30 @@
   })
 
   observe({
-    style_restore_epoch()
-    d <- dat(); v <- resolve_linetype_var(d); lev <- linetype_style_levels()
-    if (!nzchar(v) || !length(lev)) {
-      graph_slot_pool_publish("linetype_style", "linetype", list(), context_key = "none", empty_text = "Linetypeは固定です。")
+    if (isTRUE(isolate(graph_state_replay_active()))) {
+      graph_cold_diag_record("style-observer-linetype", detail = "guarded")
       return()
     }
-    ensure_style_branch("linetype", v, lev)
-    br <- (linetype_styles())[[v]] %||% list()
-    entries <- lapply(lev, function(lv) list(
-      key = lv, label = lv, value = as.character(br[[lv]] %||% "solid")[1]
-    ))
-    graph_slot_pool_publish(
-      "linetype_style", "linetype", entries,
-      context_key = paste(c(v, lev), collapse = "\u001f"),
-      empty_text = "Linetypeは固定です。"
-    )
+    graph_slot_pool_live_publish("linetype_style")
   })
 
   observe({
-    style_restore_epoch()
-    d <- dat(); v <- resolve_shape_var(d); lev <- shape_style_levels()
-    if (!nzchar(v) || !length(lev)) {
-      graph_slot_pool_publish("shape_style", "shape", list(), context_key = "none", empty_text = "Shapeは固定です。")
+    if (isTRUE(isolate(graph_state_replay_active()))) {
+      graph_cold_diag_record("style-observer-shape", detail = "guarded")
       return()
     }
-    ensure_style_branch("shape", v, lev)
-    br <- (shape_styles())[[v]] %||% list()
-    entries <- lapply(lev, function(lv) list(
-      key = lv, label = lv, value = as.character(br[[lv]] %||% 16)[1]
-    ))
-    graph_slot_pool_publish(
-      "shape_style", "shape", entries,
-      context_key = paste(c(v, lev), collapse = "\u001f"),
-      empty_text = "Shapeは固定です。"
-    )
+    graph_slot_pool_live_publish("shape_style")
   })
 
   # ============================================================
   # Series-specific style overrides
   # ============================================================
   observe({
-    style_restore_epoch(); keys <- series_combo_levels()
-    enabled <- isTRUE(graph_appearance_value("series_style_override", input$series_style_override))
-    if (!enabled || !length(keys)) {
-      graph_slot_pool_publish(
-        "series_style", "color", list(),
-        context_key = paste0("enabled=", enabled),
-        empty_text = "Colorと横位置要因に異なる列を選択すると、組み合わせ別の色設定が表示されます。"
-      )
+    if (isTRUE(isolate(graph_state_replay_active()))) {
+      graph_cold_diag_record("style-observer-series", detail = "guarded")
       return()
     }
-    ensure_series_styles(keys)
-    ss <- series_styles()
-    entries <- lapply(keys, function(key) list(
-      key = key, label = key, value = as.character((ss[[key]] %||% list())$color %||% "#333333")[1]
-    ))
-    graph_slot_pool_publish(
-      "series_style", "color", entries,
-      context_key = paste(keys, collapse = "\u001f"),
-      empty_text = "Colorと横位置要因に異なる列を選択すると、組み合わせ別の色設定が表示されます。"
-    )
+    graph_slot_pool_live_publish("series_style")
   })
 
   observeEvent(input$apply_series_palette, {
@@ -207,6 +150,7 @@
   }
 
   output$scatter_regression_style_ui <- renderUI({
+    graph_cold_diag_measure("output$scatter_regression_style_ui", function() {
     style_restore_epoch()
     lev <- regression_levels()
 
@@ -262,6 +206,7 @@
         )
       )
     }))
+    })
   })
 
   observe({
@@ -348,46 +293,17 @@
     )
   })
 
-  ensure_raw_custom_colors <- function(ctx) {
-    if (is.null(ctx) || !length(ctx$levels)) return(invisible(FALSE))
-    tree <- isolate(raw_group_colors())
-    br <- tree[[ctx$key]] %||% list()
-    changed <- FALSE
-    for (lv in ctx$levels) {
-      if (is.null(br[[lv]])) {
-        br[[lv]] <- lighten_colour(ctx$base[[lv]] %||% "#333333", amount = 0.45)
-        changed <- TRUE
-      }
-    }
-    if (changed) {
-      tree[[ctx$key]] <- br
-      raw_group_colors(tree)
-    }
-    invisible(changed)
-  }
+  # Missing custom-group colours are deterministic presentation defaults.
+  # Do not materialize them into raw_group_colors() while rebuilding/replaying
+  # the persistent Editor: that turns UI hydration into a false canonical edit.
+  # Canonical entries are created only by explicit palette/user edits.
 
   observe({
-    style_restore_epoch()
-    ctx <- raw_custom_colour_context()
-    if (is.null(ctx) || !length(ctx$levels)) {
-      graph_slot_pool_publish("raw_group_color", "color", list(), context_key = "none", empty_text = "Colorに使う系列がありません。")
+    if (isTRUE(isolate(graph_state_replay_active()))) {
+      graph_cold_diag_record("style-observer-raw-group", detail = "guarded")
       return()
     }
-    ensure_raw_custom_colors(ctx)
-    br <- (raw_group_colors())[[ctx$key]] %||% list()
-    entries <- lapply(seq_along(ctx$levels), function(i) {
-      lv <- ctx$levels[i]
-      list(
-        key = lv,
-        label = as.character(ctx$labels[i] %||% lv)[1],
-        value = as.character(br[[lv]] %||% "#555555")[1]
-      )
-    })
-    graph_slot_pool_publish(
-      "raw_group_color", "color", entries,
-      context_key = paste(c(ctx$key, ctx$levels), collapse = "\u001f"),
-      empty_text = "Colorに使う系列がありません。"
-    )
+    graph_slot_pool_live_publish("raw_group_color")
   })
 
   observeEvent(input$apply_raw_palette, {

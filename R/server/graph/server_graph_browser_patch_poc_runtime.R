@@ -3,43 +3,6 @@
   # Fixed Full-Editor controls are hydrated locally and user changes travel over
   # one revisioned patch input. Figure Controls keep their separate replay path.
 
-  graph_browser_patch_explicit_paths <- c(
-    project_name = "project_name",
-    reshape_wide = "reshape.enabled", reshape_row_id = "reshape.row_id",
-    reshape_columns = "reshape.columns", reshape_x_name = "reshape.x_name",
-    reshape_y_name = "reshape.y_name",
-    xvar = "mapping.x", yvar = "mapping.y", colorvar = "mapping.color",
-    linetypevar = "mapping.linetype", shapevar = "mapping.shape",
-    idvar = "mapping.id", facetvar = "mapping.facet",
-    groupvar = "mapping.position", line_series_mode = "mapping.line_series_mode",
-    line_series_var = "mapping.line_series_var",
-    external_error_col = "mapping.external_error",
-    external_ymin_col = "mapping.external_ymin",
-    external_ymax_col = "mapping.external_ymax",
-    plot_type = "plot.type", bar_layout = "plot.bar_layout",
-    bar_value_source = "plot.bar_value_source", bar_proportion_display = "plot.bar_proportion_display", summary_type = "plot.summary",
-    summary_unit = "plot.summary_unit", external_error_mode = "plot.external_error_mode",
-    show_raw = "plot.show_raw", connect_id = "plot.connect_id",
-    scatter_connect_mode = "plot.scatter_connect_mode",
-    individual_connect_direction = "plot.individual_connect_direction",
-    line_breaks = "plot.line_breaks",
-    xlab = "labels.xlab", ylab = "labels.ylab", title = "labels.title",
-    ymin = "labels.ymin", ymax = "labels.ymax", y_top_to_tick = "labels.y_top_to_tick"
-  )
-
-  graph_browser_patch_paths_for_state <- function(state) {
-    paths <- graph_browser_patch_explicit_paths
-    app <- if (is.list(state) && is.list(state$style) && is.list(state$style$appearance)) state$style$appearance else list()
-    default_style_keys <- setdiff(names(graph_snapshot_input_defaults()), names(graph_browser_patch_explicit_paths))
-    for (key in unique(c(names(app), default_style_keys))) {
-      if (!key %in% names(paths) && !identical(key, "sticky_plot")) paths[[key]] <- paste0("style.appearance.", key)
-    }
-    if ("plot_width_px" %in% names(app)) paths[["plot_width_px_direct"]] <- "style.appearance.plot_width_px"
-    if ("plot_height_px" %in% names(app)) paths[["plot_height_px_direct"]] <- "style.appearance.plot_height_px"
-    paths
-  }
-
-
   # dependent browser topology only needs a full local re-hydration when
   # choices/visibility topology can change. Ordinary numeric/text/color edits
   # already live in the browser working copy and are ACKed directly; replaying
@@ -60,14 +23,14 @@
 
   graph_browser_patch_values_from_state <- function(state, owned_only = NULL) {
     values <- utils::modifyList(graph_snapshot_input_defaults(), graph_ui_seed_from_state(state))
-    values$project_name <- graph_state_scalar(state$project_name, "")
     values$reshape_wide <- isTRUE((state$reshape %||% list())$enabled)
     values$reshape_row_id <- isTRUE((state$reshape %||% list())$row_id)
     values$reshape_x_name <- graph_state_scalar((state$reshape %||% list())$x_name, "Time")
     values$reshape_y_name <- graph_state_scalar((state$reshape %||% list())$y_name, "Value")
     values$reshape_columns <- as.character((state$reshape %||% list())$columns %||% character(0))
     values$line_breaks <- as.character((state$plot %||% list())$line_breaks %||% character(0))
-    paths <- graph_browser_patch_paths_for_state(state)
+    values$editor_panels <- graph_ui_snapshot_normalize(state$ui_snapshot)$panels
+    paths <- graph_browser_input_paths(state)
     keys <- intersect(names(paths), names(values))
     if (!is.null(owned_only)) keys <- intersect(keys, as.character(owned_only))
     out <- list()
@@ -80,9 +43,11 @@
     if (!nzchar(id) || !cache_has(id)) return(NULL)
     state <- cache_get(id)
     list(enabled = TRUE, graphId = id,
+         generation = as.integer(isolate(graph_single_editor_generation())),
+         stateRevision = graph_state_revision_value(id),
          revision = graph_render_state_revision_value(id),
          values = graph_browser_patch_values_from_state(state),
-         paths = as.list(graph_browser_patch_paths_for_state(state)))
+         paths = as.list(graph_browser_input_paths(state)))
   }
 
   graph_browser_patch_override_for_owner <- function(id) {
@@ -90,7 +55,7 @@
     id <- as.character(id %||% "")[1]
     if (!nzchar(id) || !cache_has(id)) return(NULL)
     state <- cache_get(id)
-    paths <- graph_browser_patch_paths_for_state(state)
+    paths <- graph_browser_input_paths(state)
     list(active = TRUE, graphId = id,
          revision = graph_render_state_revision_value(id),
          values = graph_browser_patch_values_from_state(state, owned_only = names(paths)),
@@ -99,6 +64,10 @@
 
   graph_browser_patch_normalize <- function(key, path, value, state) {
     key <- as.character(key %||% "")[1]
+    if (identical(key, "editor_panels")) {
+      if (!is.list(value)) return(list(ok = FALSE, message = "invalid-panels"))
+      return(list(ok = TRUE, value = graph_ui_snapshot_normalize(list(panels = value))$panels))
+    }
     if (key %in% c("reshape_columns", "line_breaks")) {
       return(list(ok = TRUE, value = as.character(unlist(value %||% character(0), use.names = FALSE))))
     }
@@ -139,12 +108,15 @@
 
   graph_browser_patch_result <- function(id, seq, accepted, path = "", key = "",
                                          revision = NULL, value = NULL,
-                                         reason = "", canonical_values = NULL) {
+                                         reason = "", canonical_values = NULL,
+                                         generation = isolate(graph_single_editor_generation())) {
     payload <- list(graphId = as.character(id %||% "")[1],
       seq = suppressWarnings(as.integer(seq %||% 0L)[1]), accepted = isTRUE(accepted),
       path = as.character(path %||% "")[1], key = as.character(key %||% "")[1],
       revision = as.integer(revision %||% graph_render_state_revision_value(id)),
-      reason = as.character(reason %||% "")[1])
+      stateRevision = graph_state_revision_value(id),
+      reason = as.character(reason %||% "")[1],
+      activationGeneration = as.integer(generation))
     if (!is.null(value)) payload$value <- value
     if (is.list(canonical_values)) payload$canonicalValues <- canonical_values
     session$sendCustomMessage("graph-browser-patch-result", app_json_safe_tree(payload))
@@ -161,7 +133,7 @@
     base_revision <- suppressWarnings(as.integer(req$baseRevision %||% -1L)[1])
     has_base_value <- isTRUE(req$hasBaseValue)
     canonical <- if (nzchar(id) && cache_has(id)) cache_get(id) else NULL
-    allowed_paths <- if (is.list(canonical)) graph_browser_patch_paths_for_state(canonical) else character(0)
+    allowed_paths <- if (is.list(canonical)) graph_browser_input_paths(canonical) else character(0)
     expected_path <- if (key %in% names(allowed_paths)) unname(allowed_paths[[key]]) else ""
 
     reject <- function(reason) {
@@ -169,12 +141,15 @@
       graph_browser_patch_result(id, seq, FALSE, path, key,
         revision = if (nzchar(id)) graph_render_state_revision_value(id) else 0L,
         reason = reason,
-        canonical_values = if (is.list(current)) graph_browser_patch_values_from_state(current) else list())
+        canonical_values = if (is.list(current)) graph_browser_patch_values_from_state(current) else list(),
+        generation = req$generation %||% -1L)
       diag_log("BROWSER-PATCH", paste0("REJECT seq=", seq, " reason=", reason), id = if (nzchar(id)) id else NULL)
       invisible(NULL)
     }
 
     if (!nzchar(id) || !identical(id, graph_single_owner()) || !graph_single_ready(id)) return(reject("owner-not-ready"))
+    if (!identical(as.integer(req$generation %||% -1L),
+                   as.integer(isolate(graph_single_editor_generation())))) return(reject("owner-generation-mismatch"))
     if (!nzchar(expected_path) || !identical(path, expected_path)) return(reject("path-not-whitelisted"))
     if (!is.finite(seq) || seq <= 0L) return(reject("invalid-seq"))
     last_seq <- suppressWarnings(as.integer(graph_browser_patch_last_seq[[id]] %||% 0L))
@@ -245,7 +220,8 @@
     if (!isTRUE(result$changed) && !isTRUE(result$render)) {
       revision <- graph_render_state_revision_value(id)
       graph_browser_patch_result(id, seq, TRUE, path, key, revision,
-        normalized$value, if (isTRUE(rebased)) "no-op-rebased" else "no-op")
+        normalized$value, if (isTRUE(rebased)) "no-op-rebased" else "no-op",
+        generation = req$generation %||% -1L)
       diag_log("BROWSER-PATCH",
         paste0("ACCEPT seq=", seq, " key=", key, " base_revision=", base_revision,
                " revision=", revision,
@@ -278,7 +254,8 @@
     revision <- graph_render_state_revision_value(id)
     graph_browser_patch_result(id, seq, TRUE, path, key, revision,
       normalized$value,
-      if (isTRUE(rebased)) "accepted-rebased" else if (isTRUE(result$changed)) "accepted" else "no-op")
+      if (isTRUE(rebased)) "accepted-rebased" else if (isTRUE(result$changed)) "accepted" else "no-op",
+      generation = req$generation %||% -1L)
     diag_log("BROWSER-PATCH",
       paste0("ACCEPT seq=", seq, " key=", key, " base_revision=", base_revision,
              " revision=", revision, " rebased=", isTRUE(rebased),

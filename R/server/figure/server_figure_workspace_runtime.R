@@ -18,6 +18,7 @@
   # Release the restore seed only after all four browser inputs visibly match
   # the restored values. Until then the seed remains authoritative.
   observe({
+    req(isTRUE(figure_workspace_active()))
     seed <- figure_control_restore_seed()
     if (is.null(seed)) return()
     vals <- c(
@@ -75,6 +76,7 @@
 
   # Figure内のレイアウト/サイズ/overrideは入力変更をそのまま現在状態へ反映する。
   observe({
+    req(isTRUE(figure_workspace_active()))
     meta <- graph_meta()
     layout <- figure_collect_live_layout(meta)
 
@@ -197,6 +199,7 @@
   # 再生成が必要な項目だけ別signatureへ切り出す。Labelの文字/位置/サイズ
   # などoverlay-only変更ではplot outputsを無効化しない。
   observe({
+    req(isTRUE(figure_workspace_active()))
     drafts <- figure_override_drafts()
     visible_overrides <- figure_visible_requested_overrides(drafts)
     figure_requested_overrides(visible_overrides)
@@ -589,14 +592,7 @@
       )
       ov <- figure_override_for(id, ovs)
       geometry_revision <- figure_geometry_source_revisions[[id]] %||% 0L
-      bootstrap_deferred <- isTRUE(isolate(figure_geometry_bootstrap_deferred()))
-      workspace_dormant <- !figure_workspace_is_active()
-      # hidden Figure UI is allowed to remain materialized, but source
-      # gtable measurement is a Figure-workspace responsibility. While Graph is
-      # active, use persisted/cached metadata only so Graph selection/editor
-      # hydration does not compete with Figure geometry work.
-      measurement_deferred <- isTRUE(bootstrap_deferred || workspace_dormant)
-      measured <- if (measurement_deferred) NULL else figure_measure_source_geometry_cached(
+      measured <- figure_measure_source_geometry_cached(
         id = id,
         geometry_revision = geometry_revision,
         p_raw = p_raw,
@@ -620,13 +616,9 @@
           geometry_source = measured$geometry_source %||% "unknown"
         )
       } else {
-        if (measurement_deferred) {
-          reason <- if (workspace_dormant) "workspace dormant" else "project bootstrap"
-          diag_log("FIGURE-GEOMETRY-DEFER", paste0(reason, "; persisted metadata used; gtable measurement skipped"), id = id)
-        }
         # Persisted detached/free previews carry a dedicated legend-free body.
-        # Use that body for the owner footprint during dormant/project-bootstrap
-        # geometry, while keeping mapped legend bboxes only for the overlay.
+        # Use that body for the owner footprint while keeping mapped legend
+        # bboxes only for the overlay.
         persisted_meta <- figure_layer_persisted_owner_meta(previews[[id]], ov)
         asset$meta %||% persisted_meta %||% ex %||% list()
       }
@@ -1045,6 +1037,7 @@
   # a structural layout change simply rebinds the currently visible cell keys;
   # stale outputs are harmless because their UI hosts no longer exist.
   observe({
+    req(isTRUE(figure_workspace_active()))
     layout <- figure_requested_layout()
     if (!length(layout)) return()
     geo <- figure_geometry()

@@ -62,14 +62,15 @@ app_function_catalog <- function() {
       graph_usable_column_names = list(kind = "pure data validation", input = "data.frame", output = "safe unique nonblank column names"),
       graph_style_migrate_v6 = list(kind = "pure Style migration", input = "saved Style", output = "style schema 6 with Bar/Box fill/border defaults"),
       graph_state_materialize_dynamic_style_defaults = list(kind = "pure GraphState style migration", input = "GraphState + prepared data", output = "GraphState with deterministic Style defaults"),
-      graph_state_migrate_v5 = list(kind = "pure GraphState migration", input = "GraphState", output = "schema-5 GraphState with current Mapping/Appearance defaults"),
-      graph_state_prepare_replay_snapshot = list(kind = "pure GraphState migration", input = "GraphState", output = "schema-5 GraphState with replayable UI snapshot + current style schema")
+      graph_data_document_normalize = list(kind = "pure Data Document canonicalizer", input = "saved Data Document + last-valid data_text", output = "canonical source draft / parse revision state"),
+      graph_state_migrate_current = list(kind = "pure GraphState migration", input = "GraphState", output = "schema-6 GraphState with Data Document + current Mapping/Appearance defaults"),
+      graph_state_prepare_replay_snapshot = list(kind = "pure GraphState migration", input = "GraphState", output = "schema-6 GraphState with replayable UI snapshot + current style schema")
     ),
     statistics = list(
       normalize_stats_recipe = list(kind = "analysis-state canonicalizer", input = "saved Analysis recipe", output = "canonical recipe"),
       stats_request_restore_barrier = list(kind = "Statistics restore barrier", input = "Analysis id + restore token + attempt", output = "browser round-trip ACK request"),
       stats_settle_restore_barrier = list(kind = "Statistics restore settle", input = "Analysis id + restore token + attempt", output = "stable release or next bounded barrier"),
-      stats_replace_graph_context = list(kind = "Statistics Graph-switch boundary", input = "target Graph recipes + preferred Analysis", output = "replaced persistent Statistics context"),
+      stats_replace_graph_context = list(kind = "Statistics Graph-switch canonical boundary", input = "target Graph recipes + preferred Analysis", output = "canonical Statistics context marked for lazy UI materialization"),
       stats_capture_recipe_from_inputs = list(kind = "Statistics state adapter", input = "current Analysis recipe + active-type Statistics inputs", output = "updated recipe"),
       stats_selected_id_for_project = list(kind = "Statistics persistence boundary", input = "current selected Analysis + recipes", output = "Graph-local Analysis id or NULL"),
       stats_recipes_for_project = list(kind = "Statistics persistence boundary", input = "current Analysis state", output = "serializable recipes")
@@ -128,10 +129,10 @@ app_function_catalog <- function() {
       resume_graph_workspace = list(kind = "server workspace lifecycle", input = "current selection/owner", output = "same-owner canonical resync or selected Graph replay"),
       graph_single_load = list(kind = "internal editor transaction", input = "Graph id", output = "side effects: canonical value replay + one live render"),
       graph_single_default_state_snapshot = list(kind = "editor default-state source", input = "reason", output = "deep-copied canonical default GraphState"),
+      graph_single_adopt_pristine_startup = list(kind = "startup canonical adoption", input = "pristine persistent Editor + captured default GraphState", output = "g001 canonical owner/lease without self-replay"),
       graph_accept_attached_canonical = list(kind = "render acceptance boundary", input = "outer-accepted canonical GraphState", output = "module attachment + pending render target"),
-      graph_apply_state_replay = list(kind = "persistent Editor replay", input = "canonical GraphState + UI snapshot", output = "target-derived choices + batched value replay + one browser completion barrier"),
+      graph_apply_state_replay = list(kind = "persistent Editor replay", input = "canonical GraphState + UI snapshot", output = "single-transport full/delta browser hydration + direct lifecycle completion"),
       graph_release_attached_render_target = list(kind = "render transaction boundary", input = "accepted attached GraphState", output = "single render revision release"),
-      seed_new_graph_default_state = list(kind = "new-Graph canonical initializer", input = "Graph id + reason", output = "Registry default-state commit"),
       graph_single_abort_activation = list(kind = "editor transaction fail-safe", input = "Graph id + reason", output = "stale shell clear + explicit reselection"),
       graph_preview_record_from_plot = list(kind = "direct-state vector snapshot helper", input = "GraphState + plot + export meta", output = "caller-owned SVG record or NULL"),
       graph_state_export_snapshot = list(kind = "pure direct-state export renderer", input = "GraphState", output = "plot + measured export metadata"),

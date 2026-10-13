@@ -26,18 +26,18 @@
   }
 
   raw_dat <- reactive({
-    if (isTRUE(graph_state_replay_active())) {
-      plan <- graph_mapping_replay_plan()
-      req(is.list(plan))
-      return(validate_editor_raw_data(plan$raw))
-    }
+    graph_cold_diag_measure("raw_dat", function() {
+      if (isTRUE(graph_state_replay_active())) {
+        plan <- graph_mapping_replay_plan()
+        req(is.list(plan))
+        return(validate_editor_raw_data(plan$raw))
+      }
 
     # once a Graph owns the persistent Editor,
     # Data is read only from the accepted canonical GraphState attachment. The one
     # exception is the pristine startup bootstrap before any GraphState has been
-    # attached: the default Graph template must be capturable from the mounted Ace
-    # controls. This fallback is unreachable after the first canonical attach, so
-    # ordinary user edits never reintroduce the old input$text/canonical split.
+    # attached: use the deterministic built-in sample directly. The Ace DOM is
+    # never read as a server-side ownership fallback.
     base <- attached_state_seed()
     if (is.list(base) && !is.null(base$data_text)) {
       return(validate_editor_raw_data(
@@ -45,45 +45,60 @@
       ))
     }
     if (isTRUE(editor_has_data_controls)) {
-      return(validate_editor_raw_data(graph_parse_pasted_data(input$text)))
+      return(validate_editor_raw_data(graph_parse_pasted_data(graph_sample_data_text())))
     }
-    req(FALSE)
+      req(FALSE)
+    })
   })
 
 
-  # Data text is the one Full-Editor field that does
-  # not use the generic browser-patch queue. shinyAce owns browser -> Shiny
-  # rate policy; once input$text settles, send that single value to the outer
-  # canonical GraphState owner. Plot/Data View continue to read only the accepted
-  # attached GraphState, so input$text is transport only, never canonical truth.
-  observeEvent(input$text, {
+  # Ace Data editing has one explicit document transport. The browser payload
+  # contains graphId/generation/seq/text, so delayed edits remain attached to
+  # the Graph/lease where they were created. Native input$text is intentionally
+  # not observed as a commit source.
+  observeEvent(input$data_document_patch, {
     if (!isTRUE(editor_has_data_controls)) return()
     if (!graph_editor_profile_has(editor_profile, "full_shell")) return()
-    if (isTRUE(graph_state_replay_active())) return()
-    if (!is.function(on_data_text_commit)) return()
+    if (!is.function(on_data_document_patch)) return()
 
-    base <- isolate(attached_state_seed())
-    if (!is.list(base)) return()
-
-    text_now <- as.character(input$text %||% "")[1]
-    if (identical(text_now, graph_state_scalar(base$data_text, ""))) return()
-
+    evt <- input$data_document_patch
+    if (!is.list(evt)) return()
     accepted <- tryCatch(
-      isTRUE(on_data_text_commit(text_now)),
+      isTRUE(on_data_document_patch(evt)),
       error = function(e) {
-        diag("DATA-TEXT-TRANSPORT", paste0("commit error: ", conditionMessage(e)))
+        diag("DATA-DOCUMENT-TRANSPORT", paste0("commit error: ", conditionMessage(e)))
         FALSE
       }
     )
     if (isTRUE(accepted)) {
-      line_count <- if (!nzchar(text_now)) 0L else length(strsplit(text_now, "\n", fixed = TRUE)[[1]])
       diag(
-        "DATA-TEXT-TRANSPORT",
-        paste0("accepted chars=", nchar(text_now, type = "chars"), " lines=", line_count)
+        "DATA-DOCUMENT-TRANSPORT",
+        paste0(
+          "accepted graph=", as.character(evt$graphId %||% "")[[1]],
+          " generation=", as.integer(evt$generation %||% 0L),
+          " seq=", as.integer(evt$seq %||% 0L),
+          " chars=", nchar(as.character(evt$text %||% "")[[1]], type = "chars")
+        )
       )
     }
-  }, ignoreInit = TRUE, priority = 170)
+  }, ignoreInit = TRUE, priority = 180)
 
+  output$data_document_status <- renderUI({
+    graph_cold_diag_measure("output$data_document_status", function() {
+    if (!isTRUE(editor_has_data_controls)) return(NULL)
+    base <- attached_state_seed()
+    if (!is.list(base)) return(NULL)
+    doc <- graph_data_document_from_state(base)
+    if (!identical(doc$parse_status, "invalid")) return(NULL)
+    div(
+      class = "alert alert-warning",
+      style = "padding:6px 9px; margin-top:6px; margin-bottom:0;",
+      tags$b("入力中のDataはまだ解析できません。"),
+      tags$br(),
+      tags$small("入力内容はこのGraphに保存されています。Plot / Statisticsは最後に正常に解析できたDataを使います。")
+    )
+    })
+  })
 
   # Wide→Long変換エラーはアプリ全体へ伝播させず、
   # 元データへフォールバックして利用者へ表示する。
@@ -97,11 +112,6 @@
   # character columns. Recovery ends as soon as a valid transform succeeds.
   reshape_edit_recovery <- reactiveVal(FALSE)
 
-  # Short-lived value seed used only while canonical GraphState replay updates
-  # Wide→Long selections in the persistent Editor. No browser binding handshake
-  # or staged restore transaction is involved.
-  reshape_restore_seed <- reactiveVal(NULL)
-
   set_reshape_warning <- function(msg = NULL) {
     old <- isolate(reshape_warning())
     if (identical(old, msg)) return(invisible(FALSE))
@@ -110,6 +120,7 @@
   }
 
   output$reshape_warning_ui <- renderUI({
+    graph_cold_diag_measure("output$reshape_warning_ui", function() {
     if (!isTRUE(editor_has_reshape_controls)) return(NULL)
     msg <- reshape_warning()
     if (is.null(msg) || !nzchar(msg)) return(NULL)
@@ -126,50 +137,8 @@
       if (editing) tags$br(),
       tags$small(msg)
     )
+    })
   })
-
-  # reshape_columns is permanently mounted in R/editor/ui/graph_ui_module.R.
-  # Its choices are updated in place; no server-rendered duplicate UI exists.
-
-  # reshape_columns is a persistent input in the fixed
-  # Graph Editor DOM. Only choices/selection change; the input binding itself
-  # is never destroyed when another Graph becomes the editor target.
-  observe({
-    if (!isTRUE(editor_has_reshape_controls)) return()
-    if (graph_editor_profile_has(editor_profile, "full_shell")) return()
-    if (isTRUE(graph_state_replay_active())) return()
-    d0 <- raw_dat()
-    req(d0)
-    if (!graph_mapping_choices_changed("reshape", d0)) return()
-    cols <- graph_usable_column_names(d0)
-    if (!length(cols)) return()
-    default_cols <- graph_default_reshape_columns(d0)
-
-    restore_cols <- isolate(reshape_restore_seed())
-    restore_keep <- if (!is.null(restore_cols) && length(restore_cols)) {
-      as.character(restore_cols)[as.character(restore_cols) %in% cols]
-    } else character(0)
-    current_cols <- isolate(graph_reshape_value("columns", input$reshape_columns))
-    current_keep <- if (!is.null(current_cols) && length(current_cols)) {
-      as.character(current_cols)[as.character(current_cols) %in% cols]
-    } else character(0)
-    selected_cols <- if (length(restore_keep)) restore_keep else if (length(current_keep)) current_keep else default_cols
-
-    updateCheckboxGroupInput(
-      session, "reshape_columns",
-      choices = cols,
-      selected = selected_cols
-    )
-  }, priority = 120)
-
-  observe({
-    if (!isTRUE(editor_has_reshape_controls)) return()
-    if (isTRUE(graph_state_replay_active())) return()
-    seed <- reshape_restore_seed()
-    if (is.null(seed)) return()
-    current <- graph_reshape_value("columns", input$reshape_columns %||% character(0))
-    if (identical(as.character(current), as.character(seed))) reshape_restore_seed(NULL)
-  }, priority = 119)
 
   plot_data_transform_recipe <- reactive({
     if (isTRUE(graph_state_replay_active())) {
@@ -209,23 +178,43 @@
   # reactive in R/data/runtime/graph_prepared_data_runtime.R; both files share one graphServer
   # environment, so reusing plot_data would create dat() <-> plot_data() recursion.
   plot_source_data <- reactive({
+    graph_cold_diag_measure("plot_source_data", function() {
+    # Replay owns one target-derived data plan. Reuse its already-transformed
+    # source instead of parsing/reshaping the same Data Document again inside
+    # the flush that must complete before browser hydration can be sent.
+    if (isTRUE(graph_state_replay_active())) {
+      plan <- graph_mapping_replay_plan()
+      req(is.list(plan), is.data.frame(plan$source_data))
+      set_reshape_warning(plan$transform_warning %||% NULL)
+      return(plan$source_data)
+    }
+
     d0 <- raw_dat()
     rec <- plot_data_transform_recipe()
     res <- graph_apply_data_transform(
       d0,
       rec,
-      # During value replay, an incomplete column selection is transient.
       incomplete_is_warning = FALSE
     )
     set_reshape_warning(res$warning)
-    res$data
+      res$data
+    })
   })
 
-  # Shared Plot pipeline: reshape, then Filter. Statistics defaults to raw_dat(), but an Analysis can explicitly opt into active_plot_data().
+  # Shared Plot pipeline: reshape, then Filter. During replay the same canonical
+  # plan already owns the filtered data, so no second Filter pass is performed.
+  # Statistics defaults to raw_dat(), but an Analysis can explicitly opt into active_plot_data().
   active_plot_data <- reactive({
-    graph_plot_filter_apply(plot_source_data(), (attached_state_seed() %||% list())$plot_filter)
+    graph_cold_diag_measure("active_plot_data", function() {
+      if (isTRUE(graph_state_replay_active())) {
+        plan <- graph_mapping_replay_plan()
+        req(is.list(plan), is.data.frame(plan$data))
+        return(plan$data)
+      }
+      graph_plot_filter_apply(plot_source_data(), (attached_state_seed() %||% list())$plot_filter)
+    })
   })
-  dat <- reactive({ active_plot_data() })
+  dat <- reactive({ graph_cold_diag_measure("dat", function() active_plot_data()) })
 
   # Incompatible selected columns (for example numeric phase2 + character
   # phase) are not a valid wide measurement selection. The first failure is
@@ -259,272 +248,6 @@
       )
     }
   })
-
-  # Replay時、plot-type依存のdynamic UI choice更新より先にcanonical値を
-  # 保持しておく。updateSelectInput()のタイミング依存を避ける。
-  restore_position_seed <- reactiveVal(NULL)
-  restore_linetype_seed <- reactiveVal(NULL)
-  # Replay中、Error bar列のdynamic selectInputが自動候補で
-  # canonical値を上書きしないよう一時的に保持するseed。
-  restore_external_error_seed <- reactiveVal(NULL)
-  restore_external_ymin_seed <- reactiveVal(NULL)
-  restore_external_ymax_seed <- reactiveVal(NULL)
-
-  observe({
-    if (isTRUE(graph_state_replay_active())) return()
-    seed <- restore_position_seed()
-    if (is.null(seed) || !length(seed)) return()
-    expected <- as.character(seed)[1]
-    actual <- graph_mapping_value("position", input$groupvar %||% "")
-    if (identical(actual, expected)) {
-      restore_position_seed(NULL)
-    }
-  })
-
-  observe({
-    if (isTRUE(graph_state_replay_active())) return()
-    seed <- restore_linetype_seed()
-    if (is.null(seed) || !length(seed)) return()
-    expected <- as.character(seed)[1]
-    actual <- graph_mapping_value("linetype", input$linetypevar %||% "__color__")
-    if (identical(actual, expected)) {
-      restore_linetype_seed(NULL)
-    }
-  })
-
-  # X/Y/Color/Shape/ID/Facet are persistent selectInputs
-  # created once by R/editor/ui/graph_ui_module.R. This observer only updates choices and
-  # selected values. Switching Graphs therefore does not replace the Mapping
-  # DOM or its Shiny input bindings.
-  observe({
-    # Full Editor choice topology is owned by one browser-direct hydration
-    # payload. Figure Controls retain the legacy server update path.
-    if (graph_editor_profile_has(editor_profile, "full_shell")) return()
-    if (isTRUE(graph_state_replay_active())) return()
-    d <- dat()
-    req(d)
-    cols <- graph_usable_column_names(d)
-    all_names <- as.character(names(d) %||% rep("", ncol(d)))
-    numeric_flags <- vapply(d, is.numeric, logical(1))
-    numeric_cols <- unique(all_names[numeric_flags & all_names %in% cols])
-    if (!graph_mapping_choices_changed("mapping", d)) return()
-
-    defaults <- graph_default_mapping_for_data(d)
-    default_id <- defaults$id
-    default_y <- defaults$y
-    default_x <- defaults$x
-    default_series <- defaults$color
-    default_color <- defaults$color
-
-    keep <- function(value, choices, fallback, specials = character(0), allow_empty = FALSE) {
-      value <- isolate(value)
-      if (is.null(value) || !length(value)) return(fallback)
-      value <- as.character(value)[1]
-      if (value %in% specials) return(value)
-      if (allow_empty && identical(value, "")) return("")
-      if (nzchar(value) && value %in% choices) return(value)
-      fallback
-    }
-
-    selected_x <- keep(graph_mapping_value("x", input$xvar), cols, default_x)
-    selected_y <- keep(graph_mapping_value("y", input$yvar), numeric_cols, default_y)
-    selected_color <- keep(graph_mapping_value("color", input$colorvar %||% ""), cols, default_color, allow_empty = TRUE)
-    selected_shape <- keep(graph_mapping_value("shape", input$shapevar %||% "__color__"), cols, "__color__", specials = c("", "__color__"))
-    selected_id <- keep(graph_mapping_value("id", input$idvar %||% ""), cols, default_id, allow_empty = TRUE)
-    selected_facet <- keep(graph_mapping_value("facet", input$facetvar %||% ""), cols, "", allow_empty = TRUE)
-
-    cfg <- isolate(graph_state_replay_target())
-    mp <- cfg$mapping
-    if (!is.null(mp)) {
-      if (json_chr(mp$x) %in% cols) selected_x <- json_chr(mp$x)
-      if (json_chr(mp$y) %in% numeric_cols) selected_y <- json_chr(mp$y)
-      saved_color <- json_chr(mp$color)
-      if (!nzchar(saved_color) && is.null(mp$position)) saved_color <- json_chr(mp$series)
-      if (identical(saved_color, "__fixed__")) saved_color <- ""
-      if (saved_color %in% c("", cols)) selected_color <- saved_color
-      saved_shape <- json_chr(mp$shape, "__color__")
-      if (saved_shape %in% c("", "__color__", cols)) selected_shape <- saved_shape
-      if (json_chr(mp$id) %in% c("", cols)) selected_id <- json_chr(mp$id)
-      if (json_chr(mp$facet) %in% c("", cols)) selected_facet <- json_chr(mp$facet)
-    }
-
-    if (exists("last_valid_xvar", inherits = FALSE)) last_valid_xvar(selected_x)
-    if (exists("last_valid_yvar", inherits = FALSE)) last_valid_yvar(selected_y)
-
-    updateSelectInput(session, "xvar", choices = cols, selected = selected_x)
-    updateSelectInput(session, "yvar", choices = numeric_cols, selected = selected_y)
-    updateSelectInput(session, "colorvar", choices = c("使わない（固定）" = "", cols), selected = selected_color)
-    updateSelectInput(session, "shapevar", choices = c("Color と同じ" = "__color__", "なし（固定）" = "", cols), selected = selected_shape)
-    updateSelectInput(session, "idvar", choices = c("なし" = "", cols), selected = selected_id)
-    updateSelectInput(session, "facetvar", choices = c("なし" = "", cols), selected = selected_facet)
-  }, priority = 110)
-
-  # linetype/group controls also live permanently in
-  # R/editor/ui/graph_ui_module.R. Keep only their choices/selected values in sync.
-  observe({
-    if (graph_editor_profile_has(editor_profile, "full_shell")) return()
-    if (isTRUE(graph_state_replay_active())) return()
-    d <- dat()
-    req(d)
-    cols <- graph_usable_column_names(d)
-    if (!length(cols)) return()
-    color_now <- resolve_color_var(d)
-    if (!graph_mapping_choices_changed("group", list(d, color_now))) return()
-
-    current_linetype <- isolate(graph_mapping_value("linetype", input$linetypevar %||% "__color__"))
-    if (is.null(current_linetype) || !length(current_linetype)) current_linetype <- if (nzchar(color_now)) "__color__" else ""
-    current_linetype <- as.character(current_linetype)[1]
-    if (!current_linetype %in% c("", "__color__", cols)) current_linetype <- if (nzchar(color_now)) "__color__" else ""
-
-    linetype_seed <- isolate(restore_linetype_seed())
-    if (!is.null(linetype_seed) && length(linetype_seed)) {
-      seeded_linetype <- as.character(linetype_seed)[1]
-      if (seeded_linetype %in% c("", "__color__", cols)) current_linetype <- seeded_linetype
-    }
-
-    current_group <- isolate(graph_mapping_value("position", input$groupvar %||% ""))
-    if (is.null(current_group) || !length(current_group)) current_group <- ""
-    current_group <- as.character(current_group)[1]
-    if (!current_group %in% c("", cols)) current_group <- ""
-    group_seed <- isolate(restore_position_seed())
-    if (!is.null(group_seed) && length(group_seed)) {
-      seeded_group <- as.character(group_seed)[1]
-      if (seeded_group %in% c("", cols)) current_group <- seeded_group
-    }
-
-    updateSelectInput(
-      session, "linetypevar",
-      choices = c("色で分ける要因と同じ" = "__color__", "使わない（固定）" = "", cols),
-      selected = current_linetype
-    )
-    updateSelectInput(
-      session, "groupvar",
-      choices = c("なし" = "", cols),
-      selected = current_group
-    )
-
-    current_series_var <- isolate(graph_mapping_value("line_series_var", input$line_series_var %||% ""))
-    if (!nzchar(current_series_var) || !current_series_var %in% cols) current_series_var <- ""
-    cfg_series <- isolate(graph_state_replay_target())
-    saved_series_var <- if (is.list(cfg_series)) json_chr((cfg_series$mapping %||% list())$line_series_var, "") else ""
-    if (saved_series_var %in% c("", cols)) current_series_var <- saved_series_var
-    updateSelectInput(
-      session, "line_series_var",
-      choices = c("なし" = "", cols),
-      selected = current_series_var
-    )
-  }, priority = 109)
-
-  # Mapping controls are all permanently mounted in
-  # R/editor/ui/graph_ui_module.R. The old mapping_ui / plot_specific_mapping_ui renderUI
-  # copies were dead outputs and are intentionally removed.
-
-  # 計算済み値をそのまま描画する value モード用Error bar列。
-  # 列名はデータ依存のMappingとして扱い、数値列だけを候補にする。
-  observe({
-    if (graph_editor_profile_has(editor_profile, "full_shell")) return()
-    if (isTRUE(graph_state_replay_active())) return()
-    d <- dat()
-    cols <- graph_usable_column_names(d)
-    all_names <- as.character(names(d) %||% rep("", ncol(d)))
-    numeric_flags <- vapply(d, is.numeric, logical(1))
-    numeric_cols <- unique(all_names[numeric_flags & all_names %in% cols])
-    if (!length(numeric_cols)) return()
-
-    y_now <- graph_mapping_value("y", input$yvar %||% "")
-    if (!graph_mapping_choices_changed("external", list(d, y_now))) return()
-    other_numeric <- setdiff(numeric_cols, y_now)
-    if (!length(other_numeric)) other_numeric <- numeric_cols
-
-    choose_column <- function(current, preferred_names, fallback_pool, restore_seed = NULL) {
-      # Project復元中は保存列を最優先する。dynamic selectInputのbrowser
-      # commitより先にこのobserverが走ってもdefault候補へ戻さない。
-      seed <- if (is.function(restore_seed)) restore_seed() else NULL
-      if (!is.null(seed) && length(seed)) {
-        sv <- as.character(seed)[1]
-        if (nzchar(sv) && sv %in% numeric_cols) return(sv)
-      }
-
-      current <- isolate(current)
-      if (!is.null(current) && length(current)) {
-        cur <- as.character(current)[1]
-        if (nzchar(cur) && cur %in% numeric_cols) return(cur)
-      }
-
-      low <- tolower(numeric_cols)
-      idx <- match(preferred_names, low, nomatch = 0L)
-      idx <- idx[idx > 0L]
-      if (length(idx)) return(numeric_cols[idx[1]])
-      fallback_pool[1]
-    }
-
-    sym_selected <- choose_column(
-      graph_mapping_value("external_error", input$external_error_col %||% ""),
-      c("sem", "se", "stderr", "std_error", "sd", "error", "err"),
-      other_numeric,
-      restore_external_error_seed
-    )
-    low_selected <- choose_column(
-      graph_mapping_value("external_ymin", input$external_ymin_col %||% ""),
-      c("ci_low", "ci_lower", "lower", "low", "lwr", "ymin"),
-      other_numeric,
-      restore_external_ymin_seed
-    )
-    high_selected <- choose_column(
-      graph_mapping_value("external_ymax", input$external_ymax_col %||% ""),
-      c("ci_high", "ci_upper", "upper", "high", "upr", "ymax"),
-      other_numeric,
-      restore_external_ymax_seed
-    )
-
-    updateSelectInput(
-      session, "external_error_col",
-      choices = numeric_cols,
-      selected = sym_selected
-    )
-    updateSelectInput(
-      session, "external_ymin_col",
-      choices = numeric_cols,
-      selected = low_selected
-    )
-    updateSelectInput(
-      session, "external_ymax_col",
-      choices = numeric_cols,
-      selected = high_selected
-    )
-  })
-
-  # canonical replay値が実inputへ反映されたらseedを解放する。
-  observe({
-    if (isTRUE(graph_state_replay_active())) return()
-    d <- tryCatch(dat(), error = function(e) NULL)
-    if (is.null(d)) return()
-    numeric_cols <- names(d)[vapply(d, is.numeric, logical(1))]
-
-    release_seed <- function(seed_rv, current) {
-      seed <- seed_rv()
-      if (is.null(seed) || !length(seed)) return(invisible(NULL))
-      sv <- as.character(seed)[1]
-      cv <- current %||% ""
-      if (nzchar(sv) && sv %in% numeric_cols && identical(as.character(cv)[1], sv)) {
-        seed_rv(NULL)
-      }
-      invisible(NULL)
-    }
-
-    release_seed(restore_external_error_seed, graph_mapping_value("external_error", input$external_error_col %||% ""))
-    release_seed(restore_external_ymin_seed, graph_mapping_value("external_ymin", input$external_ymin_col %||% ""))
-    release_seed(restore_external_ymax_seed, graph_mapping_value("external_ymax", input$external_ymax_col %||% ""))
-  })
-
-  observe({
-    pt <- graph_plot_value("type", input$plot_type %||% "line")
-    if (!graph_plot_supports_position(pt)) restore_position_seed(NULL)
-    if (!graph_plot_supports_mapping(pt, "linetype")) restore_linetype_seed(NULL)
-  })
-
-  # groupvar is one persistent Mapping input for line/bar/box.
-  # The old line-only position_var_ui remount was removed.
 
   # Browser-direct controls are resolved through one canonical read boundary.
   # Full Editor reads the attached accepted GraphState; Figure Controls read the
@@ -722,6 +445,7 @@
   }
 
   output$legend_item_labels_ui <- renderUI({
+    graph_cold_diag_measure("output$legend_item_labels_ui", function() {
     style_restore_epoch()
     level_labels()
     shared_style_ui_epoch()
@@ -762,6 +486,7 @@
     })
 
     tagList(cards)
+    })
   })
 
   observe({
@@ -816,104 +541,10 @@
     if (changed) legend_item_labels(state)
   })
 
-  output$display_labels_ui <- renderUI({
-    style_restore_epoch()
-    shared_style_ui_epoch()
-
-    d <- tryCatch(dat(), error = function(e) NULL)
-    if (is.null(d)) return(NULL)
-
-    vars <- active_display_label_vars()
-
-    label_state <- isolate(level_labels())
-
-    var_ui <- lapply(vars, function(v) {
-      z <- d[[v]]
-      if (is.numeric(z) && identical(v, resolved_xvar()) && identical(graph_plot_value("type", input$plot_type %||% "line"), "scatter")) {
-        return(NULL)
-      }
-
-      observed <- unique(as.character(z))
-      observed <- observed[!is.na(observed)]
-      if (!length(observed)) return(NULL)
-
-      branch <- label_state[[v]]
-      if (is.null(branch)) branch <- list()
-
-      tags$div(
-        class = "group-style-box",
-        tags$b(paste0(v, " の条件名")),
-        lapply(observed, function(lv) {
-          val <- branch[[lv]]
-          if (is.null(val) || !length(val) || !nzchar(as.character(val)[1])) val <- lv
-
-          fluidRow(
-            column(5, tags$div(style = "padding-top:7px;", lv)),
-            column(
-              7,
-              textInput(
-                style_input_id("level_label", paste0(v, "::", lv)),
-                label = NULL,
-                value = as.character(val)[1]
-              )
-            )
-          )
-        })
-      )
-    })
-
-    tagList(
-      tags$b("条件名（表示名）"),
-      p(class = "help-block", "左が元データの値、右がグラフに表示する名前です。"),
-      var_ui
-    )
-  })
-
-  observe({
-    if (isTRUE(graph_state_replay_active())) return()
-    if (isTRUE(restoring_style_state())) return()
-
-    d <- tryCatch(dat(), error = function(e) NULL)
-    if (is.null(d)) return()
-
-    vars <- active_display_label_vars()
-
-    ls <- isolate(level_labels())
-    changed_label <- FALSE
-
-    for (v in vars) {
-      observed <- unique(as.character(d[[v]]))
-      observed <- observed[!is.na(observed)]
-      if (!length(observed)) next
-
-      branch <- ls[[v]]
-      if (is.null(branch)) branch <- list()
-
-      for (lv in observed) {
-        id0 <- style_input_id("level_label", paste0(v, "::", lv))
-        z <- input[[id0]]
-        if (is.null(z)) next
-        z <- as.character(z)[1]
-        old_raw <- branch[[lv]]
-        # Same rule for level labels: the generated input displays the original
-        # level by default. Missing -> original-level is semantically unchanged
-        # and must not become a post-READY state mutation/redraw.
-        if (is.null(old_raw) && identical(z, as.character(lv)[1])) next
-        old <- if (is.null(old_raw)) "" else as.character(old_raw)[1]
-        if (!identical(old, z)) {
-          branch[[lv]] <- z
-          changed_label <- TRUE
-        }
-      }
-
-      ls[[v]] <- branch
-    }
-
-    if (changed_label) {
-      level_labels(ls)
-      shared_style_mark_user_edit("level-label")
-    }
-  })
+  # The display-name Editor has its own topology/commit boundary. Neither
+  # keystrokes nor unrelated canonical state revisions may re-mount its textareas.
+  # See graph_display_label_input_runtime.R (same graphServer owner environment).
+  sys.source(file.path(getwd(), "R/data/runtime/graph_display_label_input_runtime.R"), envir = environment())
 
   group_levels <- reactive({
     d <- dat()

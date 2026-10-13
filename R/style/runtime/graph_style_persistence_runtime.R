@@ -104,6 +104,7 @@
         y_break_space = graph_appearance_value("y_break_space", input$y_break_space),
         y_break_symbol = graph_appearance_value("y_break_symbol", input$y_break_symbol),
         x_tick_labels_show = graph_appearance_value("x_tick_labels_show", input$x_tick_labels_show),
+        x_tick_angle = graph_appearance_value("x_tick_angle", input$x_tick_angle),
         legend_pos = graph_appearance_value("legend_pos", input$legend_pos),
         legend_colour_show = graph_appearance_value("legend_colour_show", input$legend_colour_show),
         legend_fill_show = graph_appearance_value("legend_fill_show", input$legend_fill_show),
@@ -142,36 +143,6 @@
     graph_apply_browser_patch_style_overlay(cfg)
   })
 
-  parse_style_tree <- function(x, kind) {
-    out <- list(); if (is.null(x) || !length(x)) return(out)
-    for (vn in names(x)) {
-      br <- list(); src <- x[[vn]]
-      for (lv in names(src)) {
-        z <- unlist(src[[lv]], use.names = FALSE)
-        if (!length(z)) next
-        br[[lv]] <- if (identical(kind, "shape")) {
-          q <- suppressWarnings(as.numeric(z[[1]])); if (is.finite(q)) q else 16
-        } else as.character(z[[1]])
-      }
-      out[[vn]] <- br
-    }
-    out
-  }
-
-  legacy_mapping_vars <- function(mapping = NULL) {
-    d <- tryCatch(dat(), error = function(e) NULL)
-    if (is.null(mapping)) {
-      cv <- if (!is.null(d)) resolve_color_var(d) else ""
-      lv <- if (!is.null(d)) resolve_linetype_var(d) else ""
-      sv <- if (!is.null(d)) resolve_shape_var(d) else ""
-    } else {
-      cv <- json_chr(mapping$color); if (!nzchar(cv)) cv <- json_chr(mapping$series)
-      lm <- json_chr(mapping$linetype, "__color__"); lv <- if (identical(lm,"__color__")) cv else lm
-      sm <- json_chr(mapping$shape, "__color__"); sv <- if (identical(sm,"__color__")) cv else sm
-    }
-    list(color=cv, linetype=lv, shape=sv)
-  }
-
   output$download_style <- downloadHandler(
     filename = function() paste0("ggplot_style_", Sys.Date(), ".json"),
     content = function(file) {
@@ -185,15 +156,29 @@
   )
 
   apply_style_config <- function(cfg, success_message = "書式を適用しました。", release_guard = TRUE,
-                                 notify = TRUE, hydrate_bound_controls = TRUE) {
+                                 notify = TRUE, hydrate_bound_controls = TRUE,
+                                 canonical_style = FALSE, changed_branches = NULL) {
     target <- isolate(graph_state_replay_target())
     attached <- isolate(attached_state_seed())
     mp <- if (is.list(attached)) attached$mapping else if (is.list(target)) target$mapping else list(
       color = isolate(graph_mapping_value("color", input$colorvar %||% "")),
       position = isolate(graph_mapping_value("position", input$groupvar %||% ""))
     )
-    cfg <- graph_style_migrate_v6(cfg)
-    cfg <- graph_normalize_legend_state(list(mapping = mp, style = cfg))$style
+    # Ordinary Graph replay receives a GraphState that has already crossed the
+    # canonical import/commit normalization boundary. Re-running persistence
+    # migration and legend normalization on every visit is redundant and can be
+    # expensive for large per-level style trees. Generic Style import/paste
+    # still uses the migration path because those payloads are external input.
+    canonical_replay <- isTRUE(canonical_style)
+    previous_style <- if (is.list(attached) && is.list(attached$style)) attached$style else NULL
+    if (!isTRUE(canonical_replay)) {
+      cfg <- graph_style_migrate_v6(cfg)
+      cfg <- graph_normalize_legend_state(list(mapping = mp, style = cfg))$style
+    }
+    if (is.null(changed_branches)) {
+      changed_branches <- graph_style_replay_branches(previous_style, cfg,
+        full = !isTRUE(canonical_replay) || !is.list(previous_style))
+    }
     restoring_style_state(TRUE)
     restore_release_scheduled <- FALSE
     on.exit({
@@ -205,91 +190,33 @@
     # Shared Style binding metadata is Graph-owned state. The persistent Editor
     # must replace it on every replay just like the other style trees; otherwise
     # the Graph visited second inherits the previous Graph's live binding.
-    shared_style_binding(shared_style_normalize_binding(cfg$shared_library %||% NULL))
+
+    if (isTRUE(changed_branches[["shared_library"]])) {
+      shared_style_binding(shared_style_normalize_binding(cfg$shared_library %||% NULL))
+    }
 
     # Persistent single Editor: target GraphState owns these trees completely.
-    # Replace (rather than merge) them on every replay so an empty/new Graph can
-    # never inherit branches from the previously visited Graph.
-    color_styles(parse_style_tree(cfg$color_styles %||% list(), "color"))
-    fill_none_styles(graph_bar_box_normalize_fill_none_tree(cfg$fill_none_styles %||% list()))
-    linetype_styles(parse_style_tree(cfg$linetype_styles %||% list(), "linetype"))
-    shape_styles(parse_style_tree(cfg$shape_styles %||% list(), "shape"))
-    if (is.null(cfg$color_styles) && !is.null(cfg$group_styles) && length(cfg$group_styles)) {
-      mv <- legacy_mapping_vars(NULL)
-      migrate_legacy_group_styles(cfg$group_styles, mv$color, mv$linetype, mv$shape)
-    }
-
-    ss <- list()
-    if (!is.null(cfg$series_styles) && length(cfg$series_styles)) {
-      for (nm in names(cfg$series_styles)) {
-        st <- cfg$series_styles[[nm]]
-        ss[[nm]] <- list(color = as.character(st$color %||% "#333333"))
+    # Canonical replay only replaces branches whose semantic value
+    # differs from the previously attached Graph. This keeps unrelated Style
+    # changes from walking large per-level trees on the switch critical path.
+    stores <- list(color_styles = color_styles, fill_none_styles = fill_none_styles,
+      linetype_styles = linetype_styles, shape_styles = shape_styles,
+      series_styles = series_styles, regression_styles = regression_styles,
+      raw_group_colors = raw_group_colors, orders = order_state,
+      legend_titles = legend_titles, legend_item_labels = legend_item_labels,
+      level_labels = level_labels)
+    for (key in names(stores)) {
+      branch_t0 <- proc.time()[["elapsed"]]
+      changed <- isTRUE(changed_branches[[key]])
+      if (changed) stores[[key]](cfg[[key]] %||%
+        if (identical(key, "orders")) graph_normalize_order_state() else list())
+      if (isTRUE(getOption("ggplot.gui.style_pool_diag", FALSE))) {
+        diag("STATE-REPLAY-TIMING", paste0("phase=style-branch name=", key,
+          " work_ms=", round((proc.time()[["elapsed"]] - branch_t0) * 1000, 1),
+          " diff_ms=", (attr(changed_branches, "diff_ms") %||% list())[[key]] %||% 0,
+          " changed=", changed))
       }
     }
-    series_styles(ss)
-
-    rs <- list()
-    if (!is.null(cfg$regression_styles) && length(cfg$regression_styles)) {
-      for (nm in names(cfg$regression_styles)) {
-        st <- cfg$regression_styles[[nm]]
-        rs[[nm]] <- list(
-          color = json_chr(st$color, "#333333"),
-          linetype = json_chr(st$linetype, "solid"),
-          width = as.numeric(json_chr(st$width, "0.9"))
-        )
-      }
-    }
-    regression_styles(rs)
-
-    rc <- list()
-    if (!is.null(cfg$raw_group_colors) && length(cfg$raw_group_colors)) {
-      # +: variable -> level -> color. Legacy flat level -> color is migrated.
-      first_val <- cfg$raw_group_colors[[1]]
-      if (is.list(first_val) && !is.null(names(first_val))) {
-        rc <- parse_style_tree(cfg$raw_group_colors, "color")
-      } else {
-        mv <- legacy_mapping_vars(NULL); br <- list()
-        for (nm in names(cfg$raw_group_colors)) br[[nm]] <- as.character(unlist(cfg$raw_group_colors[[nm]])[[1]])
-        if (nzchar(mv$color)) rc[[mv$color]] <- br
-      }
-    }
-    raw_group_colors(rc)
-
-    order_state(graph_normalize_order_state(cfg$orders %||% list()))
-
-    lt <- list()
-    if (!is.null(cfg$legend_titles)) {
-      for (nm in names(cfg$legend_titles)) {
-        lt[[nm]] <- json_chr(cfg$legend_titles[[nm]], "")
-      }
-    }
-    legend_titles(lt)
-
-    if (!is.null(cfg$legend_item_labels)) {
-      li <- list()
-      for (vn in names(cfg$legend_item_labels)) {
-        branch <- cfg$legend_item_labels[[vn]]
-        bb <- list()
-        for (lv in names(branch)) bb[[lv]] <- json_chr(branch[[lv]], "")
-        li[[vn]] <- bb
-      }
-      legend_item_labels(li)
-    } else {
-      # Persistent single Editor: an older Graph without this field must not
-      # inherit legend-entry text from the previously visited Graph.
-      legend_item_labels(list())
-    }
-
-    ll <- list()
-    if (!is.null(cfg$level_labels)) {
-      for (vn in names(cfg$level_labels)) {
-        branch <- cfg$level_labels[[vn]]
-        bb <- list()
-        for (lv in names(branch)) bb[[lv]] <- json_chr(branch[[lv]], lv)
-        ll[[vn]] <- bb
-      }
-    }
-    level_labels(ll)
 
     # Full-Editor Graph switching hydrates fixed controls directly in the
     # persistent browser DOM. The R-side reactive trees above still have to be
@@ -421,6 +348,10 @@
         session, "x_tick_labels_show",
         value = if (is.null(a$x_tick_labels_show)) TRUE else isTRUE(a$x_tick_labels_show)
       )
+      updateSliderInput(
+        session, "x_tick_angle",
+        value = max(-90, min(90, as.numeric(a$x_tick_angle %||% 0)))
+      )
       if (!is.null(a$legend_pos)) updateSelectInput(session, "legend_pos", selected = a$legend_pos)
       updateCheckboxInput(
         session, "legend_colour_show",
@@ -488,6 +419,7 @@
       # the persistent Editor inherit these newly-added legend controls from
       # the previously visited Graph.
       updateCheckboxInput(session, "x_tick_labels_show", value = TRUE)
+      updateSliderInput(session, "x_tick_angle", value = 0)
       updateCheckboxInput(session, "legend_colour_show", value = TRUE)
       updateCheckboxInput(session, "legend_fill_show", value = TRUE)
       updateSelectInput(session, "legend_merge_mode", selected = "auto")
@@ -542,6 +474,9 @@
       return(invisible(NULL))
     }
 
+    cfg <- graph_import_group_styles(list(
+      mapping = isolate(attached_state_seed())$mapping, style = cfg
+    ))$style
     apply_style_config(cfg, "設定を読み込みました。")
   })
 

@@ -305,11 +305,6 @@
     diag_log("FIGURE-LAYOUT-UI", paste0("render end rows=", length(st), " selected_row=", sr))
     out
   })
-  # keep the Row editor materialized even while the Figure tab is
-  # hidden. The Figure tab can be opened long after Project restore/materialization;
-  # suspending this dynamic UI left an empty editor on some browser sessions.
-  outputOptions(output, "figure_layout_editor", suspendWhenHidden = FALSE)
-
   output$figure_reorder_controls <- renderUI({
     st <- figure_layout_state()
     if (!length(st)) return(NULL)
@@ -377,18 +372,6 @@
       )
     )
   })
-  outputOptions(output, "figure_reorder_controls", suspendWhenHidden = FALSE)
-
-  # Figure tab activation itself is not a structural layout change.
-  # Keep the already-materialized Layout editor DOM untouched on tab reuse.
-  # Do not depend on an extra browser probe here; outputOptions(..., suspendWhenHidden = FALSE)
-  # keeps the output materialized while hidden.
-  observeEvent(input$workspace_main_tab, {
-    if (identical(as.character(input$workspace_main_tab %||% ""), "figure_workspace")) {
-      diag_log("FIGURE-LAYOUT-UI", "Figure tab activated; reuse existing layout DOM; render skipped")
-    }
-  }, ignoreInit = TRUE)
-
   observeEvent(input$figure_interaction_ready, {
     diag_log("FIGURE-JS", "stable inline interaction bridge ready")
   }, ignoreInit = TRUE)

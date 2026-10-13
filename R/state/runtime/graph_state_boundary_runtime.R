@@ -9,52 +9,6 @@ is_shiny_control_condition <- function(e) {
   inherits(e, "shiny.silent.error") || inherits(e, "validation")
 }
 
-graph_live_project_state_snapshot <- function(context = "runtime", log_non_shiny_error = TRUE) {
-  snapshot_error <- NULL
-  state_now <- tryCatch(
-    project_settings(),
-    error = function(e) {
-      snapshot_error <<- e
-      NULL
-    }
-  )
-
-  if (is.list(state_now)) return(state_now)
-
-  if (!is.null(snapshot_error) &&
-      !is_shiny_control_condition(snapshot_error) &&
-      isTRUE(log_non_shiny_error)) {
-    diag(
-      "STATE-SNAPSHOT",
-      paste0(
-        "context=", context,
-        " source=live-browser unavailable error=", conditionMessage(snapshot_error)
-      )
-    )
-  }
-
-  NULL
-}
-
-graph_editor_arbitration_state_snapshot <- function(context = "runtime") {
-  state_now <- graph_live_project_state_snapshot(
-    context = context,
-    log_non_shiny_error = TRUE
-  )
-  if (is.list(state_now)) return(state_now)
-
-  fallback <- isolate(attached_state_seed())
-  if (is.list(fallback)) {
-    diag(
-      "STATE-SNAPSHOT",
-      paste0("context=", context, " source=attached-canonical-fallback")
-    )
-    return(fallback)
-  }
-
-  NULL
-}
-
 graph_seed_render_target <- function(state, reason = "attach") {
   if (!is.list(state)) return(invisible(FALSE))
   plot_build_render_state(graph_render_state(state))
@@ -81,6 +35,7 @@ graph_accept_attached_canonical <- function(state, reason = "outer-ready-accept"
 }
 
 graph_release_render_revision <- function(state_now, reason = "live") {
+  if (!graph_activation_current()) return(invisible(FALSE))
   if (!is.list(state_now)) return(invisible(FALSE))
 
   rs_now <- graph_render_state(state_now)

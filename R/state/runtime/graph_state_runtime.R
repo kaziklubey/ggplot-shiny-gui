@@ -7,7 +7,7 @@
   graph_live_shared_state <- function() {
     live <- list(
       version = "4.0-rc2",
-      schema_version = 5L,
+      schema_version = 6L,
       app = "ggplot GUI",
       mapping = list(
         x = resolved_xvar(),
@@ -52,12 +52,16 @@
         mode = "follow_plot",
         reference_res = 120
       ),
-      style = style_settings()
+      # Manual Y range has one GraphState owner under labels. style_settings()
+      # intentionally retains axes for generic Style copy/paste, but the live
+      # GraphState must not persist that mirror as a second canonical path.
+      style = graph_style_for_graph_state(style_settings())
     )
     # browser-patch PoC: once a path is browser-owned, canonical accepted
     # values overlay the stale Shiny input mirror. This prevents a later edit
     # to an unrelated control from rolling the browser-patched value back.
-    graph_apply_browser_patch_overlay(live)
+    graph_apply_browser_patch_overlay(live,
+      sections = c("mapping", "plot", "labels", "export", "style"))
   }
 
   project_settings <- reactive({
@@ -72,19 +76,21 @@
       stats_recipes()
       stats_selected_id()
 
-      live$project_name <- graph_browser_owned_scalar("project_name", input$project_name %||% "")
       # Data/reshape are canonical Graph-owned fields. Browser patch acceptance
       # updates attached_state_seed() before this coalesced snapshot runs, so do
       # not reconstruct them from delayed Shiny mirrors of Ace/reshape controls.
       canonical_data <- attached_state_seed()
       if (is.list(canonical_data)) {
         live$data_text <- graph_state_scalar(canonical_data$data_text, "")
-        live$reshape <- canonical_data$reshape %||% list()
+        live$data_document <- graph_data_document_from_state(canonical_data)
         live$plot_filter <- graph_plot_filter_normalize(canonical_data$plot_filter)
+        live$reshape <- canonical_data$reshape %||% list()
       } else {
         # Startup/replay normally returns above before reaching this branch. Keep
         # a defensive fallback for an unexpectedly unattached Full Editor.
-        live$data_text <- input$text
+        sample_text <- graph_sample_data_text()
+        live$data_text <- sample_text
+        live$data_document <- graph_data_document_default(sample_text)
         live$plot_filter <- graph_plot_filter_default()
         live$reshape <- list(
           enabled = input$reshape_wide,
@@ -116,6 +122,12 @@
   # The outer persistent-Editor callback still arbitrates Graph ownership, so
   # there is no browser semantic comparison or post-replay retry here.
   project_commit_candidate <- reactive({
+    # Coalesce capture across the existing Project close flush. The reactive
+    # gate boundary re-evaluates live capture on OPEN, including local edits.
+    if (isTRUE(state_capture_deferred(graph_editor_activation_generation()))) {
+      return(list(generation = graph_state_replay_generation(),
+                  replaying = TRUE, state = NULL))
+    }
     list(generation = graph_state_replay_generation(),
          replaying = graph_state_replay_active(), state = project_settings())
   })
@@ -129,7 +141,7 @@
     project_commit_candidate, millis = graph_rapid_render_debounce_ms
   )
   observe({
-    candidate <- project_settings_for_commit()
+    candidate <- project_commit_candidate()
     if (!graph_commit_candidate_current(candidate,
         isolate(graph_state_replay_generation()), isolate(graph_state_replay_active()))) return()
     state_now <- candidate$state
@@ -139,18 +151,21 @@
     tryCatch(
       {
         if (is.function(on_state_change)) on_state_change(state_now)
-        # rapid-edit contract: canonical/module attachment is updated for
-        # the latest coalesced state before the expensive plot revision is
-        # released. Spinner holds, text typing, color/palette experiments and
-        # persistent slot-pool edits therefore collapse to one rebuild after
-        # the configured short project-state quiet period.
         attached_state_seed(state_now)
-        if (exists("graph_release_render_revision", mode = "function", inherits = TRUE) &&
-            isTRUE(render_gate()) && !isTRUE(graph_state_replay_active()) &&
-            !isTRUE(plot_build_pending())) {
-          graph_release_render_revision(state_now, reason = "live-edit-coalesced")
-        }
       },
       error = function(e) diag("STATE-COMMIT", paste0("callback error: ", conditionMessage(e)))
     )
+  }, priority = 170)
+
+  # Only rendering is debounced. Saving canonical state belongs to the edit
+  # observer above, so Graph selection never has to rescue an unsaved snapshot.
+  observe({
+    candidate <- project_settings_for_commit()
+    if (!graph_commit_candidate_current(candidate,
+        isolate(graph_state_replay_generation()), isolate(graph_state_replay_active()))) return()
+    if (isTRUE(restoring_style_state())) return()
+    if (isTRUE(render_gate()) && !isTRUE(graph_state_replay_active()) &&
+        !isTRUE(plot_build_pending())) {
+      graph_release_render_revision(isolate(attached_state_seed()), reason = "live-edit-coalesced")
+    }
   }, priority = -50)

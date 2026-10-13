@@ -1,5 +1,6 @@
-  # Statistics owns analysis recipes/data preparation and its own recipe replay.
-  # It does not participate in GraphState hydration or persistent-Editor ownership.
+  # Statistics owns analysis recipes/data preparation and its own UI replay.
+  # GraphState replay replaces only its canonical Graph-linked recipe context;
+  # browser control materialization belongs to Statistics section activation.
 
   # ============================================================
   # Graph-linked Statistics (experimental)
@@ -32,9 +33,12 @@
   # immediately and deterministically.
   stats_ui_factor_n <- reactiveVal("two")
 
-  # Project読込時はStatistics UIをGraph復元と同時に触らない。
-  # recipe本体だけ保持し、Statisticsタブを開いた時にUIへ反映する。
+  # Statistics canonical ownership is replaced with GraphState immediately,
+  # but the persistent browser controls are intentionally materialized only
+  # when the Statistics section is active.  This prevents hidden Statistics UI
+  # restore from sitting on the Graph/Project READY critical path.
   pending_stats_ui_restore <- reactiveVal(NULL)
+  stats_ui_context_dirty <- reactiveVal(FALSE)
 
   # While GraphState replay or lazy Analysis restore is in progress, the saved
   # target recipe is authoritative. Browser inputs can still contain values
@@ -43,6 +47,7 @@
     pending_id <- pending_stats_ui_restore()
     isTRUE(graph_state_replay_active()) ||
       isTRUE(stats_restoring()) ||
+      isTRUE(stats_ui_context_dirty()) ||
       (!is.null(pending_id) && length(pending_id) == 1L && nzchar(pending_id))
   }
 
@@ -123,26 +128,10 @@
     y
   }
 
-  normalize_stats_recipe <- function(r, fallback_name = "Analysis", legacy_reshape = NULL) {
+  normalize_stats_recipe <- function(r, fallback_name = "Analysis") {
     if (is.null(r) || !is.list(r)) r <- list()
 
     out <- stats_default_recipe(name = stats_scalar_chr(r$name, fallback_name))
-
-    # migration: historical graph-source analyses implicitly consumed
-    # Plot dat(), so a saved Plot Wide→Long configuration also changed the
-    # Statistics input table. Convert that hidden dependency once into an
-    # explicit Analysis-local transform recipe. New analyses default to raw.
-    has_explicit_transform <- !is.null(r$transform_type)
-    if (!has_explicit_transform && identical(stats_scalar_chr(r$data_source, "graph"), "graph")) {
-      lr <- legacy_reshape %||% list()
-      if (isTRUE(lr$enabled)) {
-        r$transform_type <- "wide_to_long"
-        r$transform_columns <- lr$columns %||% character(0)
-        r$transform_row_id <- isTRUE(lr$row_id)
-        r$transform_names_to <- stats_scalar_chr(lr$x_name, "Time")
-        r$transform_values_to <- stats_scalar_chr(lr$y_name, "Value")
-      }
-    }
 
     # Character/scalar fields
     chr_fields <- c(
@@ -178,7 +167,7 @@
     out
   }
 
-  normalize_stats_recipes <- function(rr, legacy_reshape = NULL) {
+  normalize_stats_recipes <- function(rr) {
     if (is.null(rr) || !is.list(rr) || !length(rr)) return(list())
 
     ids <- names(rr)
@@ -192,8 +181,7 @@
     for (i in seq_along(rr)) {
       out[[i]] <- normalize_stats_recipe(
         rr[[i]],
-        fallback_name = paste0("Analysis ", i),
-        legacy_reshape = legacy_reshape
+        fallback_name = paste0("Analysis ", i)
       )
     }
 
@@ -1085,13 +1073,17 @@
     invisible(TRUE)
   }
 
-  # Replace all Statistics ownership for the target Graph in one focused
-  # boundary. The actual data-dependent recipe UI is restored lazily after the
-  # outer GraphState replay completes, so select choices are always derived from
-  # the target Graph rather than the previous one.
-  stats_replace_graph_context <- function(restored = list(), preferred_id = NULL, legacy_reshape = NULL) {
-    restored <- normalize_stats_recipes(restored, legacy_reshape = legacy_reshape)
+  # Replace only canonical Statistics ownership for the target Graph.  The
+  # browser controls are a workspace surface, not part of Graph READY, so no
+  # update*Input(), dynamic-control rebuild, or browser clear is performed here.
+  # The active Statistics section materializes this canonical context through
+  # stats_materialize_graph_context() below.
+  stats_replace_graph_context <- function(restored = list(), preferred_id = NULL) {
+    restored <- normalize_stats_recipes(restored)
 
+    # Cancel callbacks from a previously materialized Analysis before changing
+    # canonical ownership.  Cancellation only retires tokens/barriers; it does
+    # not rebuild browser controls.
     stats_cancel_restore("graph-switch")
     pending_stats_ui_restore(NULL)
     stats_recipes(restored)
@@ -1108,28 +1100,49 @@
     }
 
     stats_selected_id(target_id)
-    if (!is.null(target_id)) {
-      factor_n <- restored[[target_id]]$factor_n %||% "two"
-      if (!factor_n %in% c("one", "two", "three")) factor_n <- "two"
-      stats_ui_factor_n(factor_n)
-      pending_stats_ui_restore(target_id)
-    } else {
-      # No Analysis belongs to the target Graph. Clear the persistent browser
-      # controls as well as the canonical recipe collection so the previous
-      # Graph's settings/result cannot remain visible as a false carry-over.
-      stats_clear_browser_controls()
-    }
+    pending_stats_ui_restore(target_id)
+    stats_ui_context_dirty(TRUE)
 
-    refresh_stats_choices(target_id)
     diag(
       "STATS-GRAPH-CONTEXT",
       paste0(
-        "replace recipes=", length(restored),
+        "canonical recipes=", length(restored),
         " selected=", as.character(target_id %||% "<none>"),
-        " preferred=", if (nzchar(preferred)) preferred else "<none>"
+        " preferred=", if (nzchar(preferred)) preferred else "<none>",
+        " ui=dormant"
       )
     )
     invisible(target_id)
+  }
+
+  stats_materialize_graph_context <- function() {
+    if (!isTRUE(isolate(stats_ui_context_dirty()))) return(invisible(FALSE))
+    rr <- isolate(stats_recipes())
+    id <- isolate(stats_selected_id())
+    if (!is.null(id) && (!length(id) || !id %in% names(rr))) id <- NULL
+
+    # Select choices and the dynamic/static recipe controls are produced only
+    # after the Statistics section is active.  Until this point stale browser
+    # inputs are ignored by stats_ui_context_dirty().
+    diag(
+      "STATS-RESTORE",
+      paste0(
+        "materialize canonical context recipes=", length(rr),
+        " selected=", as.character(id %||% "<none>")
+      )
+    )
+    refresh_stats_choices(id)
+    if (is.null(id)) {
+      stats_clear_browser_controls()
+      pending_stats_ui_restore(NULL)
+      stats_ui_context_dirty(FALSE)
+      diag("STATS-RESTORE", "materialize empty canonical context")
+      return(invisible(TRUE))
+    }
+
+    pending_stats_ui_restore(id)
+    stats_ui_context_dirty(FALSE)
+    invisible(TRUE)
   }
 
   stats_selected_id_for_project <- function() {
@@ -1215,6 +1228,7 @@
     if (isTRUE(isolate(graph_state_replay_active()))) return(invisible(FALSE))
     if (isTRUE(isolate(stats_restoring()))) return(invisible(FALSE))
 
+    if (isTRUE(isolate(stats_ui_context_dirty()))) return(invisible(FALSE))
     pending_id <- isolate(pending_stats_ui_restore())
     if (!is.null(pending_id) && length(pending_id) == 1L && nzchar(pending_id)) {
       return(invisible(FALSE))
@@ -1314,6 +1328,7 @@
 
   observeEvent(input$stats_selected, {
     if (isTRUE(isolate(graph_state_replay_active()))) return()
+    if (isTRUE(isolate(stats_ui_context_dirty()))) return()
     id <- input$stats_selected %||% ""
     if (!nzchar(id)) return()
     if (identical(id, isolate(stats_selected_id()))) return()
@@ -1337,6 +1352,11 @@
   # exactly once. Graph ownership/value replay is handled by the outer Editor.
   observe({
     req(identical(input$graph_main_tab, "Statistics"))
+    req(!isTRUE(graph_state_replay_active()))
+
+    if (isTRUE(stats_ui_context_dirty())) {
+      stats_materialize_graph_context()
+    }
 
     id <- pending_stats_ui_restore()
     req(!is.null(id), length(id) == 1L, nzchar(id))
@@ -1349,12 +1369,8 @@
     }
 
 
-    # A saved Statistics recipe may itself restore graph_main_tab=Statistics.
-    # Wait until the outer persistent-Editor value replay has completed before
-    # touching recipe controls; this replaces the deleted structural-restore
-    # gate without reintroducing a second Graph hydration protocol.
-    req(!isTRUE(graph_state_replay_active()))
-
+    # Statistics section activation is workspace-global.  Graph replay has
+    # already completed before this materialization point.
     diag("STATS-RESTORE", paste0(
       "apply recipe id=", id,
       " name=", rr[[id]]$name %||% "Analysis",
@@ -1371,6 +1387,7 @@
 
   observeEvent(input$stats_name, {
     if (isTRUE(isolate(graph_state_replay_active()))) return()
+    if (isTRUE(isolate(stats_ui_context_dirty()))) return()
     if (isTRUE(stats_restoring())) return()
 
     pending_id <- isolate(pending_stats_ui_restore())
@@ -1399,6 +1416,7 @@
   observe({
     req(stats_selected_id())
     if (isTRUE(graph_state_replay_active())) return()
+    if (isTRUE(stats_ui_context_dirty())) return()
 
     # Project読込後のlazy restore待ちでは、static UIの初期値を無視する。
     pending_id <- pending_stats_ui_restore()
@@ -1996,7 +2014,10 @@
     if (isTRUE(graph_state_replay_active())) {
       return(list(status = "switching", svg = "", width = 600, height = 600))
     }
-    statistics_plot_preview()
+    req(isTRUE(render_gate()), !isTRUE(plot_build_pending()))
+    preview <- statistics_preview_svg()
+    preview$id <- isolate(graph_browser_patch_override_snapshot())$graphId
+    preview
   })
 
   output$stats_plot_preview <- renderUI({
@@ -2046,6 +2067,7 @@
     # of a req() cancellation. This clears the previous Graph's visible result
     # immediately rather than leaving stale text on screen until recalculation.
     if (isTRUE(graph_state_replay_active())) return("")
+    if (isTRUE(stats_ui_context_dirty())) return("")
     pending_id <- pending_stats_ui_restore()
     if (!is.null(pending_id) && length(pending_id) == 1L && nzchar(pending_id)) return("")
 
@@ -2089,6 +2111,7 @@
     if (!length(rr)) return(rr)
     if (isTRUE(isolate(graph_state_replay_active()))) return(rr)
     if (isTRUE(isolate(stats_restoring()))) return(rr)
+    if (isTRUE(isolate(stats_ui_context_dirty()))) return(rr)
 
     pending_id <- isolate(pending_stats_ui_restore())
     if (!is.null(pending_id) && length(pending_id) == 1L && nzchar(pending_id)) return(rr)

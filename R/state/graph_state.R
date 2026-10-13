@@ -20,8 +20,7 @@ graph_ui_seed_from_state <- function(cfg) {
     if (!is.null(value)) out[[key]] <<- value
   }
 
-  put("project_name", cfg$project_name)
-  put("text", cfg$data_text)
+  put("text", graph_data_document_source_text(cfg))
 
   if (is.list(cfg$reshape)) {
     put("reshape_wide", cfg$reshape$enabled)
@@ -108,9 +107,12 @@ graph_ui_snapshot_normalize <- function(x) {
     out
   }
   selections <- if (is.list(x$selections)) x$selections else list()
-  # Keep only view-level selections. Mapping/reshape/error-column values are
-  # canonical GraphState fields and must not have a second owner here.
-  keep <- intersect(names(selections), c("graph_main_tab", "sticky_plot"))
+  # Keep only Graph-owned view selections. The visible Graph workspace section
+  # (Plot / Statistics / Data View) is workspace-global state
+  # owned by the one persistent Editor DOM, not by each GraphState.
+  # Older projects may still contain selections$graph_main_tab; normalization
+  # intentionally drops it at the restore/state boundary.
+  keep <- intersect(names(selections), "sticky_plot")
   selections <- selections[keep]
 
   list(
@@ -135,3 +137,41 @@ graph_state_with_ui_snapshot <- function(state, snapshot = NULL) {
   state$ui_snapshot <- graph_ui_snapshot_merge(state$ui_snapshot, snapshot)
   state
 }
+
+  graph_browser_input_paths <- function(state = NULL) {
+    paths <- c(
+      editor_panels = "ui_snapshot.panels",
+      reshape_wide = "reshape.enabled", reshape_row_id = "reshape.row_id",
+      reshape_columns = "reshape.columns", reshape_x_name = "reshape.x_name",
+      reshape_y_name = "reshape.y_name",
+      xvar = "mapping.x", yvar = "mapping.y", colorvar = "mapping.color",
+      linetypevar = "mapping.linetype", shapevar = "mapping.shape",
+      idvar = "mapping.id", facetvar = "mapping.facet",
+      groupvar = "mapping.position", line_series_mode = "mapping.line_series_mode",
+      line_series_var = "mapping.line_series_var",
+      external_error_col = "mapping.external_error",
+      external_ymin_col = "mapping.external_ymin",
+      external_ymax_col = "mapping.external_ymax",
+      plot_type = "plot.type", bar_layout = "plot.bar_layout",
+      bar_value_source = "plot.bar_value_source", bar_proportion_display = "plot.bar_proportion_display", summary_type = "plot.summary",
+      summary_unit = "plot.summary_unit", external_error_mode = "plot.external_error_mode",
+      show_raw = "plot.show_raw", connect_id = "plot.connect_id",
+      scatter_connect_mode = "plot.scatter_connect_mode",
+      individual_connect_direction = "plot.individual_connect_direction",
+      line_breaks = "plot.line_breaks",
+      xlab = "labels.xlab", ylab = "labels.ylab", title = "labels.title",
+      ymin = "labels.ymin", ymax = "labels.ymax", y_top_to_tick = "labels.y_top_to_tick"
+    )
+    app <- if (is.list(state) && is.list(state$style) && is.list(state$style$appearance)) {
+      state$style$appearance
+    } else list()
+    default_style_keys <- setdiff(names(graph_snapshot_input_defaults()), names(paths))
+    for (key in unique(c(names(app), default_style_keys))) {
+      if (!key %in% names(paths) && !identical(key, "sticky_plot")) {
+        paths[[key]] <- paste0("style.appearance.", key)
+      }
+    }
+    if ("plot_width_px" %in% names(app)) paths[["plot_width_px_direct"]] <- "style.appearance.plot_width_px"
+    if ("plot_height_px" %in% names(app)) paths[["plot_height_px_direct"]] <- "style.appearance.plot_height_px"
+    paths
+  }

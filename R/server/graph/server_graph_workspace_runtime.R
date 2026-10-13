@@ -2,6 +2,7 @@
   # Every Graph selection retargets this same Editor; there is no cached-preview
   # browsing mode.
   session$onFlushed(function() {
+    tryCatch({
     ensure_graph_single_editor_module()
     editing_graph_id("")
     graph_single_editor_loading(FALSE)
@@ -18,16 +19,24 @@
       "EDITOR-SHELL",
       paste0("persistent shell ready; editor-first selected=", if (nzchar(selected0)) selected0 else "<none>")
     )
-    # Build the built-in sample GraphState once from the persistent Editor's
-    # static shell. Sample data and Mapping are filled deterministically by the
-    # template builder, so browser input round-trips are not part of creation.
-    session$onFlushed(function() {
-      capture_graph_single_default_state("startup-post-bind")
-      if (nzchar(selected0) && !isTRUE(isolate(project_load_locked())) && selected0 %in% isolate(graph_meta())$id) {
-        diag_log("EDITOR-FIRST", "startup initial Graph attach requested", id = selected0)
-        graph_single_load(selected0, new_graph = TRUE)
+    # Build the built-in sample GraphState immediately from the persistent
+    # module's R-side defaults. Data / reshape / Mapping are completed by the
+    # existing deterministic template builder; Style / Label continue to come
+    # from mod$state(), their single source of truth. No browser binding value is
+    # required for this capture, so do not add a second startup flush.
+    capture_graph_single_default_state("startup-module-ready")
+    if (nzchar(selected0) && !isTRUE(isolate(project_load_locked())) && selected0 %in% isolate(graph_meta())$id) {
+      diag_log("EDITOR-FIRST", "startup pristine Editor adoption requested", id = selected0)
+      adopted <- request_editor_activation(selected0, source = "startup", mode = "pristine")
+      if (!isTRUE(adopted) && !isTRUE(isolate(project_load_locked()))) {
+        diag_log("EDITOR-FIRST", "startup pristine adoption skipped/failed; no self-replay fallback", id = selected0)
+        session$sendCustomMessage("startup-load-failed", list(message = "初期Graphの準備に失敗しました。"))
       }
-    }, once = TRUE)
+    }
+    }, error = function(e) {
+      diag_log("STARTUP-DISPLAY", paste0("initialization failed: ", conditionMessage(e)))
+      session$sendCustomMessage("startup-load-failed", list(message = conditionMessage(e)))
+    })
   }, once = TRUE)
 
   create_graph <- function(name, initial_state = NULL, select = TRUE) {
@@ -109,12 +118,6 @@
   # ------------------------------------------------------------------
   # Graph actions
   # ------------------------------------------------------------------
-  # Legacy compatibility clicks use the same one persistent Editor.
-  observeEvent(input$graph_click, {
-    id <- as.character(input$graph_click %||% "")
-    request_graph_editor(id, source = "legacy-click", new_graph = FALSE)
-  }, ignoreInit = TRUE)
-
   # a Graph tab click immediately targets the persistent Editor. The
   # browser sends only the Graph id; canonical values remain in the R registry.
   observeEvent(input$graph_client_selected, {
@@ -140,25 +143,4 @@
   observeEvent(input$workspace_main_tab, {
     if (!identical(as.character(input$workspace_main_tab %||% ""), "graph_workspace")) return()
     resume_graph_workspace()
-  }, ignoreInit = TRUE)
-
-  # Compatibility event from older cached-Parameters DOM. Route it into the
-  # one persistent Editor instead of reviving a per-Graph source module.
-  observeEvent(input$graph_ui_edit_request, {
-    req <- input$graph_ui_edit_request
-    id <- as.character(req$id %||% "")[1]
-    sec <- as.character(req$section %||% "")[1]
-    if (!nzchar(id) || project_load_action_blocked("graph-edit", id)) return()
-    diag_log(
-      "USER",
-      paste0("graph_ui_edit_request -> persistent Editor section=", sec,
-             " nonce=", as.character(req$nonce %||% "")),
-      id = id
-    )
-    request_graph_editor(
-      id,
-      source = "legacy-parameter-ui",
-      new_graph = FALSE,
-      section_key = sec
-    )
   }, ignoreInit = TRUE)

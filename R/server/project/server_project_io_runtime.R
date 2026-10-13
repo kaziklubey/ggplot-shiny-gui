@@ -4,10 +4,12 @@
   # ------------------------------------------------------------------
   # GraphState phase 3:
   # Project serialization reads Graph state from the canonical registry only.
-  # The active editor is synchronously committed immediately before build_project()
-  # so an edit followed by an immediate Save cannot be lost behind the normal
-  # debounced live-commit observer. Hidden/evicted Graphs are already represented
-  # by their canonical registry entries.
+  # Main Data text has a separate Graph-owned Data Document transport: its browser
+  # capture-phase save hook flushes graphId/generation/seq before the Shiny save
+  # action, and the save workflow starts its download only from session$onFlushed.
+  # This helper therefore closes the remaining server-resident editor/state race;
+  # it is not a second Data text transport. Hidden/evicted Graphs are already
+  # represented by their canonical registry entries.
   flush_active_graph_to_registry <- function(source = "pre-save-active-flush") {
     id <- as.character(isolate(editing_graph_id()) %||% "")[1]
     if (!nzchar(id) || !graph_single_ready(id)) return(invisible(FALSE))
@@ -101,12 +103,12 @@
     list(
       version = 12L,
       renderer_schema = "asset-layer-v7-editable-graph-snapshot",
-      autofit_policy = as.character(isolate(figure_requested_autofit_policy()) %||% "live"),
-      size_mode = as.character(isolate(figure_requested_size_mode()) %||% "fixed"),
-      size_basis = figure_normalize_alignment_basis(isolate(figure_requested_size_basis()) %||% "panel_legend"),
-      title_align = as.character(isolate(figure_requested_title_align()) %||% "none"),
-      layout_mode = as.character(isolate(figure_requested_layout_mode()) %||% "row"),
-      free_canvas_padding = as.numeric(isolate(figure_requested_free_padding()) %||% 24),
+      autofit_policy = as.character(if (!is.null(seed)) seed$autofit_policy %||% "live" else isolate(figure_requested_autofit_policy()) %||% "live"),
+      size_mode = as.character(if (!is.null(seed)) seed$mode %||% "fixed" else isolate(figure_requested_size_mode()) %||% "fixed"),
+      size_basis = figure_normalize_alignment_basis(if (!is.null(seed)) seed$basis %||% "panel_legend" else isolate(figure_requested_size_basis()) %||% "panel_legend"),
+      title_align = as.character(if (!is.null(seed)) seed$title_align %||% "none" else isolate(figure_requested_title_align()) %||% "none"),
+      layout_mode = as.character(if (!is.null(seed)) seed$layout_mode %||% "row" else isolate(figure_requested_layout_mode()) %||% "row"),
+      free_canvas_padding = as.numeric(if (!is.null(seed)) seed$free_padding %||% 24 else isolate(figure_requested_free_padding()) %||% 24),
       external_assets = isolate(figure_external_assets()),
       canvas_width = min(max(cw, 300), 6000),
       canvas_height = min(max(ch, 300), 6000),
@@ -119,57 +121,6 @@
     )
   }
 
-  reset_figure_workspace <- function(reset_layout = TRUE) {
-    shared_style_graph_replay_pending(NULL)
-    figure_inspector_folds(list())
-    close_figure_load_progress()
-    if (exists("reset_figure_legend_materializer", mode = "function", inherits = TRUE)) reset_figure_legend_materializer()
-    reset_figure_source_snapshot_service(reason = "figure-workspace-reset")
-    reset_figure_editors(clear_states = TRUE)
-    figure_queue(character(0))
-    figure_load_pending(FALSE)
-    figure_load_target_ids(character(0))
-    figure_load_expected_revisions(list())
-    figure_inset_refresh_target(list(owner_id = "", source_id = ""))
-    figure_panel_refresh_target(list(id = "", key = ""))
-    figure_inset_preview_cache(list())
-    figure_requested_ids(character(0))
-    figure_requested_layout(list())
-    figure_requested_overrides(list())
-    figure_override_drafts(list())
-    figure_plot_overrides(list())
-    figure_control_restore_seed(NULL)
-    figure_requested_size_mode("auto")
-    figure_requested_size_basis("panel_legend")
-    figure_requested_title_align("none")
-    figure_requested_layout_mode("row")
-    figure_requested_autofit_policy("live")
-    figure_autofit_revision(0L)
-    figure_geometry_revision(0L)
-    figure_reorder_undo(NULL)
-    figure_requested_free_padding(24)
-    figure_external_assets(list())
-    figure_requested_external_assets(list())
-    figure_loaded_plots(list())
-    figure_loaded_exports(list())
-    figure_loaded_assets(list())
-    figure_persisted_previews(list())
-    clear_figure_svg_cache()
-    clear_figure_geometry_cache()
-    clear_figure_geometry_source_state()
-    figure_selected_row(1L)
-    figure_selected_graph("")
-    figure_selected_panel_key("")
-    figure_drag_syncing(FALSE)
-    figure_inspector_syncing(FALSE)
-    if (isTRUE(reset_layout)) {
-      figure_layout_initialized(FALSE)
-      figure_layout_state(figure_default_layout_state())
-      bump_figure_layout_ui()
-    }
-    invisible(NULL)
-  }
-
   figure_layout_diag <- function(layout) {
     layout <- figure_reindex_layout(layout)
     keys <- unlist(lapply(layout, function(row) {
@@ -179,61 +130,25 @@
   }
 
   restore_figure_project_state <- function(saved, id_map, meta) {
+    # Project restore owns one atomic canonical replacement. Clear the previous
+    # Figure runtime exactly once; requested/render state is activation-owned.
+    reset_figure_runtime()
+    shared_style_graph_replay_pending(NULL)
     figure_inspector_folds(list())
     # Live plot objects are never persisted. F1-5p does persist the lightweight
     # editable GraphState copy separately from SVG preview caches.
-    if (exists("reset_figure_legend_materializer", mode = "function", inherits = TRUE)) reset_figure_legend_materializer()
-    reset_figure_source_snapshot_service(reason = "project-figure-restore")
-    reset_figure_editors(clear_states = TRUE)
-    figure_queue(character(0))
-    figure_load_pending(FALSE)
-    figure_load_target_ids(character(0))
-    figure_load_expected_revisions(list())
-    figure_inset_refresh_target(list(owner_id = "", source_id = ""))
-    figure_panel_refresh_target(list(id = "", key = ""))
-    figure_inset_preview_cache(list())
-    figure_loaded_plots(list())
-    figure_loaded_exports(list())
-    figure_loaded_assets(list())
     figure_external_assets(list())
-    figure_requested_external_assets(list())
-    clear_figure_svg_cache()
-    clear_figure_geometry_cache()
-    clear_figure_geometry_source_state()
-    figure_requested_ids(character(0))
-    figure_plot_overrides(list())
-    figure_selected_row(1L)
-    figure_selected_graph("")
-    figure_selected_panel_key("")
 
     if (is.null(saved) || !is.list(saved)) {
       figure_layout_initialized(FALSE)
       figure_layout_state(figure_default_layout_state())
       figure_override_drafts(list())
-      figure_requested_width(1600)
-      figure_requested_height(1000)
-      figure_requested_gap_x(12)
-      figure_requested_gap_y(12)
-      figure_requested_size_mode("auto")
-      figure_requested_size_basis("panel_legend")
-      figure_requested_title_align("none")
-      figure_requested_layout_mode("row")
-      figure_requested_autofit_policy("live")
       figure_autofit_revision(0L)
       figure_geometry_revision(0L)
       figure_reorder_undo(NULL)
-      figure_requested_free_padding(24)
-      figure_control_restore_seed(list(width = 1600, height = 1000, gap_x = 12, gap_y = 12, mode = "auto", basis = "panel_legend", title_align = "none", layout_mode = "row", autofit_policy = "live"))
-      updateSelectInput(session, "figure_size_mode", selected = "auto")
-      updateSelectInput(session, "figure_size_basis", selected = "panel_legend")
-      updateSelectInput(session, "figure_title_align", selected = "none")
-      updateSelectInput(session, "figure_layout_mode", selected = "row")
-      updateSelectInput(session, "figure_autofit_policy", selected = "live")
-      updateNumericInput(session, "figure_canvas_width", value = 1600)
-      updateNumericInput(session, "figure_canvas_height", value = 1000)
-      updateNumericInput(session, "figure_gap_x", value = 12)
-      updateNumericInput(session, "figure_gap_y", value = 12)
-      bump_figure_layout_ui()
+      figure_edit_states(list())
+      figure_control_restore_seed(list(width = 1600, height = 1000, gap_x = 12, gap_y = 12, mode = "auto", basis = "panel_legend", title_align = "none", layout_mode = "row", autofit_policy = "live", free_padding = 24))
+      diag_log("FIGURE-RESTORE", "canonical default staged; runtime=dormant")
       return(invisible(FALSE))
     }
 
@@ -424,90 +339,18 @@
     figure_layout_initialized(TRUE)
     figure_layout_state(layout)
     figure_override_drafts(new_overrides)
-    figure_requested_width(cw)
-    figure_requested_height(ch)
-    figure_requested_gap_x(gx)
-    figure_requested_gap_y(gy)
-    figure_requested_size_mode(size_mode)
-    figure_requested_size_basis(size_basis)
-    figure_requested_title_align(title_align)
-    figure_requested_layout_mode(layout_mode)
-    figure_requested_autofit_policy(autofit_policy)
-    figure_autofit_revision(isolate(figure_autofit_revision()) + 1L)
+    figure_autofit_revision(0L)
     figure_reorder_undo(NULL)
-    figure_requested_free_padding(free_padding)
     figure_external_assets(external_assets)
-    figure_requested_external_assets(external_assets)
-
-    # Publish the restored logical layout to the Figure renderer immediately.
-    # Previously the renderer waited for a later reactive pass to copy
-    # figure_layout_state() into figure_requested_layout(). During Project
-    # restoration that left a window where the reset one-row layout could be
-    # rendered instead of the persisted multi-row layout.
-    restored_ids <- unique(unlist(lapply(layout, function(row) {
-      vapply(row$cells %||% list(), function(cell) {
-        if (identical(as.character(cell$source_type %||% "internal_graph"), "internal_graph")) as.character(cell$id %||% "") else ""
-      }, character(1))
-    }), use.names = FALSE))
-    restored_ids <- restored_ids[nzchar(restored_ids)]
-    figure_requested_layout(layout)
-    figure_requested_ids(restored_ids)
-    figure_requested_overrides(new_overrides)
-
-    figure_control_restore_seed(list(width = cw, height = ch, gap_x = gx, gap_y = gy, mode = size_mode, basis = size_basis, title_align = title_align, layout_mode = layout_mode, autofit_policy = autofit_policy))
-    updateSelectInput(session, "figure_size_mode", selected = size_mode)
-    updateSelectInput(session, "figure_size_basis", selected = size_basis)
-    updateSelectInput(session, "figure_title_align", selected = title_align)
-    updateSelectInput(session, "figure_layout_mode", selected = layout_mode)
-    updateSelectInput(session, "figure_autofit_policy", selected = autofit_policy)
-    updateNumericInput(session, "figure_canvas_width", value = cw)
-    updateNumericInput(session, "figure_canvas_height", value = ch)
-    updateNumericInput(session, "figure_gap_x", value = gx)
-    updateNumericInput(session, "figure_gap_y", value = gy)
-    bump_figure_layout_ui()
-
-    requested_diag <- figure_layout_diag(isolate(figure_requested_layout()))
+    figure_control_restore_seed(list(width = cw, height = ch, gap_x = gx, gap_y = gy, mode = size_mode, basis = size_basis, title_align = title_align, layout_mode = layout_mode, autofit_policy = autofit_policy, free_padding = free_padding))
     diag_log(
       "FIGURE-RESTORE",
       paste0(
-        "published_rows=", requested_diag$rows,
-        " published_cells=", paste(requested_diag$keys, collapse = ",")
+        "canonical_rows=", restored_diag$rows,
+        " canonical_cells=", paste(restored_diag$keys, collapse = ","),
+        " runtime=dormant"
       )
     )
-
-    # Verify once after the restore flush. If another initialization observer
-    # published the temporary default layout, restore the persisted layout
-    # again rather than silently losing rows/panels. This is event/flush based
-    # (not a fixed delay) and only acts on an actual mismatch.
-    expected_rows <- restored_diag$rows
-    expected_keys <- restored_diag$keys
-    restored_layout <- layout
-    restored_overrides <- new_overrides
-    session$onFlushed(function() {
-      cur <- isolate(figure_layout_state())
-      cur_diag <- figure_layout_diag(cur)
-      req_diag <- figure_layout_diag(isolate(figure_requested_layout()))
-      state_ok <- identical(cur_diag$rows, expected_rows) && identical(cur_diag$keys, expected_keys)
-      requested_ok <- identical(req_diag$rows, expected_rows) && identical(req_diag$keys, expected_keys)
-      diag_log(
-        "FIGURE-RESTORE",
-        paste0(
-          "postflush_state_rows=", cur_diag$rows,
-          " requested_rows=", req_diag$rows,
-          " expected_rows=", expected_rows
-        )
-      )
-      if (!state_ok || !requested_ok) {
-        diag_log("FIGURE-RESTORE", "postflush mismatch detected; re-publishing persisted layout")
-        figure_layout_initialized(TRUE)
-        figure_layout_state(restored_layout)
-        figure_override_drafts(restored_overrides)
-        figure_requested_layout(restored_layout)
-        figure_requested_ids(restored_ids)
-        figure_requested_overrides(restored_overrides)
-        bump_figure_layout_ui()
-      }
-    }, once = TRUE)
 
     invisible(TRUE)
   }
@@ -1267,14 +1110,11 @@
     target <- as.character(target %||% "")[1]
     if (!nzchar(target)) return(invisible(FALSE))
 
-    figure_visible <- identical(as.character(isolate(input$workspace_main_tab) %||% "")[1], "figure_workspace")
-    figure_geometry_bootstrap_deferred(!figure_visible)
+    set_project_load_phase("selected")
 
     # Project bootstrap is state-first. Other Graphs remain state-only until
     # they are selected; Figure and Export use only explicit Figure snapshots.
     active_graph(target)
-    complete_project_load_lock("registry/Figure snapshots staged; selected persistent Editor attach")
-
     # do not queue a Project catalog before/around owner transition.
     # publish_client_graph_catalog() sends on the next Shiny flush; a payload
     # captured while editing_graph_id still named the old/empty owner could
@@ -1282,7 +1122,11 @@
     # the canonical target as an owner mismatch. graph_meta/editing_graph_id
     # already drive the normal metadata observer, so Project bootstrap should
     # use the same owner-first path as ordinary Graph selection.
-    request_graph_editor(target, source = "project-load-state-first", new_graph = FALSE)
+    started <- isTRUE(activate_graph_editor_target(target, source = "project-load-state-first", new_graph = FALSE))
+    if (!started && isTRUE(isolate(project_load_locked())) && is.null(isolate(project_load_failure()))) {
+      fail_project_load_lock(target, "selected-graph-activation-start-failed")
+      return(invisible(FALSE))
+    }
 
     diag_log(
       "PROJECT-STATE-FIRST",
@@ -1299,14 +1143,108 @@
     invisible(TRUE)
   }
 
+  # Candidate-only Project upload timing correlation. Browser diagnostic
+  # events carry client timestamps so delayed R observer entry can be separated
+  # from browser-side file-input progression without relying on Shiny private
+  # upload internals.
+  project_upload_diag_state <- new.env(parent = emptyenv())
+
+  observeEvent(input$project_open_intent_browser, {
+    z <- input$project_open_intent_browser
+    client_ms <- suppressWarnings(as.numeric(z$clientAtMs %||% NA_real_)[1])
+    now_ms <- as.numeric(Sys.time()) * 1000
+    diag_log(
+      "PROJECT-OPEN-INTENT",
+      paste0(
+        "phase=", as.character(z$phase %||% "?"),
+        " client_at=", if (is.finite(client_ms)) format(as.POSIXct(client_ms / 1000, origin = "1970-01-01"), "%H:%M:%OS3") else "unavailable",
+        " client_to_r_ms=", if (is.finite(client_ms)) round(now_ms - client_ms) else "unavailable"
+      )
+    )
+  }, ignoreInit = TRUE, priority = 350)
+
+  observeEvent(input$project_upload_diag_browser, {
+    z <- input$project_upload_diag_browser
+    selection_id <- as.character(z$selectionId %||% "")[1]
+    phase <- as.character(z$phase %||% "")[1]
+    client_ms <- suppressWarnings(as.numeric(z$clientAtMs %||% NA_real_)[1])
+    selected_ms <- suppressWarnings(as.numeric(z$selectedAtMs %||% NA_real_)[1])
+    now_ms <- as.numeric(Sys.time()) * 1000
+    if (nzchar(selection_id)) {
+      key <- paste0("s_", gsub("[^A-Za-z0-9_]", "_", selection_id))
+      st <- if (exists(key, envir = project_upload_diag_state, inherits = FALSE)) {
+        get(key, envir = project_upload_diag_state, inherits = FALSE)
+      } else list()
+      st[[phase]] <- list(client_ms = client_ms, server_ms = now_ms)
+      st$selected_ms <- selected_ms
+      assign(key, st, envir = project_upload_diag_state)
+    }
+    diag_log(
+      "PROJECT-UPLOAD-DIAG",
+      paste0(
+        "selection_id=", if (nzchar(selection_id)) selection_id else "?",
+        " phase=", if (nzchar(phase)) phase else "?",
+        " client_at=", if (is.finite(client_ms)) format(as.POSIXct(client_ms / 1000, origin = "1970-01-01"), "%H:%M:%OS3") else "unavailable",
+        " client_to_r_ms=", if (is.finite(client_ms)) round(now_ms - client_ms) else "unavailable",
+        " selection_to_client_phase_ms=", if (is.finite(client_ms) && is.finite(selected_ms)) round(client_ms - selected_ms) else "unavailable"
+      )
+    )
+  }, ignoreInit = TRUE)
+
+  # The browser timestamps the file-input change before Shiny queues/upload
+  # work. Keep this measurement separate from the Project progress owner: it
+  # records upload latency; startup is completed before user interaction.
+  observeEvent(input$project_upload_selected, {
+    selected <- input$project_upload_selected
+    selected_ms <- suppressWarnings(as.numeric(selected$selectedAtMs %||% NA_real_)[1])
+    selection_id <- as.character(selected$selectionId %||% "")[1]
+    now_ms <- as.numeric(Sys.time()) * 1000
+    diag_log(
+      "PROJECT-UPLOAD-TIMING",
+      paste0(
+        "stage=selection-received",
+        " selection_id=", if (nzchar(selection_id)) selection_id else "?",
+        " file_bytes=", as.character(selected$fileSize %||% "?"),
+        " selected_at=", if (is.finite(selected_ms)) format(as.POSIXct(selected_ms / 1000, origin = "1970-01-01"), "%H:%M:%OS3") else "unavailable",
+        " selection_to_server_ms=", if (is.finite(selected_ms)) round(now_ms - selected_ms) else "unavailable"
+      )
+    )
+  }, ignoreInit = TRUE, priority = 300)
+
   observeEvent(input$upload_project_all, {
     req(input$upload_project_all$datapath)
 
+    selected <- isolate(input$project_upload_selected)
+    selection_id <- as.character(selected$selectionId %||% "")[1]
+    selected_ms_entry <- suppressWarnings(as.numeric(selected$selectedAtMs %||% NA_real_)[1])
+    observer_enter_ms <- as.numeric(Sys.time()) * 1000
+    diag_log(
+      "PROJECT-UPLOAD-DIAG",
+      paste0(
+        "selection_id=", if (nzchar(selection_id)) selection_id else "?",
+        " phase=r-upload-observer-enter",
+        " selection_to_r_observer_ms=", if (is.finite(selected_ms_entry)) round(observer_enter_ms - selected_ms_entry) else "unavailable"
+      )
+    )
+
     if (project_load_action_blocked("project-reload")) return(invisible(NULL))
+    selected_ms <- suppressWarnings(as.numeric(selected$selectedAtMs %||% NA_real_)[1])
+    selected_name <- as.character(selected$fileName %||% "")[1]
+    selected_size <- suppressWarnings(as.numeric(selected$fileSize %||% NA_real_)[1])
+    uploaded_name <- as.character(input$upload_project_all$name %||% "")[1]
+    uploaded_size <- suppressWarnings(as.numeric(input$upload_project_all$size %||% NA_real_)[1])
+    matched <- is.finite(selected_ms) && identical(selected_name, uploaded_name) &&
+      is.finite(selected_size) && is.finite(uploaded_size) && identical(selected_size, uploaded_size)
+    diag_log(
+      "PROJECT-UPLOAD-TIMING",
+      paste0(
+        "stage=upload-ready selection_id=", if (nzchar(selection_id)) selection_id else "?",
+        " bytes=", if (is.finite(uploaded_size)) uploaded_size else "?",
+        " selection_to_lock_ms=", if (isTRUE(matched)) round(as.numeric(Sys.time()) * 1000 - selected_ms) else "unavailable",
+        " selection_match=", isTRUE(matched)
+      )
+    )
     begin_project_load_lock()
-    # A new load owns its own bootstrap lifecycle. Clear any deferred work left
-    # by a previous Project before validating/replacing canonical state.
-    figure_geometry_bootstrap_deferred(FALSE)
     project_file_read(FALSE)
 
     cfg <- read_project_file(input$upload_project_all$datapath)
@@ -1325,12 +1263,27 @@
       return(invisible(NULL))
     }
 
+    # A validated Project request owns the Editor immediately. Invalidate the
+    # old Graph transaction before the phase flush and registry restore, so
+    # any remaining old callbacks cannot advance while the new Project waits.
+    editor_activation_supersede("project-replace")
+    editing_graph_id("")
+    graph_single_editor_loading(FALSE)
+    graph_single_editor_mode("IDLE")
     project_file_read(TRUE)
+    set_project_load_phase("restoring")
+
+    # The file-read phase is already visible while the browser uploads the
+    # selected file. Flush the restoring phase before the synchronous registry
+    # restore begins, so the displayed phase describes the work actually in
+    # progress. This is a progress-UI boundary only; replay dispatch and
+    # completion remain on their existing transport lifecycle.
+    session$onFlushed(function() {
+      if (!isTRUE(isolate(project_load_locked()))) return(invisible(NULL))
 
     # Only clear the current Figure workspace after the new Project file has
     # been validated. A broken/unreadable file must not destroy the Figure the
     # user was already editing.
-    reset_figure_workspace(reset_layout = TRUE)
     session$sendCustomMessage("figure-collapse-workspace-controls", list(reason = "project-load"))
 
     shared_cfg <- cfg$shared_style %||% list()
@@ -1397,12 +1350,6 @@
     # Project replacement invalidates the old Graph owner before the canonical
     # Registry is cleared. This prevents the outgoing Graph from being
     # committed into the newly loaded Project when the new target attaches.
-    editing_graph_id("")
-    graph_single_editor_loading(FALSE)
-    graph_single_editor_mode("IDLE")
-    graph_single_pending_target(NULL)
-    graph_single_editor_generation(as.integer(isolate(graph_single_editor_generation()) %||% 0L) + 1L)
-    graph_editor_ui_panel_store(list())
     if (length(ls(envir = graph_single_editor_visit_cache, all.names = TRUE))) {
       rm(list = ls(envir = graph_single_editor_visit_cache, all.names = TRUE),
          envir = graph_single_editor_visit_cache)
@@ -1493,9 +1440,6 @@
     }
 
     graph_meta(new_meta)
-    project_load_ids(created)
-    update_project_load_lock(NULL)
-
     id_map <- stats::setNames(created, source_ids)
     restore_figure_project_state(cfg$figure, id_map, new_meta)
 
@@ -1610,6 +1554,8 @@
       target,
       figure_preview_count = length(mapped_figure_previews)
     )
+    }, once = TRUE)
+    invisible(NULL)
   })
 
   # Close Project is an explicit hard boundary. A full session reset

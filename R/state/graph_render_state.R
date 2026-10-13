@@ -134,7 +134,7 @@ graph_render_state_apply_semantics <- function(state) {
 graph_render_state <- function(state) {
   if (is.null(state) || !is.list(state)) return(state)
   out <- graph_render_state_apply_semantics(state)
-  for (nm in c("version", "schema_version", "app", "project_name", "export", "statistics_recipes", "statistics_selected_id", "ui_snapshot")) {
+  for (nm in c("version", "schema_version", "app", "project_name", "export", "statistics_recipes", "statistics_selected_id", "ui_snapshot", "data_document")) {
     out[[nm]] <- NULL
   }
 
@@ -154,6 +154,11 @@ graph_render_state <- function(state) {
     # legacy Style mirrors so they cannot create false render revisions.
     ap$summary_type <- NULL
     ap$summary_unit <- NULL
+    # Palette dropdowns select a future editor operation. The current plot is
+    # changed only when Apply writes concrete colours into color/raw style
+    # trees, so changing the dropdown alone must never advance RenderState.
+    ap$palette_preset <- NULL
+    ap$raw_palette_preset <- NULL
     color_var <- as.character(mp0$color %||% "")[[1]]
     has_color_mapping <- nzchar(color_var) && !identical(color_var, "__fixed__")
     bar_layout0 <- if (identical(plot_type0, "bar")) {
@@ -212,12 +217,19 @@ graph_render_state <- function(state) {
     if (identical(plot_type0, "scatter")) {
       st$raw_group_colors <- NULL
       ap$x_tick_labels_show <- NULL
+      ap$x_tick_angle <- NULL
       if (isTRUE(has_color_mapping)) ap$mean_color_mode <- NULL
       if (!isTRUE(ap$scatter_jitter_enabled)) {
         ap$scatter_jitter_x <- NULL
         ap$scatter_jitter_y <- NULL
       }
     } else {
+      x_tick_angle <- suppressWarnings(as.numeric(ap$x_tick_angle %||% 0))
+      if (!isTRUE(ap$x_tick_labels_show) || !is.finite(x_tick_angle) || abs(x_tick_angle) < .Machine$double.eps^0.5) {
+        ap$x_tick_angle <- NULL
+      } else {
+        ap$x_tick_angle <- max(-90, min(90, x_tick_angle))
+      }
       ap$scatter_point_alpha <- NULL
       ap$scatter_jitter_enabled <- NULL
       ap$scatter_jitter_x <- NULL

@@ -66,6 +66,7 @@
       list(group="タイトル", label="Graph title", path="labels.title", section="axes-legend", input="title", apply=TRUE, editor=editor_text()),
       list(group="X軸", label="X軸タイトル", path="labels.xlab", section="axes-legend", input="xlab", apply=TRUE, shared_axis="x", editor=editor_text()),
       list(group="X軸", label="X軸のカテゴリ名を表示", path="style.appearance.x_tick_labels_show", section="axes-legend", input="x_tick_labels_show", apply=TRUE, editor=editor_boolean()),
+      list(group="X軸", label="X軸カテゴリ名の角度", path="style.appearance.x_tick_angle", section="axes-legend", input="x_tick_angle", suffix="°", apply=TRUE, editor=editor_number(-90, 90, 5)),
       list(group="X軸", label="カテゴリ間隔", path="style.appearance.x_category_spacing", section="appearance", input="x_category_spacing", apply=TRUE, editor=editor_number(0, NULL, 0.05)),
       list(group="X軸", label="Line X目盛間隔", path="style.appearance.line_x_spacing", section="axes-legend", input="line_x_spacing", apply=TRUE, editor=editor_number(0, NULL, 0.05)),
       list(group="Y軸", label="Y軸タイトル", path="labels.ylab", section="axes-legend", input="ylab", apply=TRUE, shared_axis="y", editor=editor_text()),

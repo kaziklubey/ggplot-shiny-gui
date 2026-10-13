@@ -1,3 +1,77 @@
+# Import-only normalization of pre-tree group styles. No reactive mutation.
+graph_import_group_styles <- function(state) {
+  if (!is.list(state) || !is.list(state$style)) return(state)
+  old <- state$style$group_styles
+  if (is.list(old) && length(old) && is.null(state$style$color_styles)) {
+    mp <- state$mapping %||% list()
+    color <- graph_state_scalar(mp$color, graph_state_scalar(mp$series, ""))
+    vars <- list(color = color,
+      linetype = graph_state_scalar(mp$linetype, "__color__"),
+      shape = graph_state_scalar(mp$shape, "__color__"))
+    for (kind in names(vars)) {
+      variable <- vars[[kind]]
+      if (identical(variable, "__color__")) variable <- color
+      if (!nzchar(variable) || identical(variable, "__fixed__")) next
+      default <- switch(kind, color = "#333333", linetype = "solid", shape = 16)
+      branch <- lapply(old, function(item) {
+        value <- graph_state_scalar(item[[kind]], default)
+        if (identical(kind, "shape")) {
+          value <- suppressWarnings(as.numeric(value))
+          if (!is.finite(value)) value <- default
+        } else value <- as.character(value)
+        value
+      })
+      key <- paste0(kind, "_styles")
+      tree <- state$style[[key]] %||% list()
+      tree[[variable]] <- branch
+      state$style[[key]] <- tree
+    }
+  }
+  raw <- state$style$raw_group_colors
+  if (length(raw) && all(vapply(raw, function(x) !is.list(x) || is.null(names(x)), logical(1)))) {
+    color <- graph_state_scalar(state$mapping$color, graph_state_scalar(state$mapping$series, ""))
+    state$style$raw_group_colors <- if (nzchar(color) && color != "__fixed__") {
+      setNames(list(lapply(raw, function(x) as.character(graph_state_scalar(x, "#555555")))), color)
+    } else list()
+  }
+  state$style$group_styles <- NULL
+  state
+}
+
+
+# Canonical GraphState owns manual Y-axis range under state$labels only.
+# style$axes is a generic Style import/copy representation and must never become
+# a second GraphState owner. Promote truly missing legacy labels once at the
+# import boundary, then strip the mirror. Runtime Style copy/paste may still
+# carry style$axes into apply_style_config(); live GraphState capture does not.
+graph_state_canonicalize_axis_owner <- function(state) {
+  if (!is.list(state)) return(state)
+  labels <- state$labels %||% list()
+  if (!is.list(labels)) labels <- list()
+  st <- state$style %||% list()
+  if (!is.list(st)) st <- list()
+  axes <- st$axes %||% list()
+  if (is.list(axes)) {
+    for (nm in c("ymin", "ymax", "y_top_to_tick")) {
+      if ((is.null(labels[[nm]]) || !length(labels[[nm]])) &&
+          !is.null(axes[[nm]]) && length(axes[[nm]])) {
+        labels[[nm]] <- graph_state_scalar(axes[[nm]], if (identical(nm, "y_top_to_tick")) FALSE else "")
+      }
+    }
+  }
+  st$axes <- NULL
+  state$labels <- labels
+  state$style <- st
+  state
+}
+
+graph_style_for_graph_state <- function(style) {
+  st <- style %||% list()
+  if (!is.list(st)) st <- list()
+  st$axes <- NULL
+  st
+}
+
 # ============================================================
 # Dynamic Style GraphState migration — pure helpers
 # canonicalize deterministic per-level Style defaults before
@@ -14,6 +88,48 @@ graph_style_canonical_base_size <- function(x, default = 13) {
   z <- suppressWarnings(as.numeric(graph_state_scalar(x, default)))
   if (!length(z) || !is.finite(z[[1]])) z <- as.numeric(default)[1]
   as.numeric(z[[1]])
+}
+
+# Persistence boundary only. Live editors already produce these scalar leaves;
+# imported JSON/R lists must acquire the same representation before Registry
+# acceptance, rather than making replay own a second canonicalization pass.
+graph_style_normalize_editor_branches <- function(st) {
+  tree <- function(x, kind) {
+    out <- list()
+    for (vn in names(x)) {
+      br <- list()
+      for (lv in names(x[[vn]])) {
+        z <- unlist(x[[vn]][[lv]], use.names = FALSE)
+        if (!length(z)) next
+        br[[lv]] <- if (identical(kind, "shape")) {
+          q <- suppressWarnings(as.numeric(z[[1]])); if (is.finite(q)) q else 16
+        } else as.character(z[[1]])
+      }
+      out[[vn]] <- br
+    }
+    out
+  }
+  for (key in c("color_styles", "linetype_styles", "shape_styles", "raw_group_colors")) {
+    st[[key]] <- tree(st[[key]] %||% list(), if (identical(key, "shape_styles")) "shape" else "text")
+  }
+  st$series_styles <- lapply(st$series_styles %||% list(), function(x) {
+    list(color = as.character(graph_state_scalar(x$color, "#333333")))
+  })
+  st$regression_styles <- lapply(st$regression_styles %||% list(), function(x) {
+    list(color = graph_style_migration_scalar_chr(x$color, "#333333"),
+         linetype = graph_style_migration_scalar_chr(x$linetype, "solid"),
+         width = as.numeric(graph_style_migration_scalar_chr(x$width, "0.9")))
+  })
+  st$legend_titles <- lapply(st$legend_titles %||% list(), function(x) graph_style_migration_scalar_chr(x, ""))
+  for (key in c("legend_item_labels", "level_labels")) {
+    src <- st[[key]] %||% list()
+    st[[key]] <- lapply(src, function(branch) {
+      out <- lapply(names(branch), function(lv) graph_style_migration_scalar_chr(branch[[lv]],
+        if (identical(key, "level_labels")) lv else ""))
+      setNames(out, names(branch))
+    })
+  }
+  st
 }
 
 # style schema 6. Keep style migration pure so Project load can
@@ -34,6 +150,10 @@ graph_style_migrate_v6 <- function(style) {
   ap$summary_unit <- NULL
 
   ap$base_size <- graph_style_canonical_base_size(ap$base_size, 13)
+
+  x_tick_angle <- suppressWarnings(as.numeric(graph_state_scalar(ap$x_tick_angle, 0)))
+  if (!length(x_tick_angle) || !is.finite(x_tick_angle[[1]])) x_tick_angle <- 0
+  ap$x_tick_angle <- max(-90, min(90, as.numeric(x_tick_angle[[1]])))
 
   wrap_mode <- graph_style_migration_scalar_chr(ap$legend_wrap_mode, "auto")
   if (!wrap_mode %in% c("auto", "ncol", "nrow")) wrap_mode <- "auto"
@@ -79,7 +199,7 @@ graph_style_migrate_v6 <- function(style) {
   st$appearance <- ap
   st$version <- "4.0-rc2"
   st$schema_version <- 6L
-  st
+  graph_style_normalize_editor_branches(st)
 }
 
 graph_style_migration_prepared_data <- function(state) {

@@ -1,6 +1,64 @@
   # ------------------------------------------------------------------
   # Graph single editor
   # ------------------------------------------------------------------
+  # Data Document lease registry. A delayed browser edit is routed by the
+  # Graph/lease identity carried in the payload itself, never by current Editor
+  # selection. Re-visiting a Graph supersedes all older generations.
+  graph_data_document_lease_generation <- new.env(parent = emptyenv())
+  graph_data_document_last_seq <- new.env(parent = emptyenv())
+
+  # One persistent Editor means there can be only one activation transaction at
+  # a time. Keep a lightweight monotonic start timestamp solely for diagnostics;
+  # it does not participate in synchronization or ownership.
+  graph_single_activation_started_at <- reactiveVal(NA_real_)
+  source("R/server/graph/server_graph_capture_boundary_runtime.R", local = TRUE)
+
+  # Outer-runtime half of the bounded cold replay diagnostic.  This is plain
+  # bookkeeping: it neither creates reactive dependencies nor changes the
+  # persistent Editor transaction.  It is enabled only for the selected Graph
+  # while the Project-load lock is held.
+  graph_single_cold_diag <- new.env(parent = emptyenv())
+  graph_single_cold_diag$active <- FALSE
+  graph_single_cold_diag$id <- ""
+  graph_single_cold_diag$generation <- 0L
+  graph_single_cold_diag$started_at <- NA_real_
+  graph_single_cold_diag$last_at <- NA_real_
+  graph_single_cold_diag_mark <- function(phase, detail = "") {
+    if (!isTRUE(graph_single_cold_diag$active)) return(invisible(FALSE))
+    now <- proc.time()[["elapsed"]]
+    diag_log("COLD-REPLAY-OUTER", paste0(
+      "phase=", phase,
+      " generation=", graph_single_cold_diag$generation,
+      " elapsed_ms=", round((now - graph_single_cold_diag$started_at) * 1000, 1),
+      " delta_prev_ms=", round((now - graph_single_cold_diag$last_at) * 1000, 1),
+      if (nzchar(detail)) paste0(" ", detail) else ""
+    ), id = graph_single_cold_diag$id)
+    graph_single_cold_diag$last_at <- now
+    invisible(TRUE)
+  }
+  graph_single_cold_diag_measure <- function(phase, fn) {
+    if (!isTRUE(graph_single_cold_diag$active)) return(fn())
+    t0 <- proc.time()[["elapsed"]]
+    on.exit(graph_single_cold_diag_mark(phase, paste0("work_ms=", round((proc.time()[["elapsed"]] - t0) * 1000, 1))), add = TRUE)
+    fn()
+  }
+
+  graph_data_document_register_lease <- function(id, generation) {
+    id <- as.character(id %||% "")[[1]]
+    generation <- suppressWarnings(as.integer(generation %||% 0L))
+    if (!nzchar(id) || !is.finite(generation) || generation < 1L) return(invisible(FALSE))
+    assign(id, generation, envir = graph_data_document_lease_generation)
+    assign(paste0(id, "@", generation), 0L, envir = graph_data_document_last_seq)
+    invisible(TRUE)
+  }
+
+  graph_data_document_lease_matches <- function(id, generation) {
+    id <- as.character(id %||% "")[[1]]
+    generation <- suppressWarnings(as.integer(generation %||% 0L))
+    if (!nzchar(id) || !exists(id, envir = graph_data_document_lease_generation, inherits = FALSE)) return(FALSE)
+    identical(as.integer(get(id, envir = graph_data_document_lease_generation, inherits = FALSE)), generation)
+  }
+
   graph_single_mark_editor_visit <- function(id, generation = NULL) {
     id <- as.character(id %||% "")[1]
     if (!nzchar(id)) return(invisible(FALSE))
@@ -28,6 +86,9 @@
       paste0("CLAIM revision=", lease$revision, " generation=", lease$generation, " reason=", lease$reason),
       id = id
     )
+    if (identical(as.character(reason %||% "")[[1]], "load-ready-value-replay")) {
+      graph_single_cold_diag_mark("lease-claim", paste0("revision=", lease$revision))
+    }
     invisible(TRUE)
   }
 
@@ -57,58 +118,10 @@
 
   graph_ui_panels_for_id <- function(id, state = NULL) {
     id <- as.character(id %||% "")[1]
-    store <- isolate(graph_editor_ui_panel_store())
-    if (nzchar(id) && is.list(store[[id]])) {
-      return(graph_ui_snapshot_normalize(list(panels = store[[id]]))$panels)
-    }
     if (!is.list(state) && nzchar(id) && cache_has(id)) state <- cache_get(id)
     snap <- if (is.list(state)) graph_ui_snapshot_normalize(state$ui_snapshot) else graph_ui_snapshot_normalize(NULL)
     snap$panels %||% list()
   }
-
-  graph_store_ui_panels <- function(id, panels) {
-    id <- as.character(id %||% "")[1]
-    if (!nzchar(id) || !is.list(panels)) return(invisible(FALSE))
-    clean <- graph_ui_snapshot_normalize(list(panels = panels))$panels
-    store <- isolate(graph_editor_ui_panel_store())
-    previous <- store[[id]] %||% list()
-    if (app_state_semantically_equal(previous, clean)) return(invisible(FALSE))
-    store[[id]] <- clean
-    graph_editor_ui_panel_store(store)
-    invisible(TRUE)
-  }
-
-  # Browser <details> state is presentation state. Accept it at one explicit
-  # boundary, and only revise canonical GraphState when the panel snapshot
-  # actually changed. Browser restore can emit a burst of equivalent toggle
-  # events; those must not become lease/Registry transactions.
-  observeEvent(input$graph_editor_ui_state, {
-    msg <- input$graph_editor_ui_state
-    if (!is.list(msg)) return()
-    id <- as.character(msg$id %||% "")[1]
-    panels <- msg$panels
-    if (!nzchar(id) || !is.list(panels)) return()
-
-    clean <- graph_ui_snapshot_normalize(list(panels = panels))$panels
-    graph_store_ui_panels(id, clean)
-    if (!cache_has(id)) return()
-
-    st <- cache_get(id)
-    canonical_panels <- graph_ui_snapshot_normalize(st$ui_snapshot)$panels %||% list()
-    if (app_state_semantically_equal(canonical_panels, clean)) return()
-
-    st <- graph_state_with_ui_snapshot(st, list(panels = clean))
-    changed <- registry_commit(
-      id, st,
-      source = paste0("graph-ui-panels:", as.character(msg$source %||% "browser")[1])
-    )
-    if (isTRUE(changed) && identical(id, graph_single_owner())) {
-      graph_single_claim_revision(id, reason = "ui-panels")
-    }
-    if (isTRUE(changed)) {
-      diag_log("GRAPH-UI-SNAPSHOT", "panels committed changed=TRUE", id = id)
-    }
-  }, ignoreInit = TRUE, priority = 120)
 
   graph_single_publish_state <- function(id, state, source) {
     id <- as.character(id %||% "")[1]
@@ -166,6 +179,7 @@
   }
 
   graph_single_accept_loaded_state <- function(id, mod, now, generation) {
+    graph_single_cold_diag_mark("canonical-accept-enter")
     canonical <- if (cache_has(id)) cache_get(id) else NULL
     if (!is.list(canonical)) {
       diag_log("GRAPH-SINGLE-EDITOR", "canonical GraphState missing at replay completion", id = id)
@@ -177,31 +191,36 @@
     # are allowed to exist and the ordinary Plot error surface owns draw errors.
     # UI-only panel state is captured separately and never blocks activation.
 
-    canonical_ready <- graph_state_with_ui_snapshot(
-      canonical,
-      list(panels = graph_ui_panels_for_id(id, canonical))
-    )
-    if (!identical(canonical_ready, canonical)) {
-      registry_commit(id, canonical_ready, source = "graph-ui-panels-replay")
-      canonical <- canonical_ready
+    graph_single_cold_diag_measure("load_ready_value", function() {
+      graph_single_claim_revision(id, reason = "load-ready-value-replay")
+    })
+    started_at <- suppressWarnings(as.numeric(isolate(graph_single_activation_started_at()) %||% NA_real_))
+    if (is.finite(started_at)) {
+      diag_log(
+        "GRAPH-SINGLE-REPLAY-TIMING",
+        paste0("phase=lease-claim elapsed_ms=", round((proc.time()[["elapsed"]] - started_at) * 1000, 1)),
+        id = id
+      )
     }
-
-    finalize_graph_single_default_state(id, canonical, generation, reason = "startup-ready-value-replay")
-    graph_single_claim_revision(id, reason = "load-ready-value-replay")
     "accepted"
   }
 
-  graph_single_abort_activation <- function(id, reason = "activation-failed") {
+  graph_single_abort_activation <- function(id, reason = "activation-failed", message = NULL,
+                                            type = "warning", generation = isolate(graph_single_editor_generation())) {
     id <- as.character(id %||% "")[1]
+    if (!editor_activation_current(generation)) return(invisible(FALSE))
+    reason <- as.character(reason %||% "activation-failed")[1]
+    if (identical(as.integer(generation), 1L)) {
+      session$sendCustomMessage("startup-load-failed", list(message = reason))
+    }
     graph_single_editor_loading(FALSE)
     graph_single_editor_mode("IDLE")
     graph_single_editor_lease(NULL)
-    graph_single_live_render_wait(NULL)
-    graph_single_render_gate(TRUE)
+    graph_single_render_gate(FALSE)
     editing_graph_id("")
     session$sendCustomMessage(
       "graph-editor-shell-clear",
-      list(selected = id, reason = as.character(reason %||% "activation-abort")[1])
+      list(selected = id, reason = reason, generation = as.integer(generation))
     )
     if (nzchar(id)) {
       # Failure-safe only: release the singleton and keep the last live plot
@@ -211,13 +230,16 @@
     }
     diag_log(
       "GRAPH-SINGLE-EDITOR",
-      paste0("activation aborted; render-gate reopened reason=", as.character(reason %||% "activation-abort")[1]),
+      paste0("activation aborted; Editor unready reason=", reason),
       id = if (nzchar(id)) id else NULL
     )
-    showNotification(
-      "Graph Editorへの反映を完了できませんでした。GraphStateは保持されています。",
-      type = "warning"
-    )
+    if (isTRUE(isolate(project_load_locked())) && identical(id, isolate(active_graph()))) {
+      fail_project_load_lock(id, reason)
+    }
+    if (is.null(message) || !nzchar(as.character(message %||% "")[1])) {
+      message <- "Graph Editorへの反映を完了できませんでした。GraphStateは保持されています。"
+    }
+    showNotification(as.character(message)[1], type = as.character(type %||% "warning")[1])
     invisible(FALSE)
   }
 
@@ -228,7 +250,7 @@
     if (is.null(mod) || !is.function(mod$state)) return(invisible(FALSE))
     st <- tryCatch(isolate(mod$state()), error = function(e) NULL)
     if (!is.list(st) || !is.list(st$plot) || !is.list(st$style)) return(invisible(FALSE))
-    st <- graph_sample_graph_state(st)
+    st <- graph_state_prepare_replay_snapshot(graph_sample_graph_state(st))
     if (!is.list(st)) return(invisible(FALSE))
     graph_single_default_state(st)
     diag_log(
@@ -262,24 +284,105 @@
     tryCatch(unserialize(serialize(st, NULL, version = 3)), error = function(e) st)
   }
 
-  seed_new_graph_default_state <- function(id, reason = "graph-created-default") {
-    id <- as.character(id %||% "")[1]
-    if (!nzchar(id)) return(invisible(FALSE))
+  graph_single_send_client_edit_begin <- function(id, generation, new_graph = FALSE) {
+    session$sendCustomMessage(
+      "graph-client-edit-begin",
+      list(id = as.character(id %||% "")[[1]], generation = as.integer(generation),
+        newGraph = isTRUE(new_graph), single = TRUE)
+    )
+    invisible(TRUE)
+  }
+
+  graph_single_adopt_pristine_startup <- function(id, generation, reason = "startup-pristine-adopt") {
+    id <- as.character(id %||% "")[[1]]
+    meta <- isolate(graph_meta())
+    if (!nzchar(id) || !id %in% meta$id) return(invisible(FALSE))
+    if (isTRUE(isolate(project_load_locked()))) return(invisible(FALSE))
+
+    mod <- ensure_graph_single_editor_module()
     st <- graph_single_default_state_snapshot(reason)
-    if (!is.list(st)) {
-      diag_log("GRAPH-SINGLE-DEFAULT", "default GraphState unavailable; seed skipped", id = id)
+    if (is.null(mod) || !is.list(st)) return(invisible(FALSE))
+    if (is.function(mod$set_activation_generation)) mod$set_activation_generation(generation)
+
+    # Adoption is valid only while the one persistent browser DOM is still the
+    # pristine shell that produced `st`.  A canonical state already present for
+    # this Graph means another owner (for example Project restore) won the race
+    # and must use the ordinary replay path instead.
+    if (cache_has(id) || nzchar(graph_single_owner())) return(invisible(FALSE))
+
+    t0 <- proc.time()[["elapsed"]]
+    graph_single_activation_started_at(t0)
+    graph_single_render_gate(FALSE)
+    graph_single_editor_loading(TRUE)
+    graph_single_editor_mode("PRISTINE-ADOPT")
+    editing_graph_id(id)
+    active_graph(id)
+
+    generation <- as.integer(generation)
+    if (!editor_activation_current(generation)) return(invisible(FALSE))
+    graph_data_document_register_lease(id, generation)
+
+    # Normal replay establishes the browser editing owner before sending any
+    # canonical hydration. PRISTINE-ADOPT must do the same: otherwise the
+    # graph-state-browser-hydrate handler correctly rejects g001 because
+    # ggplotGuiClientEditingGraph is still empty even though generation 1 is
+    # current. This is an owner transition, not an ACK/barrier or extra replay.
+    graph_single_send_client_edit_begin(id, generation, new_graph = TRUE)
+
+    registry_commit(id, st, source = "graph-single-editor-pristine-adopt")
+    canonical <- if (cache_has(id)) cache_get(id) else NULL
+    if (!is.list(canonical)) {
+      graph_single_abort_activation(id, reason = "pristine-adopt-canonical-missing", generation = generation)
       return(invisible(FALSE))
     }
-    registry_commit(id, st, source = reason)
+
+    attached_ok <- tryCatch(
+      is.function(mod$accept_canonical) &&
+        isTRUE(mod$accept_canonical(canonical, reason = reason)),
+      error = function(e) {
+        diag_log("GRAPH-SINGLE-EDITOR", paste0("pristine adopt attach failed: ", conditionMessage(e)), id = id)
+        FALSE
+      }
+    )
+    if (!isTRUE(attached_ok)) {
+      graph_single_abort_activation(id, reason = "pristine-adopt-attach-failed", generation = generation)
+      return(invisible(FALSE))
+    }
+
+    # The Ace DOM is already displaying the captured pristine text, but the
+    # explicit Data Document transport still needs a Graph/generation lease.
+    # Reuse that one transport without hydrating the remaining controls.
+    if (is.function(mod$hydrate_data_document)) {
+      try(mod$hydrate_data_document(canonical, id, generation), silent = TRUE)
+    }
+    if (is.function(mod$hydrate_startup_data_context)) {
+      ok_context <- tryCatch(
+        isTRUE(mod$hydrate_startup_data_context(canonical, id, generation)),
+        error = function(e) {
+          diag_log("GRAPH-SINGLE-EDITOR", paste0("startup data-context hydrate failed: ", conditionMessage(e)), id = id)
+          FALSE
+        }
+      )
+      if (!isTRUE(ok_context)) {
+        graph_single_abort_activation(id, reason = "pristine-adopt-data-context-hydrate-failed", generation = generation)
+        return(invisible(FALSE))
+      }
+    }
+
+    finalize_graph_single_default_state(id, canonical, generation, reason = reason)
+    graph_single_claim_revision(id, reason = reason)
     diag_log(
-      "GRAPH-SINGLE-DEFAULT",
+      "GRAPH-SINGLE-STARTUP-ADOPT",
       paste0(
-        "seeded canonical sample before editor attach plot_type=",
-        as.character(st$plot$type %||% "<NULL>"),
-        " mapping=", as.character((st$mapping %||% list())$x %||% "<NULL>"),
-        "/", as.character((st$mapping %||% list())$y %||% "<NULL>")
+        "generation=", generation,
+        " replay=DATA-CONTEXT",
+        " elapsed_ms=", round((proc.time()[["elapsed"]] - t0) * 1000, 1)
       ),
       id = id
+    )
+    graph_single_release_live_render(
+      id = id, generation = generation, completed_path = "PRISTINE-ADOPT",
+      settle_attempts = 0L, mod = mod
     )
     invisible(TRUE)
   }
@@ -298,6 +401,8 @@
       ui_preseeded = FALSE,
       profile = "full",
       render_gate = graph_single_render_gate,
+      activation_is_current = function(generation) editor_activation_current(generation),
+      state_capture_deferred = graph_project_capture_deferred,
       persistent_shell = TRUE,
       shared_style_library = shared_style_library,
       browser_patch_override = function() {
@@ -333,140 +438,118 @@
           graph_single_claim_revision(owner, reason = "plot-filter")
           graph_single_mark_editor_visit(owner)
           session$sendCustomMessage("graph-browser-patch-rebase", app_json_safe_tree(list(
-            graphId = owner, revision = graph_render_state_revision_value(owner))))
+            graphId = owner, revision = graph_render_state_revision_value(owner),
+            activationGeneration = as.integer(isolate(graph_single_editor_generation())))))
           if (isTRUE(result$render) && is.function(mod_now$release_render_state))
             mod_now$release_render_state(canonical_now, reason = "plot-filter")
         }
         invisible(isTRUE(result$changed))
       },
-      on_data_text_commit = function(text_now) {
-        if (isTRUE(isolate(graph_single_editor_loading()))) return(invisible(FALSE))
-        owner <- as.character(graph_single_owner() %||% "")[1]
-        if (!nzchar(owner) || !cache_has(owner) || !graph_single_ready(owner)) return(invisible(FALSE))
-        if (!graph_single_revision_is_current(owner)) return(invisible(FALSE))
+      on_data_document_patch = function(evt) {
+        if (!is.list(evt)) return(invisible(FALSE))
+        id <- as.character(evt$graphId %||% "")[[1]]
+        generation <- suppressWarnings(as.integer(evt$generation %||% 0L))
+        seq <- suppressWarnings(as.integer(evt$seq %||% 0L))
+        text_now <- as.character(evt$text %||% "")[[1]]
+        if (is.na(text_now)) text_now <- ""
 
-        old <- cache_get(owner)
+        if (!nzchar(id) || !is.finite(generation) || !is.finite(seq) || seq < 1L ||
+            !cache_has(id) || !graph_data_document_lease_matches(id, generation)) {
+          diag_log(
+            "DATA-DOCUMENT-PATCH",
+            paste0("rejected owner/lease generation=", generation, " seq=", seq),
+            id = if (nzchar(id)) id else NULL
+          )
+          return(invisible(FALSE))
+        }
+
+        seq_key <- paste0(id, "@", generation)
+        last_seq <- if (exists(seq_key, envir = graph_data_document_last_seq, inherits = FALSE)) {
+          as.integer(get(seq_key, envir = graph_data_document_last_seq, inherits = FALSE))
+        } else 0L
+        if (seq <= last_seq) {
+          diag_log("DATA-DOCUMENT-PATCH", paste0("ignored duplicate/out-of-order seq=", seq, " last_seq=", last_seq), id = id)
+          return(invisible(FALSE))
+        }
+
+        old <- cache_get(id)
         if (!is.list(old)) return(invisible(FALSE))
-        text_now <- as.character(text_now %||% "")[1]
-        if (identical(text_now, graph_state_scalar(old$data_text, ""))) return(invisible(TRUE))
+        old_doc <- graph_data_document_from_state(old)
+        if (identical(text_now, old_doc$source_text)) {
+          assign(seq_key, seq, envir = graph_data_document_last_seq)
+          return(invisible(TRUE))
+        }
 
-        candidate <- old
         parsed <- tryCatch(graph_parse_pasted_data(text_now), error = function(e) NULL)
-        if (!is.data.frame(parsed) || ncol(parsed) < 1L ||
-            !isTRUE(graph_data_column_name_status(parsed)$valid)) return(invisible(FALSE))
-        candidate$data_text <- text_now
-        candidate$plot_filter <- graph_plot_filter_default()
-        reconciled <- graph_reconcile_mapping_after_data_change(old, candidate)
-        candidate <- reconciled$state
+        valid <- is.data.frame(parsed) && ncol(parsed) >= 1L &&
+          isTRUE(graph_data_column_name_status(parsed)$valid)
+        parse_error <- if (isTRUE(valid)) "" else
+          "データを読み込めませんでした。列名と区切りを確認してください。"
+        source_revision <- as.integer(old_doc$source_revision %||% 0L) + 1L
+        data_changed <- isTRUE(valid) && !identical(text_now, graph_state_scalar(old$data_text, ""))
 
-        result <- graph_settings_manager_commit_exact(owner, candidate, source = "data-text-transport")
-        if (!isTRUE(result$changed) && !isTRUE(result$render)) return(invisible(TRUE))
-
-        canonical_now <- cache_get(owner)
-        if (!is.list(canonical_now)) return(invisible(FALSE))
-
-        # Keep the module attachment, dependent Mapping choices and the browser
-        # patch revision on the same accepted canonical state before rendering.
-        if (exists("graph_browser_patch_epoch", mode = "function", inherits = TRUE)) {
-          graph_browser_patch_epoch(as.integer(isolate(graph_browser_patch_epoch()) %||% 0L) + 1L)
-        }
-        mod_now <- graph_single_mod()
-        if (!is.null(mod_now) && is.function(mod_now$accept_canonical)) {
-          try(mod_now$accept_canonical(canonical_now, reason = "data-text-transport", seed_render = FALSE), silent = TRUE)
-        }
-        if (!is.null(mod_now) && is.function(mod_now$refresh_browser_hydration)) {
-          try(mod_now$refresh_browser_hydration(canonical_now, graph_id = owner), silent = TRUE)
-        }
-
-        graph_single_claim_revision(owner, reason = "data-text-transport")
-        graph_single_mark_editor_visit(owner)
-        session$sendCustomMessage(
-          "graph-browser-patch-rebase",
-          app_json_safe_tree(list(
-            graphId = owner,
-            revision = graph_render_state_revision_value(owner)
-          ))
+        candidate <- graph_data_document_with_source(
+          old, text_now, source_revision,
+          parsed = if (isTRUE(valid)) parsed else NULL,
+          parse_error = parse_error
         )
-
-        if (isTRUE(result$render) && !is.null(mod_now) && is.function(mod_now$release_render_state)) {
-          try(mod_now$release_render_state(canonical_now, reason = "data-text-transport"), silent = TRUE)
+        if (isTRUE(data_changed)) {
+          candidate$plot_filter <- graph_plot_filter_default()
+          candidate <- graph_reconcile_mapping_after_data_change(old, candidate)$state
         }
 
-        changed_keys <- as.character(reconciled$changed_keys %||% character(0))
-        plan <- reconciled$plan
-        dims <- if (is.list(plan) && is.data.frame(plan$raw)) {
-          paste0(" rows=", nrow(plan$raw), " cols=", ncol(plan$raw))
-        } else " parse=invalid"
+        result <- graph_settings_manager_commit_exact(id, candidate, source = "data-document")
+        assign(seq_key, seq, envir = graph_data_document_last_seq)
+        if (!isTRUE(result$changed)) return(invisible(TRUE))
+
+        # Canonical state may be updated after the user has already switched to
+        # another Graph. Only the owner named by the payload is changed; dormant
+        # Graphs are never materialized in hidden editors.
+        current_owner <- as.character(graph_single_owner() %||% "")[[1]]
+        if (exists(id, envir = graph_single_editor_visit_cache, inherits = FALSE)) {
+          rm(list = id, envir = graph_single_editor_visit_cache)
+        }
+        if (identical(current_owner, id) &&
+            identical(as.integer(isolate(graph_single_editor_generation()) %||% -1L), generation)) {
+          # A valid Data schema change can invalidate Mapping/control topology.
+          # Advance the existing browser working-copy epoch before publishing the
+          # reconciled canonical state, just as other topology-changing browser
+          # patches do. This is not a second Data transport path.
+          if (isTRUE(data_changed) && exists("graph_browser_patch_epoch", mode = "function", inherits = TRUE)) {
+            graph_browser_patch_epoch(as.integer(isolate(graph_browser_patch_epoch()) %||% 0L) + 1L)
+          }
+          canonical_now <- cache_get(id)
+          mod_now <- graph_single_mod()
+          if (is.list(canonical_now) && !is.null(mod_now)) {
+            if (is.function(mod_now$accept_canonical))
+              try(mod_now$accept_canonical(canonical_now, reason = "data-document", seed_render = FALSE), silent = TRUE)
+            if (isTRUE(data_changed) && is.function(mod_now$refresh_browser_hydration))
+              try(mod_now$refresh_browser_hydration(canonical_now, graph_id = id), silent = TRUE)
+            graph_single_claim_revision(id, reason = "data-document")
+            graph_single_mark_editor_visit(id)
+            session$sendCustomMessage(
+              "graph-browser-patch-rebase",
+              app_json_safe_tree(list(graphId = id, revision = graph_render_state_revision_value(id),
+                activationGeneration = generation))
+            )
+            if (isTRUE(result$render) && is.function(mod_now$release_render_state))
+              mod_now$release_render_state(canonical_now, reason = "data-document")
+          }
+        }
+
         diag_log(
-          "DATA-TEXT-COMMIT",
+          "DATA-DOCUMENT-COMMIT",
           paste0(
-            "chars=", nchar(text_now, type = "chars"), dims,
-            if (length(changed_keys)) paste0(" mapping_resolved={", paste(changed_keys, collapse = ","), "}") else "",
+            "generation=", generation, " seq=", seq,
+            " source_revision=", source_revision,
+            " valid=", isTRUE(valid),
+            " chars=", nchar(text_now, type = "chars"),
+            if (isTRUE(valid)) paste0(" rows=", nrow(parsed), " cols=", ncol(parsed)) else " draft-only=TRUE",
             " render=", isTRUE(result$render)
           ),
-          id = owner
+          id = id
         )
         invisible(TRUE)
-      },
-      statistics_plot_preview = function() {
-        # Read-only Statistics Plot: create a temporary vector snapshot from
-        # the one persistent Editor. It is intentionally NOT published into a
-        # Graph preview cache; GraphState remains the only Graph authority.
-        meta <- graph_meta()
-        selected <- as.character(input$graph_client_selected %||% "")[1]
-        if (!nzchar(selected) || !selected %in% meta$id) {
-          selected <- as.character(active_graph() %||% "")[1]
-        }
-        if (!nzchar(selected) || !selected %in% meta$id) return(NULL)
-
-        nm <- meta$name[match(selected, meta$id)]
-        if (!length(nm) || is.na(nm)) nm <- selected
-        mod_now <- graph_single_mod()
-        owner_now <- graph_single_owner()
-        if (is.null(mod_now) || !identical(selected, owner_now) ||
-            !isTRUE(tryCatch(isolate(mod_now$ready()), error = function(e) FALSE))) {
-          return(list(id = selected, name = as.character(nm), svg = "", width = 600, height = 600))
-        }
-
-        comp <- tryCatch(
-          if (is.function(mod_now$figure_components)) isolate(mod_now$figure_components()) else NULL,
-          error = function(e) NULL
-        )
-        p_now <- comp$plot %||% tryCatch(
-          if (is.function(mod_now$figure_plot)) isolate(mod_now$figure_plot()) else isolate(mod_now$plot()),
-          error = function(e) NULL
-        )
-        ex_now <- comp$meta %||% tryCatch(
-          if (is.function(mod_now$figure_meta)) isolate(mod_now$figure_meta()) else isolate(mod_now$export()),
-          error = function(e) NULL
-        )
-        state_now <- if (cache_has(selected)) cache_get(selected) else NULL
-        rec <- tryCatch(
-          graph_preview_record_from_plot(
-            id = selected,
-            state = state_now,
-            plot = p_now,
-            export_meta = ex_now,
-            render_revision = if (is.function(mod_now$render_revision)) isolate(mod_now$render_revision()) else NA_integer_,
-            reason = "statistics-temporary"
-          ),
-          error = function(e) NULL
-        )
-        if (!is.list(rec) || !nzchar(rec$svg %||% "")) {
-          return(list(id = selected, name = as.character(nm), svg = "", width = 600, height = 600))
-        }
-        vm <- rec$meta %||% list()
-        w <- suppressWarnings(as.numeric(vm$width %||% vm$plot_width_px %||% 600))
-        h <- suppressWarnings(as.numeric(vm$height %||% vm$plot_height_px %||% 600))
-        if (!is.finite(w) || w <= 0) w <- 600
-        if (!is.finite(h) || h <= 0) h <- 600
-        list(
-          id = selected,
-          name = as.character(nm),
-          svg = graph_svg_viewport_text(rec$svg %||% ""),
-          width = w,
-          height = h
-        )
       },
       on_shared_style_library_change = function(library_now) {
         owner <- graph_single_owner()
@@ -500,7 +583,7 @@
         if (!nzchar(owner) || !is.list(state_now)) return(invisible(NULL))
 
         canonical_before <- if (cache_has(owner)) cache_get(owner) else NULL
-        # ui_snapshot.panels has a dedicated trusted browser transaction.
+        # ui_snapshot.panels has a revisioned browser patch owner.
         # Ordinary live GraphState publication must carry the canonical panel
         # record, never a transient transport container from the module state.
         state_now <- graph_state_with_ui_snapshot(
@@ -519,13 +602,9 @@
       }
     )
     graph_single_editor_module(mod)
-    # Do not capture the reusable new-Graph default here. At moduleServer return
-    # the persistent controls exist on the server, but their data-dependent
-    # Mapping defaults (X/Y/ID etc.) have not completed the first Shiny flush.
-    # R/server/graph/server_graph_workspace_runtime.R performs the one authoritative capture
-    # on startup-post-bind. Capturing here used to make that later capture a
-    # no-op because capture_graph_single_default_state() is intentionally
-    # write-once.
+    # The caller captures the reusable default as soon as this API returns.
+    # graph_sample_graph_state() deterministically supplies data-dependent
+    # Data / reshape / Mapping values; Style / Label remain module-owned.
     mod
   }
 
@@ -533,6 +612,9 @@
     owner <- graph_single_owner()
     mod <- graph_single_mod()
     if (!nzchar(owner) || is.null(mod) || isTRUE(isolate(graph_single_editor_loading()))) return(invisible(FALSE))
+    if (is.function(mod$flush_display_label_inputs)) {
+      mod$flush_display_label_inputs()
+    }
     st <- tryCatch(if (is.function(mod$state)) isolate(mod$state()) else NULL, error = function(e) NULL)
     if (!is.list(st)) return(invisible(FALSE))
     changed <- graph_single_publish_state(owner, st, source = paste0("graph-single-editor-", reason))
@@ -540,7 +622,8 @@
     invisible(TRUE)
   }
 
-  show_graph_single_editor <- function(id) {
+  show_graph_single_editor <- function(id, generation = isolate(graph_single_editor_generation())) {
+    if (!editor_activation_current(generation, id)) return(invisible(FALSE))
     canonical <- if (cache_has(id)) cache_get(id) else NULL
     patch_seed <- if (exists("graph_browser_patch_client_state", mode = "function", inherits = TRUE)) {
       tryCatch(graph_browser_patch_client_state(id), error = function(e) NULL)
@@ -549,12 +632,14 @@
       "graph-client-edit-ready",
       app_json_safe_tree(list(
         id = id,
+        generation = as.integer(generation),
         single = TRUE,
         uiPanels = graph_ui_panels_for_id(id, canonical),
         browserPatch = patch_seed
       ))
     )
     session$onFlushed(function() {
+      if (!editor_activation_current(generation, id)) return(invisible(NULL))
       session$sendCustomMessage("refresh-visible-graph-ui", list(id = graph_single_editor_id))
     }, once = TRUE)
     invisible(TRUE)
@@ -563,51 +648,65 @@
   graph_single_release_live_render <- function(id, generation, completed_path, settle_attempts, mod) {
     id <- as.character(id %||% "")[1]
     generation <- as.integer(generation %||% -1L)
-
-    # Latest-selection-wins at canonical acceptance. An intermediate target that
-    # has already been superseded never needs a plot render.
-    pending <- isolate(graph_single_pending_target())
-    pending_id <- if (is.list(pending)) as.character(pending$id %||% "")[1] else ""
-    graph_single_live_render_wait(NULL)
+    if (!editor_activation_current(generation, id)) {
+      diag_log("EDITOR-ACTIVATION-STALE-DROP", paste0("generation=", generation,
+        " phase=release"), id = id)
+      return(invisible(FALSE))
+    }
+    # Project displaying phase retains the existing post-flush render boundary.
+    project_ready <- isTRUE(isolate(project_load_locked())) && identical(id, isolate(active_graph()))
+    if (project_ready) graph_project_capture_owner(list(id = id, generation = generation))
     graph_single_editor_loading(FALSE)
     graph_single_editor_mode("READY")
     graph_single_mark_editor_visit(id, generation = generation)
-
-    if (nzchar(pending_id) && !identical(pending_id, id)) {
-      diag_log(
-        "GRAPH-SINGLE-EDITOR",
-        paste0("superseded after canonical acceptance; live render skipped pending=", pending_id,
-               " generation=", generation),
-        id = id
-      )
-      return(invisible(TRUE))
+    show_graph_single_editor(id, generation)
+    if (isTRUE(project_ready)) {
+      # Finish server restore and publish the displaying phase. The next flush
+      # opens rendering while the browser remains inert until the new plot image
+      # loads. Overlay visibility no longer owns the render gate.
+      complete_project_load_lock("selected Graph READY in persistent Editor")
+      session$onFlushed(function() {
+        if (editor_activation_current(generation, id) &&
+            !isTRUE(isolate(graph_single_editor_loading()))) {
+          graph_single_render_gate(TRUE)
+          diag_log("PROJECT-PROGRESS", "display-phase render-gate OPEN", id = id)
+        }
+      }, once = TRUE)
+    } else {
+      graph_single_render_gate(TRUE)
     }
-
-    # there is no cached/live preview lifecycle and no browser image ACK.
-    # Once canonical values are accepted, expose the persistent controls and open
-    # the render gate. Shiny's existing plotOutput then publishes the ggplot into
-    # the same DOM when ready; the previous image may remain visible meanwhile.
-    show_graph_single_editor(id)
-    graph_single_render_gate(TRUE)
     diag_log(
-      "GRAPH-SINGLE-EDITOR",
+      "EDITOR-ACTIVATION-READY",
       paste0("READY live-only generation=", generation, " path=", completed_path,
-             " render-gate=OPEN browser-image-ack=NONE"),
+             " render-gate=", if (isTRUE(project_ready)) "DEFERRED-AFTER-DISPLAY-PHASE" else
+               "OPEN",
+             " browser-image-ack=NONE"),
       id = id
     )
+    started_at <- suppressWarnings(as.numeric(isolate(graph_single_activation_started_at()) %||% NA_real_))
+    if (is.finite(started_at)) {
+      diag_log(
+        "GRAPH-SINGLE-REPLAY-TIMING",
+        paste0("phase=ready elapsed_ms=", round((proc.time()[["elapsed"]] - started_at) * 1000, 1)),
+        id = id
+      )
+    }
     invisible(TRUE)
   }
 
   # normal Graph switches no longer test structural
   # compatibility. Every canonical state with a UI snapshot uses state replay.
 
-  graph_single_load <- function(id, new_graph = FALSE) {
+  graph_single_load <- function(id, new_graph = FALSE, generation, full_replay = FALSE) {
     id <- as.character(id %||% "")[1]
+    generation <- as.integer(generation)
+    if (!editor_activation_current(generation)) return(invisible(FALSE))
     meta <- isolate(graph_meta())
     if (!nzchar(id) || !id %in% meta$id) return(invisible(FALSE))
 
     old_id <- graph_single_owner()
     mod <- ensure_graph_single_editor_module()
+    if (is.function(mod$set_activation_generation)) mod$set_activation_generation(generation)
 
     visit <- graph_single_editor_visit_cache[[id]]
     target_state_revision <- as.integer(graph_state_revision_value(id) %||% 0L)
@@ -628,26 +727,20 @@
     if (identical(old_id, id) && graph_single_ready(id) && !isTRUE(isolate(graph_single_editor_loading()))) {
       diag_log("GRAPH-SINGLE-EDITOR", "reuse-hit", id = id)
       active_graph(id)
-      show_graph_single_editor(id)
+      show_graph_single_editor(id, generation)
+      if (isTRUE(isolate(project_load_locked())) && identical(id, isolate(active_graph()))) {
+        complete_project_load_lock("selected Graph already READY in persistent Editor")
+      }
       return(invisible(TRUE))
     }
 
-    # switch editor ownership before publishing the
-    # previous Graph commit. registry_commit() can trigger a preview-catalog
-    # update; if editing_graph_id still points at the old Graph, that catalog
-    # can arrive after graph-client-edit-begin and visually snap the shell back
-    # to the previous owner. Capture the old editor state first, then make the
-    # new owner canonical, then commit the captured old state explicitly.
-    target_had_cache <- cache_has(id)
-    target_state_early <- if (isTRUE(target_had_cache)) cache_get(id) else NULL
-
-    previous_editor_state <- NULL
+    # Browser patch/Data leases are flushed before selection. Ordinary native
+    # edits commit at their own immediate boundary, never from switch readback.
+    target_state_early <- if (cache_has(id)) cache_get(id) else NULL
     if (nzchar(old_id) && !identical(old_id, id)) {
-      previous_editor_state <- tryCatch(
-        if (is.function(mod$state)) isolate(mod$state()) else NULL,
-        error = function(e) NULL
-      )
-
+      diag_log("GRAPH-SINGLE-EDITOR",
+        paste0("commit previous=", old_id, " changed=FALSE canonical_current=",
+               graph_single_revision_is_current(old_id)), id = old_id)
     }
 
     editing_graph_id(id)
@@ -659,92 +752,44 @@
     graph_single_editor_mode("REPLAY")
     diag_log("GRAPH-SINGLE-EDITOR", "render-gate CLOSED for Graph switch transaction", id = id)
 
-    if (nzchar(old_id) && !identical(old_id, id) && is.list(previous_editor_state)) {
-      changed <- graph_single_publish_state(old_id, previous_editor_state, source = "graph-single-editor-switch")
-      diag_log(
-        "GRAPH-SINGLE-EDITOR",
-        paste0("commit previous=", old_id, " changed=", isTRUE(changed), " owner_now=", id),
-        id = old_id
-      )
-    }
-    gen <- as.integer(isolate(graph_single_editor_generation()) %||% 0L) + 1L
-    graph_single_editor_generation(gen)
-    graph_single_live_render_wait(NULL)
-    session$sendCustomMessage("graph-client-edit-begin", list(id = id, newGraph = isTRUE(new_graph), single = TRUE))
+    gen <- generation
+    graph_single_activation_started_at(proc.time()[["elapsed"]])
+    graph_single_cold_diag$active <- isTRUE(isolate(project_load_locked())) && identical(id, isolate(active_graph()))
+    graph_single_cold_diag$id <- id
+    graph_single_cold_diag$generation <- gen
+    graph_single_cold_diag$started_at <- proc.time()[["elapsed"]]
+    graph_single_cold_diag$last_at <- graph_single_cold_diag$started_at
+    graph_single_cold_diag_mark("activation-start")
+    graph_data_document_register_lease(id, gen)
+    graph_single_send_client_edit_begin(id, gen, new_graph = isTRUE(new_graph))
     diag_log("GRAPH-SINGLE-EDITOR", paste0("load-request previous=", if (nzchar(old_id)) old_id else "<none>", " mode=REPLAY"), id = id)
 
-    # "pristine" is defined by missing canonical GraphState,
-    # not by the caller's new_graph flag. This includes the startup g001, which
-    # already exists in graph_meta() but has never owned the Editor. Never fall
-    # through to an incidental shell-state commit for such a Graph.
+    # Every normal activation is canonical-state first. Startup adoption owns
+    # the one pristine browser shell, create_graph() seeds new Graphs before
+    # selection, and Project restore stages all GraphStates before activation.
+    # A missing canonical state is therefore an error, not a reason to infer or
+    # seed state from the current browser DOM.
     st <- target_state_early
     if (!is.list(st)) {
-      # Only snapshot defaults while no Graph owns the shell. Once an owner
-      # exists, mod$state() is that Graph and must never become the default.
-      if (!nzchar(old_id)) capture_graph_single_default_state("load-pristine")
-      st <- isolate(graph_single_default_state())
-    }
-    # On the very first activation, the shell is still pristine. If the earlier
-    # post-bind capture did not fire, this is the last safe moment to snapshot
-    # defaults before any Graph owns the editor.
-    if (!is.list(st) && !nzchar(old_id)) {
-      candidate <- tryCatch(if (is.function(mod$state)) isolate(mod$state()) else NULL, error = function(e) NULL)
-      candidate <- graph_sample_graph_state(candidate)
-      if (is.list(candidate)) {
-        graph_single_default_state(candidate)
-        st <- candidate
-        diag_log(
-          "GRAPH-SINGLE-EDITOR",
-          paste0(
-            "built sample template at first activation mapping=",
-            as.character((candidate$mapping %||% list())$x %||% "<NULL>"),
-            "/", as.character((candidate$mapping %||% list())$y %||% "<NULL>")
-          ),
-          id = id
-        )
-      }
-    }
-
-    if (!is.list(st)) {
-      graph_single_editor_loading(FALSE)
-      graph_single_editor_mode("IDLE")
-      graph_single_live_render_wait(NULL)
-      graph_single_render_gate(TRUE)
-      editing_graph_id("")
-      diag_log("GRAPH-SINGLE-EDITOR", "default-state-missing; activation aborted; render-gate reopened", id = id)
-      showNotification("新規Graphの初期状態を取得できませんでした。再度Graphを選択してください。", type = "error")
-      publish_client_graph_catalog(reason = "editor-default-state-missing", selected = id)
-      return(invisible(FALSE))
-    }
-
-    # The Editor DOM is already bootstrapped. Legacy/current GraphState is
-    # normalized into a replayable UI snapshot in R before touching browser
-    # controls; Project load never hydrates the Editor to discover choices.
-    prepared_st <- graph_state_prepare_replay_snapshot(st)
-    if (is.list(prepared_st) && !identical(prepared_st, st)) {
-      st <- prepared_st
-      registry_commit(id, st, source = "graph-ui-snapshot-preflight")
-      diag_log("GRAPH-STATE-REPLAY", "prepared canonical replay state (UI/style migration)", id = id)
-    } else if (is.list(prepared_st)) {
-      st <- prepared_st
-    }
-
-    pristine_target <- !isTRUE(target_had_cache)
-    if (isTRUE(pristine_target)) {
-      graph_single_default_state(st)
-      registry_commit(id, st, source = "graph-single-editor-pristine-seed")
-      diag_log(
-        "GRAPH-SINGLE-EDITOR",
-        "seeded pristine GraphState before editor attach",
-        id = id
+      graph_single_abort_activation(
+        id,
+        reason = "canonical-state-missing",
+        message = "GraphStateが見つからないためEditorへ反映できませんでした。",
+        type = "error", generation = gen
       )
+      return(invisible(FALSE))
     }
 
     replay_started <- FALSE
     if (is.function(mod$replay_state)) {
       graph_single_editor_mode("REPLAY")
       replay_started <- isTRUE(mod$replay_state(st, transaction = list(
-        id = id, generation = gen, new_graph = isTRUE(new_graph), revisit_fresh = isTRUE(visit_fresh)
+        id = id, generation = gen, new_graph = isTRUE(new_graph), revisit_fresh = isTRUE(visit_fresh),
+        full_replay = isTRUE(full_replay) || isTRUE(isolate(project_load_locked())),
+        cold_replay_diag = isTRUE(isolate(project_load_locked())),
+        on_complete = function(completed_generation) {
+          graph_single_complete_replay(id, mod, gen, completed_generation)
+        }
       )))
     }
 
@@ -760,58 +805,58 @@
       # After the one persistent Editor has been created, Graph ownership is
       # value-only. Do not rebuild/hydrate the DOM for Project load or legacy
       # state; a failed replay is an activation error, not a restore request.
-      graph_single_editor_loading(FALSE)
-      graph_single_editor_mode("IDLE")
-      graph_single_live_render_wait(NULL)
-      graph_single_render_gate(TRUE)
-      editing_graph_id("")
-      diag_log("GRAPH-SINGLE-EDITOR", "value replay unavailable; activation aborted", id = id)
-      session$sendCustomMessage("graph-editor-shell-clear", list(selected = id, reason = "replay-unavailable"))
+      graph_single_abort_activation(id, reason = "replay-unavailable", generation = gen)
       return(invisible(FALSE))
     }
     invisible(TRUE)
   }
 
-  observe({
-    gen <- graph_single_editor_generation()
-    if (!isTRUE(graph_single_editor_loading())) return()
-    id <- graph_single_owner()
-    mod <- graph_single_mod()
-    if (!nzchar(id) || is.null(mod)) return()
-
-    # State replay already owns the one browser completion barrier. Once it is
-    # inactive, do not read the UI back, compare it with canonical state, retry,
-    # or reconcile. The loaded GraphState is authoritative; any invalid plot
-    # combination is handled by the ordinary Plot error surface.
-    if (is.function(mod$replay_active) && isTRUE(tryCatch(mod$replay_active(), error = function(e) FALSE))) return()
-    replay_error <- if (is.function(mod$replay_error)) {
-      tryCatch(as.character(mod$replay_error() %||% "")[1], error = function(e) "")
-    } else ""
-    if (nzchar(replay_error)) {
-      graph_single_abort_activation(id, reason = paste0("state-replay-transport-error: ", replay_error))
-      return()
+  # The replay transport owns completion as well as dispatch. Direct completion
+  # removes the second reactive/flush turn between release and lease claim;
+  # there is deliberately no observer, timeout, or reconciliation fallback.
+  graph_single_complete_replay <- function(id, mod, gen, completed_generation) {
+    if (!editor_activation_current(gen, id)) {
+      diag_log("EDITOR-ACTIVATION-STALE-DROP", paste0("generation=", gen,
+        " phase=transport-complete"), id = id)
+      return(invisible(FALSE))
     }
-    if (!isTRUE(tryCatch(mod$ready(), error = function(e) FALSE))) return()
+    if (!isTRUE(isolate(graph_single_editor_loading()))) return(invisible(FALSE))
+    graph_single_cold_diag_mark(
+      "transport-complete-enter",
+      paste0("completed_generation=", completed_generation)
+    )
+    ready_now <- graph_single_cold_diag_measure("load_ready_value-read", function() {
+      # Project restore now starts from an onFlushed callback so its phase can
+      # reach the browser before synchronous registry work. That callback has
+      # no reactive consumer; evaluate the module's reactive READY value in an
+      # isolated context rather than treating a missing context as not ready.
+      isTRUE(tryCatch(isolate(mod$ready()), error = function(e) FALSE))
+    })
+    if (!isTRUE(ready_now)) {
+      graph_single_abort_activation(id, reason = "state-replay-transport-not-ready", generation = gen)
+      return(invisible(FALSE))
+    }
+    graph_single_cold_diag_mark("load_ready_value-true")
 
     completed_path <- as.character(isolate(graph_single_editor_mode()) %||% "REPLAY")[1]
     acceptance <- graph_single_accept_loaded_state(id, mod, NULL, gen)
     if (identical(acceptance, "failed")) {
-      graph_single_abort_activation(id, reason = "canonical-state-missing")
-      return()
+      graph_single_abort_activation(id, reason = "canonical-state-missing", generation = gen)
+      return(invisible(FALSE))
     }
 
     accepted_state <- if (cache_has(id)) cache_get(id) else NULL
-    attached_ok <- tryCatch(
+    attached_ok <- graph_single_cold_diag_measure("canonical-attach", function() tryCatch(
       is.list(accepted_state) && is.function(mod$accept_canonical) &&
         isTRUE(mod$accept_canonical(accepted_state, reason = "outer-ready-accept")),
       error = function(e) {
         diag_log("GRAPH-SINGLE-EDITOR", paste0("accepted canonical attach failed: ", conditionMessage(e)), id = id)
         FALSE
       }
-    )
+    ))
     if (!isTRUE(attached_ok)) {
-      graph_single_abort_activation(id, reason = "accepted-canonical-attach-failed")
-      return()
+      graph_single_abort_activation(id, reason = "accepted-canonical-attach-failed", generation = gen)
+      return(invisible(FALSE))
     }
 
     graph_single_release_live_render(
@@ -821,7 +866,9 @@
       settle_attempts = 0L,
       mod = mod
     )
-  }, priority = 100)
+    graph_single_cold_diag_mark("transport-complete-exit")
+    invisible(TRUE)
+  }
 
 
   # normal Graph renders are live-only. Do not generate or

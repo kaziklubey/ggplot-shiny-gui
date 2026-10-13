@@ -66,6 +66,7 @@
   # One event channel owns all dynamic rules. Native controls are deliberately
   # unbound to Shiny; stale DOM from an earlier Graph cannot update the owner.
   output$plot_filter_ui <- renderUI({
+    graph_cold_diag_measure("output$plot_filter_ui", function() {
     if (!graph_editor_profile_has(editor_profile, "editable_data")) return(NULL)
     base <- attached_state_seed()
     if (!is.list(base)) return(NULL)
@@ -122,7 +123,7 @@
         ))
     })
     available <- setdiff(names(d), vapply(f$rules, `[[`, "", "column"))
-    tags$div(class = "plot-filter-root", `data-filter-generation` = generation,
+      tags$div(class = "plot-filter-root", `data-filter-generation` = generation,
       `data-filter-input` = session$ns("plot_filter_event"),
       tags$label(tags$input(type = "checkbox", `data-filter-action` = "enabled",
         checked = if (f$enabled) "checked" else NULL), "フィルターを使用"),
@@ -134,10 +135,9 @@
         controls,
         if (!length(f$rules)) tags$p(class = "help-block", "列の条件を追加してください。")),
       tags$script(src = paste0("plot_filter.js?v=", utils::URLencode(APP_ASSET_VERSION, reserved = TRUE)))
-    )
+      )
+    })
   })
-  outputOptions(output, "plot_filter_ui", suspendWhenHidden = FALSE)
-
   observeEvent(input$plot_filter_event, {
     e <- input$plot_filter_event
     if (!is.list(e) || isTRUE(graph_state_replay_active()) ||
