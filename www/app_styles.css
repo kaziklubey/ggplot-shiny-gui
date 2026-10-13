@@ -96,11 +96,28 @@
 .project-load-overlay.failed .project-load-reload { display: inline-block; }
 
 .project-manager {
+  position: relative;
   border: 1px solid #d8d8d8;
   border-radius: 9px;
   padding: 10px 12px;
   margin-bottom: 12px;
   background: #fafafa;
+}
+
+.app-author-comment-launch {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  z-index: 2;
+}
+.project-manager > .top-row:first-of-type {
+  padding-right: 132px;
+}
+.app-author-comment-dialog .modal-body {
+  line-height: 1.65;
+}
+.app-author-comment-dialog .modal-body > :last-child {
+  margin-bottom: 0;
 }
 
 .top-row {
@@ -1494,11 +1511,32 @@
   margin-left: auto;
   margin-right: auto;
 }
-/* The plot device keeps its true pixel geometry.
-   If the available browser width is narrower, JS scales the whole plot
-   uniformly with transform:scale(), so text/points/axes never stretch. */
-.plot-panel .shiny-plot-output {
+/* The output and panel keep native device geometry. The canvas owns the
+   display transform; the spacer alone reserves its scaled layout footprint. */
+.graph-preview-viewport {
+  width: 100%;
+  overflow: hidden;
+}
+.graph-preview-scale-spacer {
+  width: calc(var(--plot-device-width, 600px) + 26px);
+  height: calc(var(--plot-device-height, 600px) + 26px);
+  margin-left: auto;
+  margin-right: auto;
+  position: relative;
+}
+.graph-preview-scale-canvas {
+  width: calc(var(--plot-device-width, 600px) + 26px);
+  height: calc(var(--plot-device-height, 600px) + 26px);
   transform-origin: top left;
+}
+.graph-preview-scale-canvas .plot-panel {
+  width: calc(var(--plot-device-width, 600px) + 26px);
+  max-width: none;
+  margin: 0;
+}
+.plot-panel .shiny-plot-output {
+  width: var(--plot-device-width, 600px) !important;
+  height: var(--plot-device-height, 600px) !important;
   flex: 0 0 auto;
 }
 
@@ -1682,6 +1720,56 @@
   padding: 9px 10px 3px 10px;
 }
 
+/* Graph workspace section ownership is workspace-global. The native Shiny
+   tabset remains mounted for input binding + pane activation, but its nav is
+   internal-only; the outer Graph workspace bar is the single visible nav. */
+.graph-internal-main-tabs > .tabbable > .nav-tabs,
+.graph-internal-main-tabs > .nav-tabs {
+  display: none !important;
+}
+.graph-internal-main-tabs > .tabbable,
+.graph-internal-main-tabs > .tabbable > .tab-content {
+  min-width: 0;
+  width: 100%;
+}
+
+/* Pane layout contract: Plot and Statistics retain the Bootstrap 4/8 shell.
+   Data View is a one-column information pane and owns the complete Editor
+   content track. The table remains the existing output; only its pane geometry
+   changes. */
+.graph-module-full.graph-main-data-view > .row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+.graph-module-full.graph-main-data-view > .row > .col-sm-4 {
+  display: contents;
+}
+.graph-module-full.graph-main-data-view > .row > .col-sm-8 {
+  grid-column: 1 / -1;
+  width: 100%;
+  min-width: 0;
+}
+.graph-data-view-pane {
+  width: 100%;
+  min-width: 0;
+}
+.graph-data-view-table {
+  width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+}
+.graph-data-view-table .shiny-html-output {
+  width: 100%;
+  min-width: 0;
+}
+.graph-data-view-table table {
+  display: inline-table;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: none;
+  table-layout: auto;
+}
+
 .graph-statistics-header {
   margin-bottom: 14px;
 }
@@ -1694,6 +1782,34 @@
 }
 .statistics-result-card {
   background: #fafafa;
+}
+/* Statistics sidebar plot preview: keep the device-sized SVG inside the
+   Bootstrap sidebar. The SVG retains its native viewBox and is scaled only
+   for browser display, so no artwork/legend is clipped or re-rendered. */
+.statistics-sidebar-plot-card {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+.statistics-plot-preview-stage {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+.statistics-plot-preview-svg {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+.statistics-plot-preview-svg > svg {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
 }
 .statistics-sidebar-fixed-wrap {
   position: sticky;

@@ -1,4 +1,18 @@
 
+// One browser-owned Project-open lifecycle. `opening` starts synchronously in
+// the user's click that opens the native file picker; `selected` begins in the
+// capture-phase file change and remains through Project restore. Keeping this
+// as one state avoids contradictory open/selection booleans.
+window.ggplotGuiProjectOpenState = 'idle';
+
+function ggplotGuiSetProjectOpenState(next, source) {
+  var previous = String(window.ggplotGuiProjectOpenState || 'idle');
+  next = String(next || 'idle');
+  if (previous === next) return;
+  window.ggplotGuiProjectOpenState = next;
+  console.info('PROJECT-OPEN-STATE ' + previous + ' -> ' + next + ' source=' + String(source || ''));
+}
+
 // +: report the actually loaded client asset version. Static browser
 // caching previously allowed a new R server to run against an older app_client.js,
 // which broke transaction ACKs and left the Editor permanently HYDRATING.
@@ -22,6 +36,18 @@
     }
   }, {once: true});
 })();
+
+// Open another browser window on the same Shiny origin. The server process
+// remains the same, while Shiny creates an independent session for the new
+// window. Keeping the same origin also preserves the existing IndexedDB /
+// FileSystemHandle storage namespace used by Project save destinations.
+document.addEventListener('click', function(ev) {
+  var btn = ev.target && ev.target.closest ? ev.target.closest('#open_project_window_all') : null;
+  if (!btn) return;
+  ev.preventDefault();
+  var target = window.location.origin + window.location.pathname + window.location.search;
+  window.open(target, '_blank', 'noopener');
+});
 
 // structured category ordering. Buttons publish only a role/variable/index
 // transition; category labels themselves never travel through delimited text.
@@ -114,6 +140,32 @@ function fitFigurePreviewCanvas() {
   });
 }
 
+// Figure is a dormant workspace. Graph/server output delivery must not enqueue
+// Figure layout work while its tab is hidden. When Figure is visible, collapse
+// an output burst to one browser frame instead of scheduling one timer per
+// shiny:value / shiny:visualchange event.
+var ggplotGuiFigureFitFrame = 0;
+function ggplotGuiFigureWorkspaceVisible() {
+  var tab = document.querySelector('#workspace_main_tab a[data-value="figure_workspace"].active, ' +
+    '#workspace_main_tab li.active > a[data-value="figure_workspace"]');
+  var panel = document.querySelector('#workspace_main_tab .tab-pane[data-value="figure_workspace"], ' +
+    '.tab-pane[data-value="figure_workspace"]');
+  if (!tab && !panel) return false;
+  if (panel) {
+    var cs = window.getComputedStyle ? window.getComputedStyle(panel) : null;
+    if (panel.offsetParent === null || (cs && (cs.display === 'none' || cs.visibility === 'hidden'))) return false;
+  }
+  return !!tab || !!panel;
+}
+function ggplotGuiScheduleFigureFit(force) {
+  if (!force && !ggplotGuiFigureWorkspaceVisible()) return;
+  if (ggplotGuiFigureFitFrame) return;
+  ggplotGuiFigureFitFrame = window.requestAnimationFrame(function() {
+    ggplotGuiFigureFitFrame = 0;
+    if (force || ggplotGuiFigureWorkspaceVisible()) fitFigurePreviewCanvas();
+  });
+}
+
 document.addEventListener('scroll', function(ev) {
   var rail = ev.target;
   if (!rail || !rail.classList || !rail.classList.contains('figure-preview-hscroll')) return;
@@ -123,19 +175,20 @@ document.addEventListener('scroll', function(ev) {
 }, true);
 
 window.addEventListener('resize', function() {
-  window.requestAnimationFrame(fitFigurePreviewCanvas);
+  ggplotGuiScheduleFigureFit(false);
 });
 $(document).on('change', '#figure_view_zoom', function() {
-  window.requestAnimationFrame(fitFigurePreviewCanvas);
+  ggplotGuiScheduleFigureFit(false);
 });
-$(document).on('shown.bs.tab', function() {
-  setTimeout(fitFigurePreviewCanvas, 30);
+$(document).on('shown.bs.tab', function(ev) {
+  var value = String($(ev.target).attr('data-value') || '');
+  if (value === 'figure_workspace') ggplotGuiScheduleFigureFit(true);
 });
 $(document).on('shiny:value shiny:visualchange', function() {
-  setTimeout(fitFigurePreviewCanvas, 30);
+  ggplotGuiScheduleFigureFit(false);
 });
 Shiny.addCustomMessageHandler('fit-figure-preview', function(msg) {
-  setTimeout(fitFigurePreviewCanvas, 20);
+  ggplotGuiScheduleFigureFit(false);
 });
 
 // Project restore: acknowledge only when the exact Mapping inputs for
@@ -202,6 +255,7 @@ var graphUiMountCleanups = {};
 window.ggplotGuiClientGraphCatalog = window.ggplotGuiClientGraphCatalog || {};
 window.ggplotGuiClientSelectedGraph = window.ggplotGuiClientSelectedGraph || '';
 window.ggplotGuiClientEditingGraph = window.ggplotGuiClientEditingGraph || '';
+window.ggplotGuiEditorActivationGeneration = Number(window.ggplotGuiEditorActivationGeneration || 0);
 window.ggplotGuiClientEditingGraphName = window.ggplotGuiClientEditingGraphName || '';
 window.ggplotGuiClientEditorReady = window.ggplotGuiClientEditorReady || false;
 
@@ -322,6 +376,8 @@ document.addEventListener('shiny:connected', function() { ggplotGuiSlotPoolInit(
 
 Shiny.addCustomMessageHandler('graph-slot-pool-config', function(msg) {
   msg = msg || {};
+  if (msg.activationGeneration != null &&
+      Number(msg.activationGeneration) !== Number(window.ggplotGuiEditorActivationGeneration || 0)) return;
   var container = document.getElementById(String(msg.id || ''));
   if (!container) return;
   var entries = Array.isArray(msg.entries) ? msg.entries : [];
@@ -401,17 +457,32 @@ window.ggplotGuiBrowserPatchPoc = window.ggplotGuiBrowserPatchPoc || {
   hydrationExpected: {},
   hydrationGuardUntil: 0,
   hydrationClearTimer: null,
-  userIntentUntil: {}
+  userIntentUntil: {},
+  textEditLeases: {},
+  textBoundaryCallbacks: []
 };
+
+// Ordinary Graph Editor text controls keep their in-progress draft in the
+// browser while focused. Canonical GraphState updates are intentionally slower
+// than keystrokes so rendering never owns or rewrites the active editing DOM.
+var ggplotGuiGraphTextDebounceDelay = 1000;
 
 function ggplotGuiBrowserPatchReset(id, seed, preserveHydration) {
   var st = window.ggplotGuiBrowserPatchPoc;
+  Object.keys(st.textEditLeases || {}).forEach(function(key) {
+    var lease = st.textEditLeases[key];
+    if (lease && lease.timer) window.clearTimeout(lease.timer);
+  });
+  st.textEditLeases = {};
+  st.textBoundaryCallbacks = [];
   var hydrationExpected = preserveHydration ? (st.hydrationExpected || {}) : {};
   var hydrationGeneration = preserveHydration ? Number(st.hydrationGeneration || 0) : 0;
   var hydrationGuardUntil = preserveHydration ? Number(st.hydrationGuardUntil || 0) : 0;
   st.ready = false;
   st.graphId = String(id || '');
   st.revision = Number(seed && seed.revision || 0);
+  st.generation = Number(seed && seed.generation || 0);
+  st.stateRevision = Number(seed && seed.stateRevision || 0);
   st.inflight = null;
   st.queue = [];
   st.working = Object.assign({}, (seed && seed.values) || {});
@@ -434,7 +505,17 @@ function ggplotGuiBrowserPatchPendingKeys(st) {
   (st.queue || []).forEach(function(item) {
     if (item && item.key) pending[String(item.key)] = true;
   });
+  Object.keys(st.textEditLeases || {}).forEach(function(key) {
+    var lease = st.textEditLeases[key];
+    if (lease && (lease.focused || lease.dirty || lease.composing)) pending[String(key)] = true;
+  });
   return pending;
+}
+
+function ggplotGuiBrowserPatchPendingValue(st, key) {
+  var lease = st && st.textEditLeases ? st.textEditLeases[String(key || '')] : null;
+  if (lease && (lease.focused || lease.dirty || lease.composing)) return lease.draftValue;
+  return st && st.working ? st.working[key] : undefined;
 }
 
 function ggplotGuiBrowserPatchComparable(value) {
@@ -576,6 +657,11 @@ function ggplotGuiBrowserPatchHasUserIntent(key) {
 }
 
 function ggplotGuiBrowserPatchSetControl(key, value) {
+  if (key === "editor_panels") {
+    window.ggplotGuiGraphEditorUiState[window.ggplotGuiBrowserPatchPoc.graphId] = {open:value || {}};
+    ggplotGuiRestoreEditorUiState(window.ggplotGuiBrowserPatchPoc.graphId, "");
+    return;
+  }
   var el = document.getElementById('graph_editor_single-' + String(key || ''));
   if (!el) return false;
   var st = window.ggplotGuiBrowserPatchPoc;
@@ -616,10 +702,11 @@ function ggplotGuiBrowserPatchSyncSizeAlias(st, prefix, key, value, valueStoreNa
   return ok;
 }
 
-function ggplotGuiBrowserPatchQueue(key, value) {
+function ggplotGuiBrowserPatchQueue(key, value, options) {
   var st = window.ggplotGuiBrowserPatchPoc;
   var path = st.paths[key];
   if (!st.ready || !path || !st.graphId || !window.Shiny) return false;
+  options = options || {};
   var hasBaseValue = Object.prototype.hasOwnProperty.call(st.working || {}, key);
   var baseValue = hasBaseValue ? st.working[key] : null;
   st.working[key] = value;
@@ -630,16 +717,157 @@ function ggplotGuiBrowserPatchQueue(key, value) {
       // existed before the first queued edit. The server uses that base value
       // for path-local optimistic rebase if unrelated canonical state advances.
       st.queue[i].value = value;
+      if (options.deferredText) st.queue[i].deferredText = true;
       replaced = true;
       break;
     }
   }
   if (!replaced) st.queue.push({
     key:key, path:path, value:value,
+    graphId:st.graphId, generation:st.generation,
     hasBaseValue:hasBaseValue, baseValue:baseValue,
-    retryCount:0
+    retryCount:0, deferredText:!!options.deferredText
   });
   ggplotGuiBrowserPatchDrain();
+  return true;
+}
+
+function ggplotGuiBrowserPatchIsSliderElement(el) {
+  if (!el) return false;
+  var tag = String(el.tagName || '').toLowerCase();
+  if (tag !== 'input') return false;
+  // Shiny sliderInput() is backed by an <input type="text">, so DOM type
+  // alone cannot distinguish it from an actual text editor. Prefer Shiny's
+  // stable slider classes, with the live ionRangeSlider instance as a
+  // compatibility check for versions/themes that omit one of the classes.
+  if (el.classList &&
+      (el.classList.contains('js-range-slider') || el.classList.contains('shiny-input-slider'))) {
+    return true;
+  }
+  if (window.jQuery) {
+    try {
+      if (window.jQuery(el).data('ionRangeSlider')) return true;
+    } catch (ignored) {}
+  }
+  return false;
+}
+
+function ggplotGuiBrowserPatchIsTextControl(key) {
+  var el = document.getElementById('graph_editor_single-' + String(key || ''));
+  if (!el) return false;
+  var tag = String(el.tagName || '').toLowerCase();
+  if (tag === 'textarea') return true;
+  if (tag !== 'input') return false;
+  if (ggplotGuiBrowserPatchIsSliderElement(el)) return false;
+  var type = String(el.type || 'text').toLowerCase();
+  return type === 'text' || type === 'search' || type === 'email' ||
+    type === 'url' || type === 'tel';
+}
+
+function ggplotGuiBrowserPatchTextLease(st, key, create) {
+  st = st || window.ggplotGuiBrowserPatchPoc;
+  key = String(key || '');
+  if (!st || !key) return null;
+  st.textEditLeases = st.textEditLeases || {};
+  var lease = st.textEditLeases[key];
+  if (!lease && create) {
+    lease = {
+      key:key, focused:false, dirty:false, composing:false,
+      draftValue:ggplotGuiBrowserDirectControlValue('graph_editor_single-' + key),
+      timer:null
+    };
+    st.textEditLeases[key] = lease;
+  }
+  return lease || null;
+}
+
+function ggplotGuiBrowserPatchTextLeaseProtectsDom(st, key) {
+  var lease = ggplotGuiBrowserPatchTextLease(st, key, false);
+  return !!(lease && (lease.focused || lease.dirty || lease.composing));
+}
+
+function ggplotGuiBrowserPatchScheduleText(key) {
+  var st = window.ggplotGuiBrowserPatchPoc;
+  var lease = ggplotGuiBrowserPatchTextLease(st, key, false);
+  if (!lease || !lease.dirty || lease.composing) return false;
+  if (lease.timer) window.clearTimeout(lease.timer);
+  lease.timer = window.setTimeout(function() {
+    lease.timer = null;
+    ggplotGuiBrowserPatchFlushText(key, false);
+  }, ggplotGuiGraphTextDebounceDelay);
+  return true;
+}
+
+function ggplotGuiBrowserPatchCaptureText(key, value, options) {
+  var st = window.ggplotGuiBrowserPatchPoc;
+  key = String(key || '');
+  if (!st || !st.ready || !key || !st.paths[key]) return false;
+  options = options || {};
+  var lease = ggplotGuiBrowserPatchTextLease(st, key, true);
+  if (!lease) return false;
+  lease.draftValue = value == null ? '' : value;
+  lease.dirty = true;
+  if (typeof options.focused === 'boolean') lease.focused = options.focused;
+  if (typeof options.composing === 'boolean') lease.composing = options.composing;
+  if (lease.timer) {
+    window.clearTimeout(lease.timer);
+    lease.timer = null;
+  }
+  if (!lease.composing) ggplotGuiBrowserPatchScheduleText(key);
+  return true;
+}
+
+function ggplotGuiBrowserPatchFlushText(key, force) {
+  var st = window.ggplotGuiBrowserPatchPoc;
+  if (!st) return false;
+  var keys = key ? [String(key)] : Object.keys(st.textEditLeases || {});
+  var flushed = false;
+  keys.forEach(function(k) {
+    var lease = ggplotGuiBrowserPatchTextLease(st, k, false);
+    if (!lease || !lease.dirty) return;
+    if (lease.composing && !force) return;
+    if (lease.timer) window.clearTimeout(lease.timer);
+    lease.timer = null;
+    if (force) {
+      var live = ggplotGuiBrowserDirectControlValue('graph_editor_single-' + k);
+      if (typeof live !== 'undefined') lease.draftValue = live;
+      lease.composing = false;
+    }
+    var value = lease.draftValue;
+    lease.dirty = false;
+    var ok = ggplotGuiBrowserPatchQueue(k, value, {deferredText:true});
+    if (!ok) lease.dirty = true;
+    flushed = ok || flushed;
+  });
+  return flushed;
+}
+
+function ggplotGuiBrowserPatchHasUnsentText(st) {
+  st = st || window.ggplotGuiBrowserPatchPoc || {};
+  var dirty = Object.keys(st.textEditLeases || {}).some(function(key) {
+    var lease = st.textEditLeases[key];
+    return !!(lease && lease.dirty);
+  });
+  return dirty || !!st.inflight || (st.queue || []).length > 0;
+}
+
+function ggplotGuiBrowserPatchReleaseTextBoundaries() {
+  var st = window.ggplotGuiBrowserPatchPoc;
+  if (!st || ggplotGuiBrowserPatchHasUnsentText(st)) return false;
+  var callbacks = (st.textBoundaryCallbacks || []).splice(0);
+  callbacks.forEach(function(fn) {
+    try { fn(); } catch (err) { window.setTimeout(function() { throw err; }, 0); }
+  });
+  return callbacks.length > 0;
+}
+
+function ggplotGuiBrowserPatchDeferForTextBoundary(callback) {
+  var st = window.ggplotGuiBrowserPatchPoc;
+  if (!st || !st.ready) return false;
+  ggplotGuiBrowserPatchFlushText(null, true);
+  if (!ggplotGuiBrowserPatchHasUnsentText(st)) return false;
+  st.textBoundaryCallbacks = st.textBoundaryCallbacks || [];
+  st.textBoundaryCallbacks.push(callback);
   return true;
 }
 
@@ -648,11 +876,12 @@ function ggplotGuiBrowserPatchDrain() {
   if (!st.ready || st.inflight || !st.queue.length || !window.Shiny) return false;
   var patch = st.queue.shift();
   patch.seq = ++st.nextSeq;
-  patch.graphId = st.graphId;
+  // The intent retains the owner it had when enqueued.
   patch.baseRevision = Number(st.revision || 0);
   st.inflight = patch;
   Shiny.setInputValue('graph_browser_patch', {
     graphId: patch.graphId,
+    generation: patch.generation,
     seq: patch.seq,
     baseRevision: patch.baseRevision,
     key: patch.key,
@@ -662,6 +891,8 @@ function ggplotGuiBrowserPatchDrain() {
     baseValue: patch.hasBaseValue ? patch.baseValue : null,
     nonce: Date.now()
   }, {priority:'event'});
+  // Structural boundaries resume only after the shared queue is accepted.
+  ggplotGuiBrowserPatchReleaseTextBoundaries();
   return true;
 }
 
@@ -736,11 +967,79 @@ $(document).on('shiny:inputchanged.browserPatchPoc', function(ev) {
     delete st.hydrationExpected[key];
   }
   ev.preventDefault();
-  ggplotGuiBrowserPatchQueue(key, value);
+  if (ggplotGuiBrowserPatchIsTextControl(key)) {
+    // Trusted DOM input is captured by the text-edit lease listeners below.
+    // Keep this as a fallback for bindings that publish without a native input
+    // event, but never let a programmatic Shiny echo create a user draft.
+    var lease = ggplotGuiBrowserPatchTextLease(st, key, false);
+    if (!lease && ggplotGuiBrowserPatchHasUserIntent(key)) {
+      ggplotGuiBrowserPatchCaptureText(key, value, {focused:document.activeElement === ev.target});
+    }
+  } else {
+    ggplotGuiBrowserPatchQueue(key, value);
+  }
 });
+
+// Text/textarea editing lease. The active DOM is browser-owned while the user
+// is typing, including IME composition. Server ACK/hydration may advance the
+// canonical revision, but must not rewrite this DOM until the lease is released.
+document.addEventListener('focusin', function(ev) {
+  var key = ggplotGuiBrowserPatchKeyFromTarget(ev && ev.target);
+  if (!key || !ggplotGuiBrowserPatchIsTextControl(key)) return;
+  var lease = ggplotGuiBrowserPatchTextLease(window.ggplotGuiBrowserPatchPoc, key, true);
+  if (!lease) return;
+  lease.focused = true;
+  var live = ggplotGuiBrowserDirectControlValue('graph_editor_single-' + key);
+  if (!lease.dirty && typeof live !== 'undefined') lease.draftValue = live;
+}, true);
+
+document.addEventListener('compositionstart', function(ev) {
+  var key = ggplotGuiBrowserPatchKeyFromTarget(ev && ev.target);
+  if (!key || !ggplotGuiBrowserPatchIsTextControl(key)) return;
+  var lease = ggplotGuiBrowserPatchTextLease(window.ggplotGuiBrowserPatchPoc, key, true);
+  if (!lease) return;
+  lease.focused = true;
+  lease.composing = true;
+  if (lease.timer) { window.clearTimeout(lease.timer); lease.timer = null; }
+}, true);
+
+document.addEventListener('input', function(ev) {
+  if (!ev || ev.isTrusted !== true || !ev.target) return;
+  var key = ggplotGuiBrowserPatchKeyFromTarget(ev.target);
+  if (!key || !ggplotGuiBrowserPatchIsTextControl(key)) return;
+  ggplotGuiBrowserPatchCaptureText(key, ev.target.value, {
+    focused:true,
+    composing:!!(ev.isComposing || (ggplotGuiBrowserPatchTextLease(window.ggplotGuiBrowserPatchPoc, key, false) || {}).composing)
+  });
+}, true);
+
+document.addEventListener('compositionend', function(ev) {
+  var key = ggplotGuiBrowserPatchKeyFromTarget(ev && ev.target);
+  if (!key || !ggplotGuiBrowserPatchIsTextControl(key)) return;
+  var lease = ggplotGuiBrowserPatchTextLease(window.ggplotGuiBrowserPatchPoc, key, true);
+  if (!lease) return;
+  lease.composing = false;
+  ggplotGuiBrowserPatchCaptureText(key, ev.target.value, {focused:true, composing:false});
+}, true);
+
+document.addEventListener('focusout', function(ev) {
+  var key = ggplotGuiBrowserPatchKeyFromTarget(ev && ev.target);
+  if (!key || !ggplotGuiBrowserPatchIsTextControl(key)) return;
+  var lease = ggplotGuiBrowserPatchTextLease(window.ggplotGuiBrowserPatchPoc, key, false);
+  if (lease) lease.focused = false;
+  ggplotGuiBrowserPatchFlushText(key, true);
+}, true);
+
+document.addEventListener('keydown', function(ev) {
+  if (!ev || ev.key !== 'Enter' || !ev.target || ev.isComposing || Number(ev.keyCode || 0) === 229) return;
+  if (String(ev.target.tagName || '').toLowerCase() === 'textarea') return;
+  var key = ggplotGuiBrowserPatchKeyFromTarget(ev.target);
+  if (key && ggplotGuiBrowserPatchIsTextControl(key)) ggplotGuiBrowserPatchFlushText(key, true);
+}, true);
 
 Shiny.addCustomMessageHandler('graph-browser-patch-result', function(msg) {
   msg = msg || {};
+  if (Number(msg.activationGeneration || 0) !== Number(window.ggplotGuiEditorActivationGeneration || 0)) return;
   var st = window.ggplotGuiBrowserPatchPoc;
   var graphId = String(msg.graphId || '');
   var seq = Number(msg.seq || 0);
@@ -749,14 +1048,16 @@ Shiny.addCustomMessageHandler('graph-browser-patch-result', function(msg) {
   if (!inflight || Number(inflight.seq || 0) !== seq) return;
 
   st.revision = Number(msg.revision || st.revision || 0);
+  st.stateRevision = Number(msg.stateRevision || st.stateRevision || 0);
   if (msg.accepted) {
     if (msg.key) {
       var acceptedKey = String(msg.key);
-      var newerQueued = st.queue.some(function(item) { return String(item.key || '') === acceptedKey; });
-      // An ACK for an older edit must not visually rewind a newer optimistic
-      // edit of the same control that is already queued behind it.
-      if (!newerQueued) {
-        st.working[acceptedKey] = msg.value;
+      var newerQueued = st.queue.some(function(item) { return String(item.key || '') === acceptedKey; }) ||
+        !!((st.textEditLeases || {})[acceptedKey] && (st.textEditLeases[acceptedKey].dirty || st.textEditLeases[acceptedKey].composing));
+      // ACKs advance the canonical working base, but an active text-edit lease
+      // owns the visible DOM/caret. Never rewind a focused or dirty field.
+      if (!newerQueued) st.working[acceptedKey] = msg.value;
+      if (!newerQueued && !ggplotGuiBrowserPatchTextLeaseProtectsDom(st, acceptedKey)) {
         ggplotGuiBrowserPatchSetControl(acceptedKey, msg.value);
       }
     }
@@ -765,13 +1066,13 @@ Shiny.addCustomMessageHandler('graph-browser-patch-result', function(msg) {
     if (String(msg.reason || '') === 'revision-mismatch' && Number(inflight.retryCount || 0) < 1) {
       retry = {
         key: inflight.key, path: inflight.path, value: inflight.value,
+        graphId: inflight.graphId, generation: inflight.generation,
         hasBaseValue: !!inflight.hasBaseValue, baseValue: inflight.baseValue,
         retryCount: Number(inflight.retryCount || 0) + 1
       };
       st.queue.unshift(retry);
     }
-    var pendingKeys = {};
-    st.queue.forEach(function(item) { pendingKeys[String(item.key || '')] = true; });
+    var pendingKeys = ggplotGuiBrowserPatchPendingKeys(st);
     var canonical = msg.canonicalValues || {};
     Object.keys(canonical).forEach(function(key) {
       // A reject is a canonical resync, but queued user intents are still the
@@ -779,21 +1080,25 @@ Shiny.addCustomMessageHandler('graph-browser-patch-result', function(msg) {
       // selections while rebasing a different control.
       if (pendingKeys[String(key)]) return;
       st.working[key] = canonical[key];
-      ggplotGuiBrowserPatchSetControl(key, canonical[key]);
+      if (!ggplotGuiBrowserPatchTextLeaseProtectsDom(st, key)) {
+        ggplotGuiBrowserPatchSetControl(key, canonical[key]);
+      }
     });
   }
   st.inflight = null;
   ggplotGuiBrowserPatchDrain();
+  ggplotGuiBrowserPatchReleaseTextBoundaries();
 });
 
-// Data text uses shinyAce's native input transport instead of the generic
-// browser-patch queue. A successful canonical Data commit can still advance the
+// Main Data uses the separate Graph-owned Data Document transport instead of
+// the generic browser-patch queue. A successful canonical Data commit can still advance the
 // Graph render-state revision, so rebase the optimistic patch client without
 // touching controls or creating a fake patch sequence. An already-inflight
 // patch retains its old baseRevision plus its path-local baseValue; the server
 // can therefore rebase it safely when only unrelated canonical paths changed.
 Shiny.addCustomMessageHandler('graph-browser-patch-rebase', function(msg) {
   msg = msg || {};
+  if (Number(msg.activationGeneration || 0) !== Number(window.ggplotGuiEditorActivationGeneration || 0)) return;
   var st = window.ggplotGuiBrowserPatchPoc;
   var graphId = String(msg.graphId || '');
   if (!st || graphId !== String(st.graphId || '')) return;
@@ -802,9 +1107,8 @@ Shiny.addCustomMessageHandler('graph-browser-patch-rebase', function(msg) {
 });
 
 
-// presentation-only Editor memory. This deliberately
-// lives outside GraphState/Project serialization and disappears with the
-// browser/Shiny session. The fixed Editor DOM itself is still reused.
+// Optimistic presentation memory; canonical panel records live in GraphState.
+// The fixed Editor DOM itself is reused across owner generations.
 window.ggplotGuiGraphEditorUiState = window.ggplotGuiGraphEditorUiState || {};
 window.ggplotGuiPendingEditorActivation = window.ggplotGuiPendingEditorActivation || null;
 
@@ -846,70 +1150,28 @@ function ggplotGuiCaptureEditorUiState(graphId) {
   return true;
 }
 
-function ggplotGuiPublishEditorUiState(graphId, source) {
-  graphId = String(graphId || '');
-  if (!graphId || !window.Shiny) return false;
-  ggplotGuiCaptureEditorUiState(graphId);
-  var rec = window.ggplotGuiGraphEditorUiState[graphId] || {open:{}};
-  Shiny.setInputValue('graph_editor_ui_state', {
-    id: graphId,
-    panels: rec.open || {},
-    source: String(source || 'browser'),
-    nonce: Date.now()
-  }, {priority:'event'});
-  return true;
+function ggplotGuiCommitEditorPanels() {
+  var st = window.ggplotGuiBrowserPatchPoc;
+  ggplotGuiCaptureEditorUiState(st.graphId);
+  return ggplotGuiBrowserPatchQueue('editor_panels', Object.assign({},
+    (window.ggplotGuiGraphEditorUiState[st.graphId] || {}).open || {}));
 }
 
-// <details> can emit a burst of toggle events while one visual panel action is
-// settling. Keep browser-local panel ownership current immediately, but publish
-// only the final snapshot of that burst to Shiny. Transaction boundaries such
-// as Graph switch flush synchronously below.
-window.ggplotGuiEditorUiPublishTimer = window.ggplotGuiEditorUiPublishTimer || null;
-window.ggplotGuiEditorUiPublishPending = window.ggplotGuiEditorUiPublishPending || null;
-
-function ggplotGuiScheduleEditorUiState(graphId, source) {
-  graphId = String(graphId || '');
-  if (!graphId) return false;
-  ggplotGuiCaptureEditorUiState(graphId);
-  window.ggplotGuiEditorUiPublishPending = {
-    id: graphId,
-    source: String(source || 'user-toggle')
-  };
-  if (window.ggplotGuiEditorUiPublishTimer !== null) {
-    window.clearTimeout(window.ggplotGuiEditorUiPublishTimer);
-  }
-  window.ggplotGuiEditorUiPublishTimer = window.setTimeout(function() {
-    var pending = window.ggplotGuiEditorUiPublishPending;
-    window.ggplotGuiEditorUiPublishPending = null;
-    window.ggplotGuiEditorUiPublishTimer = null;
-    if (pending && pending.id) {
-      ggplotGuiPublishEditorUiState(pending.id, pending.source);
-    }
-  }, 50);
-  return true;
-}
-
-function ggplotGuiFlushEditorUiState(graphId, source) {
-  graphId = String(graphId || '');
-  if (window.ggplotGuiEditorUiPublishTimer !== null) {
-    window.clearTimeout(window.ggplotGuiEditorUiPublishTimer);
-    window.ggplotGuiEditorUiPublishTimer = null;
-  }
-  window.ggplotGuiEditorUiPublishPending = null;
-  return ggplotGuiPublishEditorUiState(graphId, source);
-}
-
-// Persist only trusted user panel toggles. Programmatic replay/restoration must
-// not echo back into GraphState as a new user edit. One user action is one
-// browser->Registry panel-state transaction even if the browser emits multiple
-// toggle notifications for nested <details>.
-document.addEventListener('toggle', function(ev) {
-  var el = ev && ev.target;
-  if (!el || el.tagName !== 'DETAILS' || !ev.isTrusted) return;
-  if (!el.matches('details.control-section, details.control-subsection')) return;
+// Native toggle notifications are asynchronous and are also emitted by
+// programmatic hydration. Commit the synchronous summary activation instead.
+// Keyboard/assistive activation also dispatches click on the native summary.
+document.addEventListener('click', function(ev) {
+  var summary = ev.target && ev.target.closest ? ev.target.closest('summary') : null;
+  var el = summary && summary.parentElement;
   var root = ggplotGuiEditorModuleRoot();
-  if (!root || !root.contains(el)) return;
-  ggplotGuiScheduleEditorUiState(window.ggplotGuiClientEditingGraph || '', 'user-toggle');
+  if (!el || !root || !root.contains(el) ||
+      !el.matches('details.control-section, details.control-subsection')) return;
+  if (ev.target !== summary && ev.target.closest('button, a, input, select, textarea')) return;
+  var st = window.ggplotGuiBrowserPatchPoc;
+  if (!st.ready || st.graphId !== String(window.ggplotGuiClientSelectedGraph || '')) return;
+  ev.preventDefault();
+  el.open = !el.open;
+  ggplotGuiCommitEditorPanels();
 }, true);
 
 function ggplotGuiCloseEditorSections() {
@@ -952,7 +1214,7 @@ function ggplotGuiSyncWorkspaceSectionBar(tabValue) {
   });
   var root = ggplotGuiEditorModuleRoot();
   if (root) {
-    root.classList.toggle('graph-main-information', tabValue === 'Data View' || tabValue === '製作者コメント');
+    root.classList.toggle('graph-main-data-view', tabValue === 'Data View');
     root.classList.toggle('graph-main-statistics', tabValue === 'Statistics');
   }
 }
@@ -1034,13 +1296,15 @@ window.ggplotGuiSelectGraphMainTab = function(tabValue) {
   if (!root) return false;
 
   var result = ggplotGuiActivateGraphMainTab(root, tabValue);
+  if (tabValue === 'Plot') window.updatePlotDisplayGeometry(root);
   var actualValue = String((result && result.value) || ggplotGuiActiveGraphMainTab(root) || '');
   if (actualValue) ggplotGuiSyncWorkspaceSectionBar(actualValue);
   return false;
 };
 
-// Keep the outer workspace buttons presentation-only even when the internal
-// tabset changes through updateTabsetPanel()/restore instead of an outer click.
+// The internal Shiny tabset owns pane activation while its native nav is
+// hidden. Keep the visible outer workspace buttons synchronized with any
+// binding-owned tab activation.
 if (window.jQuery) {
   window.jQuery(document).on(
     'shown.bs.tab.ggplotGuiGraphMainTab',
@@ -1049,6 +1313,7 @@ if (window.jQuery) {
       var root = ggplotGuiEditorModuleRoot();
       var actualValue = ggplotGuiActiveGraphMainTab(root);
       if (actualValue) ggplotGuiSyncWorkspaceSectionBar(actualValue);
+      if (actualValue === 'Plot') ggplotGuiUpdatePlotDisplayGeometry(root);
     }
   );
 }
@@ -1096,11 +1361,11 @@ function ggplotGuiRevealEditorWorkspace(id) {
 window.ggplotGuiSelectGraphLive = function(id) {
   id = String(id || '');
   if (!id || !window.ggplotGuiClientGraphCatalog[id]) return false;
+  if (ggplotGuiBrowserPatchDeferForTextBoundary(function() {
+    window.ggplotGuiSelectGraphLive(id);
+  })) return false;
 
   var previousEditing = String(window.ggplotGuiClientEditingGraph || '');
-  if (previousEditing && window.ggplotGuiClientEditorReady && previousEditing !== id) {
-    ggplotGuiFlushEditorUiState(previousEditing, 'switch-select');
-  }
 
   window.ggplotGuiClientSelectedGraph = id;
   document.querySelectorAll('.graph-tab-btn').forEach(function(btn) {
@@ -1111,6 +1376,9 @@ window.ggplotGuiSelectGraphLive = function(id) {
   ggplotGuiRevealEditorWorkspace(id);
   ggplotGuiUpdateEditorShell(id, previousEditing && previousEditing !== id ? '切替中…' : '');
 
+  if (window.ggplotGuiDataDocumentFlush) {
+    window.ggplotGuiDataDocumentFlush('switch-select');
+  }
   if (window.Shiny) {
     Shiny.setInputValue('graph_client_selected', id, {priority:'event'});
   }
@@ -1126,6 +1394,10 @@ function ggplotGuiRequestEditorActivation(id, sectionKey, source, targetInputId)
   source = String(source || 'graph-select');
   targetInputId = String(targetInputId || '');
   if (!id || !window.Shiny) return false;
+  if (ggplotGuiBrowserPatchDeferForTextBoundary(function() {
+    ggplotGuiRequestEditorActivation(id, sectionKey, source, targetInputId);
+  })) return false;
+  if (window.ggplotGuiDataDocumentFlush) window.ggplotGuiDataDocumentFlush('editor-activation');
 
   // Keep the requested section entirely client-side. GraphState remains the
   // canonical data/style owner; this is presentation-only activation memory.
@@ -1195,6 +1467,9 @@ function ggplotGuiOpenGraphWorkspaceForSettingsJump(id) {
     btn.classList.toggle('client-selected', selected);
     btn.classList.toggle('active', selected);
   });
+  if (window.ggplotGuiDataDocumentFlush) {
+    window.ggplotGuiDataDocumentFlush('settings-jump');
+  }
   if (window.Shiny) {
     Shiny.setInputValue('graph_client_selected', id, {priority:'event'});
   }
@@ -1211,6 +1486,9 @@ window.ggplotGuiJumpToGraphSetting = function(id, sectionKey, inputId) {
   sectionKey = String(sectionKey || '');
   inputId = String(inputId || '');
   if (!id) return false;
+  if (ggplotGuiBrowserPatchDeferForTextBoundary(function() {
+    window.ggplotGuiJumpToGraphSetting(id, sectionKey, inputId);
+  })) return false;
 
   if (window.Shiny) {
     Shiny.setInputValue('graph_settings_manager_jump_trace', {
@@ -1252,12 +1530,41 @@ window.ggplotGuiEditBrowsedGraph = function() {
 window.ggplotGuiGraphAction = function(action) {
   var id = String(window.ggplotGuiClientSelectedGraph || '');
   if (!id || !window.Shiny) return false;
+  if (ggplotGuiBrowserPatchDeferForTextBoundary(function() {
+    window.ggplotGuiGraphAction(action);
+  })) return false;
+  // Structural Graph actions (especially Duplicate) consume Registry state.
+  // Flush the visible Data Document first so they never snapshot an older
+  // canonical document while Ace already shows a newer draft.
+  if (window.ggplotGuiDataDocumentFlush) {
+    window.ggplotGuiDataDocumentFlush('graph-action-' + String(action || ''));
+  }
   Shiny.setInputValue(String(action), {id:id, nonce:Date.now()}, {priority:'event'});
   return false;
 };
 
+// Save/New serialize or clone canonical GraphState. If a browser-owned text
+// draft is still dirty or waiting behind another browser patch, hold the click
+// until the shared patch queue is accepted by Shiny. The replayed synthetic click then
+// passes through the ordinary Data Document capture-phase flush as usual.
+document.addEventListener('click', function(ev) {
+  var target = ev && ev.target;
+  if (!target || !target.closest) return;
+  var btn = target.closest('#save_project_as_all, #overwrite_project_all, #graph_add');
+  if (!btn || btn.getAttribute('data-text-boundary-replay') === '1') return;
+  var deferred = ggplotGuiBrowserPatchDeferForTextBoundary(function() {
+    btn.setAttribute('data-text-boundary-replay', '1');
+    try { btn.click(); } finally { btn.removeAttribute('data-text-boundary-replay'); }
+  });
+  if (!deferred) return;
+  ev.preventDefault();
+  ev.stopPropagation();
+  if (ev.stopImmediatePropagation) ev.stopImmediatePropagation();
+}, true);
+
 Shiny.addCustomMessageHandler('graph-client-catalog', function(msg) {
   msg = msg || {};
+  if (Number(msg.generation || 0) !== Number(window.ggplotGuiEditorActivationGeneration || 0)) return;
   var entries = Array.isArray(msg.entries) ? msg.entries : [];
   var catalog = {};
   entries.forEach(function(rec) {
@@ -1299,13 +1606,20 @@ Shiny.addCustomMessageHandler('graph-client-catalog', function(msg) {
   ggplotGuiUpdateEditorShell(selected);
 });
 
+Shiny.addCustomMessageHandler('graph-editor-activation-owner', function(msg) {
+  var generation = Number((msg || {}).generation || 0);
+  if (!generation || generation < Number(window.ggplotGuiEditorActivationGeneration || 0)) return;
+  window.ggplotGuiEditorActivationGeneration = generation;
+  window.ggplotGuiClientEditorReady = false;
+  if (window.ggplotGuiBrowserPatchPoc) window.ggplotGuiBrowserPatchPoc.ready = false;
+  if (!String((msg || {}).target || '')) window.ggplotGuiClientEditingGraph = '';
+});
+
 Shiny.addCustomMessageHandler('graph-client-edit-begin', function(msg) {
+  var generation = Number((msg || {}).generation || 0);
+  if (!generation || generation !== Number(window.ggplotGuiEditorActivationGeneration || 0)) return;
   var id = String((msg || {}).id || '');
   if (id) {
-    var previousEditorId = String(window.ggplotGuiClientEditingGraph || '');
-    if (previousEditorId && previousEditorId !== id) {
-      ggplotGuiFlushEditorUiState(previousEditorId, 'switch-begin');
-    }
     ggplotGuiPrepareReplayWorkspace(id);
     window.ggplotGuiClientEditorReady = false;
     ggplotGuiBrowserPatchReset(id, null);
@@ -1473,8 +1787,11 @@ function ggplotGuiBrowserDirectSet(prefix, key, value, choices) {
 // channel below. No per-input Shiny replay or browser completion ACK exists.
 Shiny.addCustomMessageHandler('graph-state-browser-hydrate', function(msg) {
   msg = msg || {};
-  var mode = String(msg.mode || 'full');
-  var figureMode = mode === 'figure_controls';
+  var editorMode = String(msg.editorMode || 'full_editor');
+  var replayMode = String(msg.replayMode || 'full');
+  var figureMode = editorMode === 'figure_controls';
+  if (!figureMode && Number(msg.activationGeneration || 0) !==
+      Number(window.ggplotGuiEditorActivationGeneration || 0)) return;
   window.ggplotGuiFigureBrowserStates = window.ggplotGuiFigureBrowserStates || {};
   var prefix = String(msg.inputPrefix || '');
   var st = figureMode ? (window.ggplotGuiFigureBrowserStates[prefix] || {}) :
@@ -1483,12 +1800,24 @@ Shiny.addCustomMessageHandler('graph-state-browser-hydrate', function(msg) {
   var generation = Number(msg.generation || 0);
   if (!figureMode && graphId && String(window.ggplotGuiClientEditingGraph || '') !== graphId) return;
   st.hydrating = true;
+  // Content-identical pools keep their slots. Advance only the transaction
+  // lease after the hydration generation/Graph checks above, so new user edits
+  // remain valid and delayed events from the previous Graph stay rejected.
+  var poolContexts = msg.poolContexts && typeof msg.poolContexts === 'object' ? msg.poolContexts : {};
+  Object.keys(poolContexts).forEach(function(pool) {
+    var ctx = poolContexts[pool] || {};
+    var container = document.getElementById(String(ctx.id || ''));
+    if (!container) return;
+    container.setAttribute('data-context-token', String(ctx.contextToken || ''));
+    container.setAttribute('data-generation', String(Number(ctx.generation || 0)));
+  });
   st.hydrationGeneration = generation;
   st.hydrationExpected = {};
   st.hydrationGuardUntil = Date.now() + 1000;
   st.userIntentUntil = st.userIntentUntil || {};
   st.suppressOnce = st.suppressOnce || {};
-  st.values = {};
+  if (replayMode === 'full') st.values = {};
+  else st.values = st.values || {};
   st.patchInput = String(msg.patchInput || '');
   if (st.hydrationClearTimer !== null) {
     window.clearTimeout(st.hydrationClearTimer);
@@ -1506,7 +1835,8 @@ Shiny.addCustomMessageHandler('graph-state-browser-hydrate', function(msg) {
   if (Object.keys(pendingKeys).length) {
     values = Object.assign({}, values);
     Object.keys(pendingKeys).forEach(function(key) {
-      if (Object.prototype.hasOwnProperty.call(st.working || {}, key)) values[key] = st.working[key];
+      var pendingValue = ggplotGuiBrowserPatchPendingValue(st, key);
+      if (typeof pendingValue !== 'undefined') values[key] = pendingValue;
     });
   }
 
@@ -1518,13 +1848,11 @@ Shiny.addCustomMessageHandler('graph-state-browser-hydrate', function(msg) {
     if (el) ggplotGuiBrowserDirectReplaceChoices(el, choices[key]);
   });
   Object.keys(values).forEach(function(key) {
-    // graph_main_tab is owned by Shiny's tabset input binding.
-    // Browser-direct scalar hydration must never write it; R restores it after
-    // the direct value batch with updateTabsetPanel(), which changes the pane
-    // and the Shiny input as one atomic tabset operation.
-    if (!figureMode && key === 'graph_main_tab') return;
-    st.hydrationExpected[key] = values[key];
     st.values[key] = values[key];
+    var protectTextDom = !figureMode && graphId && String(st.graphId || '') === graphId &&
+      ggplotGuiBrowserPatchTextLeaseProtectsDom(st, key);
+    if (protectTextDom) return;
+    st.hydrationExpected[key] = values[key];
     var el = document.getElementById(prefix + String(key || ''));
     if (!el || !ggplotGuiBrowserDirectSetValue(el, values[key])) {
       delete st.hydrationExpected[key];
@@ -1635,11 +1963,14 @@ Shiny.addCustomMessageHandler('graph-browser-control-hydrate', function(msg) {
   st.hydrationGuardUntil = Date.now() + 1000;
   st.hydrationExpected = st.hydrationExpected || {};
   st.values = st.values || {};
-  st.hydrationExpected[key] = msg.value;
   st.values[key] = msg.value;
-  ggplotGuiBrowserDirectReplaceChoices(el, msg.choices || []);
-  ggplotGuiBrowserDirectSetValue(el, msg.value);
-  ggplotGuiBrowserDirectSyncClientInput(prefix + key, msg.value, true);
+  var protectTextDom = !figureMode && ggplotGuiBrowserPatchTextLeaseProtectsDom(st, key);
+  if (!protectTextDom) {
+    st.hydrationExpected[key] = msg.value;
+    ggplotGuiBrowserDirectReplaceChoices(el, msg.choices || []);
+    ggplotGuiBrowserDirectSetValue(el, msg.value);
+    ggplotGuiBrowserDirectSyncClientInput(prefix + key, msg.value, true);
+  }
   if (figureMode) {
     window.ggplotGuiFigureBrowserStates = window.ggplotGuiFigureBrowserStates || {};
     window.ggplotGuiFigureBrowserStates[prefix] = st;
@@ -1656,54 +1987,9 @@ Shiny.addCustomMessageHandler('graph-browser-control-hydrate', function(msg) {
 });
 
 
-Shiny.addCustomMessageHandler('graph-state-replay-complete-request', function(msg) {
-  msg = msg || {};
-  var graphId = String(msg.graphId || '');
-  var panels = msg.panels && typeof msg.panels === 'object' ? msg.panels : {};
-  if (graphId) {
-    window.ggplotGuiGraphEditorUiState[graphId] = {open: panels};
-    ggplotGuiRestoreEditorUiState(graphId, '');
-  }
-  var ackId = String(msg.ackId || '');
-  if (window.Shiny && ackId) {
-    var transportError = null;
-    try {
-      var prefix = String(msg.inputPrefix || '');
-      // Shiny/jsonlite can encode an empty R vector differently from a JS
-      // Array. Empty required-input sets are semantically [] and must never
-      // make an otherwise valid replay transaction fail.
-      var requiredInputs = Array.isArray(msg.requiredInputs) ? msg.requiredInputs : [];
-      var bound = {};
-      $('.shiny-bound-input').each(function() {
-        var binding = $(this).data('shiny-input-binding');
-        if (!binding) return;
-        var id = binding.getId(this);
-        if (!id || !prefix || id.indexOf(prefix) !== 0 ||
-            requiredInputs.indexOf(id) < 0) return;
-        bound[id] = true;
-        // Replay changes values, never clicks actions or uploads files.
-        if ($(this).hasClass('action-button') || this.type === 'file') return;
-        var type = binding.getType ? binding.getType(this) : null;
-        // event priority drains/cancels Shiny's rate-policy timer, notably Ace.
-        // Read current binding values only; no canonical/browser comparison.
-        Shiny.setInputValue(id + (type ? ':' + type : ''), binding.getValue(this),
-          {priority: 'event'});
-      });
-      requiredInputs.forEach(function(id) {
-        if (!bound[id]) throw new Error('Replay input binding unavailable: ' + id);
-      });
-    } catch (err) { transportError = String(err.message || err); }
-    Shiny.setInputValue(ackId, {
-      graphId: graphId,
-      generation: Number(msg.generation || 0),
-      token: String(msg.token || ''),
-      error: transportError,
-      nonce: Date.now()
-    }, {priority:'event'});
-  }
-});
-
 Shiny.addCustomMessageHandler('graph-client-edit-ready', function(msg) {
+  if (Number((msg || {}).generation || 0) !==
+      Number(window.ggplotGuiEditorActivationGeneration || 0)) return;
   var id = String((msg || {}).id || '');
   if (id) {
     var selectedBeforeReady = String(window.ggplotGuiClientSelectedGraph || '');
@@ -1742,9 +2028,7 @@ Shiny.addCustomMessageHandler('graph-client-edit-ready', function(msg) {
       ggplotGuiUpdateEditorShell(id);
       if (targetInputId) ggplotGuiRevealGraphSettingInput(targetInputId);
     } else {
-      // The user selected a newer Graph while this transaction was in flight.
-      // The server drains the queued latest target immediately after this
-      // READY transaction releases; do not reveal the older queued owner.
+      // A newer selection is already visible; do not reveal an older owner.
       ggplotGuiUpdateEditorShell(selectedBeforeReady);
     }
   }
@@ -1752,6 +2036,7 @@ Shiny.addCustomMessageHandler('graph-client-edit-ready', function(msg) {
 
 Shiny.addCustomMessageHandler('graph-editor-shell-clear', function(msg) {
   msg = msg || {};
+  if (Number(msg.generation || 0) !== Number(window.ggplotGuiEditorActivationGeneration || 0)) return;
   window.ggplotGuiClientEditorReady = false;
   if (window.ggplotGuiBrowserPatchPoc) window.ggplotGuiBrowserPatchPoc.ready = false;
   window.ggplotGuiClientEditingGraph = '';
@@ -2543,12 +2828,6 @@ $(document).on('click', '#graph_panels .graph-module details.control-section > s
     return false;
   }
 
-  // Legacy per-Graph modules are retained only for compatibility/export.
-  Shiny.setInputValue('graph_ui_edit_request', {
-    id: moduleId,
-    section: String(this.textContent || '').trim(),
-    nonce: Date.now()
-  }, {priority:'event'});
 });
 
 Shiny.addCustomMessageHandler('focus-select-input', function(msg) {
@@ -2575,113 +2854,78 @@ document.addEventListener('keydown', function(e) {
   }
 });
 
-// Dimension messages can precede renderUI/plot binding. Keep the latest
-// dimensions on the module's persistent DOM, then replay on binding.
-window.ggplotGuiApplyPlotScale = function(panel, plot, w, h) {
-  if (!panel || !plot || !isFinite(w) || !isFinite(h) || w <= 0 || h <= 0) {
-    return false;
-  }
+// The module caches the native device dimensions. The output remains a native
+// sized Shiny plot; only the canvas and spacer own browser display geometry.
+window.updatePlotDisplayGeometry = function(module) {
+  if (!module) return false;
+  var canvas = module.querySelector('[id$=-plot_scale_canvas]');
+  var spacer = module.querySelector('[id$=-plot_scale_spacer]');
+  var follow = module.querySelector('[id$=-plot_follow]');
+  var host = module.querySelector('.graph-internal-main-tabs');
+  if (!canvas || !spacer || !follow || !host) return false;
 
-  // The persistent live Graph plot uses the normal module fit behavior.
-  plot.style.width = w + 'px';
-  plot.style.height = h + 'px';
-  plot.setAttribute('data-plot-width', String(w));
-  plot.setAttribute('data-plot-height', String(h));
-  plot.style.transformOrigin = 'top left';
+  var w = Number(module.getAttribute('data-device-width'));
+  var h = Number(module.getAttribute('data-device-height'));
+  if (!isFinite(w) || !isFinite(h) || w <= 0 || h <= 0) return false;
+  var hostWidth = host.getBoundingClientRect().width;
+  // A detached or hidden Editor has no measurable width. Its previous scale
+  // remains on the canvas until the same updater runs when it becomes visible.
+  if (!isFinite(hostWidth) || hostWidth <= 0) return false;
 
-  var panelRect = panel.getBoundingClientRect();
-  var host = panel.parentElement;
-  var hostRect = host && host.getBoundingClientRect ? host.getBoundingClientRect() : panelRect;
-  if (!isFinite(hostRect.width) || hostRect.width <= 0) {
-    plot.style.transform = 'scale(1)';
-    panel.style.width = 'min(100%, ' + (w + 26) + 'px)';
-    panel.style.maxWidth = (w + 26) + 'px';
-    panel.style.height = (h + 26) + 'px';
-    return false;
-  }
-
-  var availableW = Math.max(1, hostRect.width - 26);
+  var nativeW = w + 26; // plot-panel's 12px padding and 1px border on each side
+  var nativeH = h + 26;
   var availableH = Math.max(300, Math.min(620, window.innerHeight * 0.60));
-  var scale = Math.min(1, availableW / w, availableH / h);
-  if (!isFinite(scale) || scale <= 0) scale = 1;
-  plot.style.transform = 'scale(' + scale + ')';
-  var visibleW = Math.max(1, w * scale + 26);
-  panel.style.width = 'min(100%, ' + visibleW + 'px)';
-  panel.style.maxWidth = visibleW + 'px';
-  panel.style.height = (h * scale + 26) + 'px';
-  panel.setAttribute('data-display-scale', String(scale));
+  var scale = Math.min(1, hostWidth / nativeW, availableH / nativeH);
+  if (!isFinite(scale) || scale <= 0) return false;
+
+  // These variables describe the Shiny output's native device, not its
+  // browser display size. The output itself receives no inline geometry.
+  follow.style.setProperty('--plot-device-width', w + 'px');
+  follow.style.setProperty('--plot-device-height', h + 'px');
+  canvas.style.transform = 'scale(' + scale + ')';
+  spacer.style.width = (nativeW * scale) + 'px';
+  spacer.style.height = (nativeH * scale) + 'px';
+  module.setAttribute('data-display-scale', String(scale));
   return true;
 };
 
-window.ggplotGuiApplyVisiblePlotScale = function(module) {
-  if (!module || module.offsetParent === null) return false;
-
-  var plot = module.querySelector('[id$=-plot]');
-  var panel = module.querySelector('[id$=-plot_panel]');
-  if (!plot || !panel) return false;
-
-  var w = Number(
-    module.getAttribute('data-device-width') || plot.getAttribute('data-plot-width') ||
-    String(plot.style.width || '').replace('px', '')
-  );
-  var h = Number(
-    module.getAttribute('data-device-height') || plot.getAttribute('data-plot-height') ||
-    String(plot.style.height || '').replace('px', '')
-  );
-
-  return window.ggplotGuiApplyPlotScale(panel, plot, w, h);
-};
+function ggplotGuiUpdatePlotDisplayGeometry(module) {
+  if (window.updatePlotDisplayGeometry(module) &&
+      typeof window.ggplotGuiUpdatePlotFollow === 'function') {
+    window.ggplotGuiUpdatePlotFollow(module);
+  }
+}
 
 Shiny.addCustomMessageHandler('set-plot-dimensions', function(msg) {
-  var panel = document.getElementById(msg.panelId);
-  var plot = document.getElementById(msg.plotId);
-  var follow = document.getElementById(msg.followId);
-  var anchor = document.getElementById(msg.anchorId);
-
+  if (msg.activationGeneration != null &&
+      Number(msg.activationGeneration) !== Number(window.ggplotGuiEditorActivationGeneration || 0)) return;
   var w = Number(msg.width);
-  var panelW = Number(msg.panelWidth);
   var h = Number(msg.height);
-
-  var module = document.getElementById(msg.plotId.replace(/-plot$/, ''));
-  if (!module) {
-    module = document.querySelector('.graph-module[data-graph-module="' + msg.plotId.replace(/-plot$/, '') + '"]');
-  }
-  if (module && isFinite(w) && isFinite(h)) {
-    module.setAttribute('data-device-width', String(w));
-    module.setAttribute('data-device-height', String(h));
-  }
-
-  if (panel && isFinite(panelW)) {
-    panel.style.width = 'min(100%, ' + panelW + 'px)';
-    panel.style.maxWidth = panelW + 'px';
-  }
-
-  window.ggplotGuiApplyPlotScale(panel, plot, w, h);
-
-  // Do not recreate/move DOM. Refresh sticky geometry only after the
-  // existing elements have adopted their new dimensions.
-  requestAnimationFrame(function() {
-    requestAnimationFrame(function() {
-      var module = follow && follow.closest ? follow.closest('.graph-module') : null;
-      if (module && typeof window.ggplotGuiUpdatePlotFollow === 'function') {
-        window.ggplotGuiUpdatePlotFollow(module);
-      } else if (anchor && follow && follow.classList.contains('plot-fixed')) {
-        var rect = anchor.getBoundingClientRect();
-        follow.style.width = rect.width + 'px';
-        follow.style.left = rect.left + 'px';
-        var boxH = Math.ceil(follow.getBoundingClientRect().height || follow.offsetHeight || 0);
-        if (boxH > 0) anchor.style.minHeight = boxH + 'px';
-      }
-    });
-  });
+  var moduleId = String(msg.plotId || '').replace(/-plot$/, '');
+  var module = document.getElementById(moduleId) ||
+    document.querySelector('.graph-module[data-graph-module="' + moduleId + '"]');
+  if (!module || !isFinite(w) || !isFinite(h) || w <= 0 || h <= 0) return;
+  module.setAttribute('data-device-width', String(w));
+  module.setAttribute('data-device-height', String(h));
+  requestAnimationFrame(function() { ggplotGuiUpdatePlotDisplayGeometry(module); });
 });
 
 // Shiny events are jQuery events. Native addEventListener does not receive
 // shiny:value, and a one-shot custom message may arrive before the DOM.
+var ggplotGuiGraphGeometryFrame = 0;
+var ggplotGuiGraphGeometryModule = null;
 $(document).on('shiny:bound shiny:value shiny:visualchange', function(event) {
   var module = event.target && event.target.closest ? event.target.closest('.graph-module') : null;
   if (!module) return;
-  requestAnimationFrame(function() { window.ggplotGuiApplyVisiblePlotScale(module); });
+  ggplotGuiGraphGeometryModule = module;
+  if (ggplotGuiGraphGeometryFrame) return;
+  ggplotGuiGraphGeometryFrame = requestAnimationFrame(function() {
+    ggplotGuiGraphGeometryFrame = 0;
+    var current = ggplotGuiGraphGeometryModule;
+    ggplotGuiGraphGeometryModule = null;
+    var panel = current && current.closest ? current.closest('.graph-module-panel') : null;
+    if (current && panel && panel.offsetParent !== null) ggplotGuiUpdatePlotDisplayGeometry(current);
+  });
 });
 
 
@@ -2714,14 +2958,9 @@ Shiny.addCustomMessageHandler('refresh-visible-graph-ui', function(msg) {
         module = document.querySelector('.graph-module-panel:not([style*="display: none"]) .graph-module');
       }
       if (module) {
-        if (typeof window.ggplotGuiApplyVisiblePlotScale === 'function') {
-          window.ggplotGuiApplyVisiblePlotScale(module);
-        }
+        ggplotGuiUpdatePlotDisplayGeometry(module);
         if (typeof window.ggplotGuiObserveVisiblePlotFollow === 'function') {
           window.ggplotGuiObserveVisiblePlotFollow();
-        }
-        if (typeof window.ggplotGuiUpdatePlotFollow === 'function') {
-          window.ggplotGuiUpdatePlotFollow(module);
         }
       }
     });
@@ -2731,10 +2970,6 @@ Shiny.addCustomMessageHandler('refresh-visible-graph-ui', function(msg) {
 (function() {
   function updatePlotFollow(module) {
     if (!module || module.offsetParent === null) return;
-
-    if (typeof window.ggplotGuiApplyVisiblePlotScale === 'function') {
-      window.ggplotGuiApplyVisiblePlotScale(module);
-    }
 
     var anchor = module.querySelector('[id$=-plot_anchor]');
     var box = module.querySelector('[id$=-plot_follow]');
@@ -2839,7 +3074,7 @@ Shiny.addCustomMessageHandler('refresh-visible-graph-ui', function(msg) {
   }
 
   function updateVisiblePlotFollow() {
-    visibleModules().forEach(function(m) { updatePlotFollow(m); });
+    visibleModules().forEach(function(m) { ggplotGuiUpdatePlotDisplayGeometry(m); });
   }
 
   document.addEventListener('click', function(e) {
@@ -2855,6 +3090,11 @@ Shiny.addCustomMessageHandler('refresh-visible-graph-ui', function(msg) {
       module.querySelectorAll('details.control-section').forEach(function(el) {
         el.open = false;
       });
+    }
+
+    if (module === ggplotGuiEditorModuleRoot() && e.target.id &&
+        (e.target.id.endsWith('-open_all_sections') || e.target.id.endsWith('-close_all_sections'))) {
+      ggplotGuiCommitEditorPanels();
     }
 
     setTimeout(function() {
@@ -2879,29 +3119,24 @@ Shiny.addCustomMessageHandler('refresh-visible-graph-ui', function(msg) {
     modules.forEach(function(module) {
       var anchor = module.querySelector('[id$=-plot_anchor]');
       var box = module.querySelector('[id$=-plot_follow]');
-      var panel = module.querySelector('.plot-panel');
+      var spacer = module.querySelector('[id$=-plot_scale_spacer]');
+      var host = module.querySelector('.graph-internal-main-tabs');
       if (anchor) plotFollowResizeObserver.observe(anchor);
       if (box) plotFollowResizeObserver.observe(box);
-      if (panel) plotFollowResizeObserver.observe(panel);
+      if (spacer) plotFollowResizeObserver.observe(spacer);
+      if (host) plotFollowResizeObserver.observe(host);
     });
   }
   window.ggplotGuiObserveVisiblePlotFollow = observeVisiblePlotFollow;
 
   window.addEventListener('scroll', function() {
-    updateVisiblePlotFollow();
+    visibleModules().forEach(updatePlotFollow);
   }, {passive: true});
 
   window.addEventListener('resize', function() {
     visibleModules().forEach(function(module) {
       clearStalePlotFollow(module);
-      updatePlotFollow(module);
-
-      // Re-apply current Plot geometry using the same proportional scaling
-      // path for each visible module. Keep the module reference inside this
-      // callback so resize never depends on an implicit/global last module.
-      if (typeof window.ggplotGuiApplyVisiblePlotScale === 'function') {
-        window.ggplotGuiApplyVisiblePlotScale(module);
-      }
+      ggplotGuiUpdatePlotDisplayGeometry(module);
     });
   });
 
@@ -2910,12 +3145,12 @@ Shiny.addCustomMessageHandler('refresh-visible-graph-ui', function(msg) {
       var module = visibleModule();
       clearStalePlotFollow(module);
       observeVisiblePlotFollow();
-      updatePlotFollow(module);
+      ggplotGuiUpdatePlotDisplayGeometry(module);
     }, 0);
     setTimeout(function() {
       var module = visibleModule();
       clearStalePlotFollow(module);
-      updatePlotFollow(module);
+      ggplotGuiUpdatePlotDisplayGeometry(module);
     }, 80);
   });
 
@@ -3627,16 +3862,16 @@ Shiny.addCustomMessageHandler('refresh-visible-graph-ui', function(msg) {
       var root = document.querySelector('body > .container-fluid');
       if (!root) return;
       Array.prototype.forEach.call(root.children, function(el) {
-        if (el && el.id === 'project_load_overlay') return;
+        if (el && (el.id === 'project_load_overlay' || el.id === 'startup_load_overlay')) return;
         if (locked) {
           el.setAttribute('inert', '');
-        } else {
+        } else if (el.id !== 'app_startup_content' || !document.getElementById('startup_load_overlay')) {
           el.removeAttribute('inert');
         }
       });
     }
 
-    Shiny.addCustomMessageHandler('project-load-overlay', function(msg) {
+    function applyProjectLoadOverlay(msg) {
       var overlay = document.getElementById('project_load_overlay');
       if (!overlay) return;
       var mode = String((msg && msg.mode) || 'loading');
@@ -3646,8 +3881,13 @@ Shiny.addCustomMessageHandler('refresh-visible-graph-ui', function(msg) {
       var progressWrap = overlay.querySelector('.project-load-progress-wrap');
       var progressBar = overlay.querySelector('.project-load-progress-bar');
       var progressText = overlay.querySelector('.project-load-progress-text');
+      projectDisplayLifecycle.cancel();
+      if (mode === 'displaying') {
+        projectDisplayLifecycle.begin(msg);
+      }
 
       if (mode === 'hidden') {
+        ggplotGuiSetProjectOpenState('idle', 'overlay-hidden');
         overlay.classList.remove('visible', 'failed');
         overlay.setAttribute('aria-hidden', 'true');
         setProjectUiInert(false);
@@ -3658,6 +3898,9 @@ Shiny.addCustomMessageHandler('refresh-visible-graph-ui', function(msg) {
         try { document.activeElement.blur(); } catch (e) {}
       }
       overlay.classList.add('visible');
+      if (mode === 'failed') {
+        ggplotGuiSetProjectOpenState('idle', 'overlay-failed');
+      }
       overlay.classList.toggle('failed', mode === 'failed');
       overlay.setAttribute('aria-hidden', 'false');
       if (title) title.textContent = mode === 'failed' ? 'Projectの読み込みに失敗しました' : 'Projectを準備しています';
@@ -3682,39 +3925,114 @@ Shiny.addCustomMessageHandler('refresh-visible-graph-ui', function(msg) {
           progressBar.style.width = '';
           progressBar.style.transform = '';
           progressBar.removeAttribute('aria-valuenow');
-          progressText.textContent = 'Projectファイルを確認しています…';
+          progressText.textContent = mode === 'displaying'
+            ? '初回グラフの表示を待っています…'
+            : 'Projectファイルを確認しています…';
         }
       }
-      setProjectUiInert(true);
-    });
+      setProjectUiInert(!msg || msg.inert !== false);
+    }
 
-    // Lock immediately when the user chooses a Project file, before the
-    // upload reaches the server. This closes the short window in which
-    // another UI action could otherwise be issued during file transfer.
-    $(document).on('change', '#upload_project_all', function() {
-      if (!this.files || !this.files.length) return;
-      var overlay = document.getElementById('project_load_overlay');
-      if (!overlay) return;
-      var title = overlay.querySelector('.project-load-title');
-      var body = overlay.querySelector('.project-load-message');
-      var progressWrap = overlay.querySelector('.project-load-progress-wrap');
-      var progressBar = overlay.querySelector('.project-load-progress-bar');
-      var progressText = overlay.querySelector('.project-load-progress-text');
-      if (document.activeElement && typeof document.activeElement.blur === 'function') {
-        try { document.activeElement.blur(); } catch (e) {}
+    var projectDisplayLifecycle = window.ggplotGuiCreateProjectDisplayLifecycle(
+      function() { applyProjectLoadOverlay({mode:'hidden'}); },
+      function(message) { applyProjectLoadOverlay({mode:'failed', message:message}); }
+    );
+    Shiny.addCustomMessageHandler('project-load-overlay', applyProjectLoadOverlay);
+
+    // Project upload diagnostic (candidate-only): correlate browser file
+    // selection with the next public Shiny inputchanged event for the file
+    // input and with the R observer timestamps. We deliberately do not patch
+    // Shiny's private upload internals; therefore `file-inputchanged-browser`
+    // is the nearest stable browser-side point we can observe, not a claimed
+    // byte-level upload-complete event.
+    window.ggplotGuiProjectUploadDiagSeq = Number(window.ggplotGuiProjectUploadDiagSeq || 0);
+    window.ggplotGuiProjectUploadDiagCurrent = window.ggplotGuiProjectUploadDiagCurrent || null;
+
+    function reportProjectOpenIntent(phase) {
+      if (!window.Shiny) return;
+      var atMs = Date.now();
+      Shiny.setInputValue('project_open_intent_browser', {
+        phase: String(phase || ''), clientAtMs: atMs, nonce: atMs
+      }, {priority: 'event'});
+    }
+
+    // shiny::fileInput renders a visible label/button associated with the
+    // hidden #upload_project_all input. The capture listener runs in the same
+    // trusted click turn, before the native picker opens. A second synthetic
+    // click on the input is harmless because `opening` is idempotent.
+    document.addEventListener('click', function(ev) {
+      var target = ev.target;
+      if (!target || !target.closest) return;
+      var input = target.closest('#upload_project_all');
+      var opener = target.closest('.project-open-compact label, .project-open-compact .btn-file');
+      if (!input && !opener) return;
+      if (String(window.ggplotGuiProjectOpenState || 'idle') !== 'idle') return;
+      ggplotGuiSetProjectOpenState('opening', 'file-picker-click');
+      reportProjectOpenIntent('opening');
+    }, true);
+
+    // The HTML file-input cancel event is supported by Chromium and fires for
+    // both explicit dismissal and re-selecting an unchanged file. No timer or
+    // focus heuristic is needed; startup drawing has already completed.
+    document.addEventListener('cancel', function(ev) {
+      var fileInput = ev.target;
+      if (!fileInput || fileInput.id !== 'upload_project_all') return;
+      ggplotGuiSetProjectOpenState('idle', 'file-picker-cancel');
+      reportProjectOpenIntent('cancel');
+    }, true);
+
+    function reportProjectUploadDiag(phase, current, extra) {
+      if (!window.Shiny || !current) return;
+      var payload = {
+        selectionId: String(current.selectionId || ''),
+        phase: String(phase || ''),
+        clientAtMs: Date.now(),
+        selectedAtMs: Number(current.selectedAtMs || 0),
+        fileName: String(current.fileName || ''),
+        fileSize: Number(current.fileSize || 0),
+        nonce: Date.now()
+      };
+      if (extra && typeof extra === 'object') {
+        Object.keys(extra).forEach(function(k) { payload[k] = extra[k]; });
       }
-      overlay.classList.add('visible');
-      overlay.classList.remove('failed');
-      overlay.setAttribute('aria-hidden', 'false');
-      if (title) title.textContent = 'Projectを準備しています';
-      if (body) body.textContent = 'Projectファイルを読み込んでいます…';
-      if (progressWrap) progressWrap.classList.add('indeterminate');
-      if (progressBar) {
-        progressBar.style.width = '';
-        progressBar.style.transform = '';
-        progressBar.removeAttribute('aria-valuenow');
-      }
-      if (progressText) progressText.textContent = 'Projectファイルを確認しています…';
+      Shiny.setInputValue('project_upload_diag_browser', payload, { priority: 'event' });
+    }
+
+    // The file-input event precedes server-side file reading. Use the same
+    // overlay renderer, but label this interval as upload so a queued Shiny
+    // upload is never presented as a long-running Project file read.
+    // Capture runs before the fileInput target/bubbling upload handler. JS runs
+    // this entire selection/intent send synchronously. Startup has already
+    // completed before this control is usable; upload remains Shiny-owned.
+    document.addEventListener('change', function(ev) {
+      var fileInput = ev.target;
+      if (!fileInput || fileInput.id !== 'upload_project_all' ||
+          !fileInput.files || !fileInput.files.length) return;
+      ggplotGuiSetProjectOpenState('selected', 'file-change');
+      var selectedAtMs = Date.now();
+      var selectionId = String(selectedAtMs) + '-' + String(++window.ggplotGuiProjectUploadDiagSeq);
+      var current = {
+        selectionId: selectionId,
+        selectedAtMs: selectedAtMs,
+        fileName: fileInput.files[0].name,
+        fileSize: fileInput.files[0].size
+      };
+      window.ggplotGuiProjectUploadDiagCurrent = current;
+      // Capture the browser's file-selection time before the upload can wait
+      // behind startup rendering or other work in the Shiny server queue.
+      Shiny.setInputValue('project_upload_selected', {
+        selectionId: selectionId,
+        selectedAtMs: selectedAtMs,
+        fileName: current.fileName,
+        fileSize: current.fileSize
+      }, { priority: 'event' });
+      reportProjectUploadDiag('file-change-browser', current);
+      applyProjectLoadOverlay({
+        mode: 'loading',
+        phase: 'uploading',
+        message: 'Projectファイルを送信しています…',
+        inert: false
+      });
     // Do not make the app inert from the raw file-input change event.
     // Shiny still has to consume/upload the selected file at this point;
     // disabling the surrounding UI here can race the fileInput binding
@@ -3722,6 +4040,16 @@ Shiny.addCustomMessageHandler('refresh-visible-graph-ui', function(msg) {
     // upload_project_all to the server. The server calls
     // begin_project_load_lock() as soon as the upload arrives, and its
     // project-load-overlay message applies inert at that safe point.
+    }, true);
+
+    $(document).on('shiny:inputchanged.projectUploadDiag', function(ev) {
+      var name = String((ev && ev.name) || '');
+      if (name !== 'upload_project_all') return;
+      var current = window.ggplotGuiProjectUploadDiagCurrent;
+      if (!current) return;
+      reportProjectUploadDiag('file-inputchanged-browser', current, {
+        note: 'nearest-public-client-event; not byte-level upload-complete'
+      });
     });
 
     Shiny.addCustomMessageHandler('reset-project-save-handle', function(msg) {
@@ -3732,4 +4060,3 @@ Shiny.addCustomMessageHandler('refresh-visible-graph-ui', function(msg) {
     });
   }
 })();
-

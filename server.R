@@ -114,11 +114,6 @@ shinyServer(function(input, output, session) {
   graph_single_editor_module <- reactiveVal(NULL)
   graph_single_editor_mode <- reactiveVal("IDLE")      # IDLE / REPLAY / RENDERING / READY / STALE
   graph_single_editor_loading <- reactiveVal(FALSE)
-  # Editor-first selection may change while the singleton Editor is
-  # still hydrating. Keep only the latest requested target and drain it after
-  # the current ACK-gated transaction reaches READY; never interrupt/commit a
-  # partially restored owner.
-  graph_single_pending_target <- reactiveVal(NULL)
   graph_single_editor_generation <- reactiveVal(0L)
   # the persistent Editor may publish only while it still owns the
   # canonical GraphState revision it was synchronized from. External canonical
@@ -131,14 +126,14 @@ shinyServer(function(input, output, session) {
   # READY editor state has been accepted against the canonical revision. New sessions start closed so the
   # pristine shell does not draw a throw-away default Plot before g001 attach.
   graph_single_render_gate <- reactiveVal(FALSE)
+  # Only the first pristine g001 activation crosses the client/server boundary.
   # normal Graph switches use the permanently mounted live plot.
   # When Plot is visible, keep the transaction loading until the browser reports
   # completion of the new plot output; no cached/live bind or authorize handshake.
-  graph_single_live_render_wait <- reactiveVal(NULL)
   graph_single_default_state <- reactiveVal(NULL)
-  # the first capture happens before every dynamic browser control
-  # has reported its normalized default. Finalize the reusable new-Graph
-  # template once the startup Graph reaches READY.
+  # Capture the pristine shell after browser binding, then finalize that same
+  # canonical sample when startup adopts the already-mounted Editor. No
+  # self-replay is required to establish the reusable new-Graph template.
   graph_single_default_state_finalized <- reactiveVal(FALSE)
   # lightweight per-Graph editor-visit metadata. This deliberately
   # stores revisions only -- never Graph DOM, Shiny modules, prepared data or
@@ -148,7 +143,6 @@ shinyServer(function(input, output, session) {
   # presentation state now belongs to canonical GraphState. This
   # lightweight server store mirrors the latest browser panel-open snapshot so
   # ordinary GraphState commits can include it without keeping per-Graph DOM.
-  graph_editor_ui_panel_store <- reactiveVal(list())
 
   id_counter <- reactiveVal(1L)
 
@@ -163,11 +157,9 @@ shinyServer(function(input, output, session) {
   project_file_read <- reactiveVal(FALSE)
   project_save_destination_available <- reactiveVal(FALSE)
 
-  # Project restore lock covers bundle parsing + canonical/Figure state staging.
-  # Dormant Graphs have no restore worker; after staging, only the selected Graph
-  # is attached to the one persistent Editor.
+  # Project restore remains locked through the selected Graph's replay into the
+  # persistent Editor. Dormant Graphs and Figure runtime do not participate.
   project_load_locked <- reactiveVal(FALSE)
-  project_load_ids <- reactiveVal(character(0))
   project_load_failure <- reactiveVal(NULL)
 
   project_graph_label <- function(id) {
@@ -177,8 +169,22 @@ shinyServer(function(input, output, session) {
     if (!is.na(hit)) as.character(meta$name[[hit]] %||% id) else id
   }
 
-  send_project_load_overlay <- function(mode = c("loading", "hidden", "failed"), message = "", ready = NULL, total = NULL, current = NULL) {
-    mode <- match.arg(mode)
+  set_project_load_phase <- function(phase = c("reading", "restoring", "selected", "complete", "failed"), detail = "") {
+    phase <- match.arg(phase)
+    messages <- c(
+      reading = "Projectファイルを読み込んでいます…",
+      restoring = "Projectの状態を復元しています…",
+      selected = "選択したGraphを準備しています…"
+    )
+    mode <- if (identical(phase, "complete")) "displaying" else if (identical(phase, "failed")) "failed" else "loading"
+    message <- if (identical(phase, "failed")) {
+      as.character(detail %||% "")
+    } else if (phase %in% names(messages)) {
+      as.character(messages[[phase]])
+    } else "選択したGraphを描画しています…"
+    ready <- if (identical(phase, "selected")) 0L else NULL
+    total <- if (identical(phase, "selected")) 1L else NULL
+    current <- if (identical(phase, "selected")) 1L else NULL
     ready_n <- suppressWarnings(as.integer(ready %||% NA_integer_)[1])
     total_n <- suppressWarnings(as.integer(total %||% NA_integer_)[1])
     current_n <- suppressWarnings(as.integer(current %||% NA_integer_)[1])
@@ -191,6 +197,8 @@ shinyServer(function(input, output, session) {
       "project-load-overlay",
       list(
         mode = mode,
+        phase = phase,
+        generation = as.integer(isolate(graph_single_editor_generation())),
         message = as.character(message %||% ""),
         ready = if (is.finite(ready_n)) ready_n else NULL,
         total = if (is.finite(total_n)) total_n else NULL,
@@ -198,6 +206,7 @@ shinyServer(function(input, output, session) {
         percent = if (is.finite(pct)) pct else NULL
       )
     )
+    diag_log("PROJECT-PROGRESS", paste0("phase=", phase))
     invisible(NULL)
   }
 
@@ -213,46 +222,18 @@ shinyServer(function(input, output, session) {
 
   begin_project_load_lock <- function() {
     project_load_locked(TRUE)
-    project_load_ids(character(0))
     project_load_failure(NULL)
     diag_log("PROJECT-LOCK", "LOCKED")
-    send_project_load_overlay("loading", "Projectファイルを読み込んでいます…", ready = 0L, total = NULL, current = NULL)
+    set_project_load_phase("reading")
     invisible(NULL)
   }
 
-  update_project_load_lock <- function(current_id = NULL) {
-    if (!isTRUE(isolate(project_load_locked()))) return(invisible(NULL))
-    ids <- as.character(isolate(project_load_ids()) %||% character(0))
-    total <- length(ids)
-    ready_n <- if (total) {
-      sum(vapply(ids, function(id) cache_has(id) && is.list(cache_get(id)), logical(1)))
-    } else 0L
-    current_id <- as.character(current_id %||% "")
-    current_idx <- if (nzchar(current_id) && current_id %in% ids) match(current_id, ids) else NA_integer_
-    current_label <- if (nzchar(current_id)) project_graph_label(current_id) else ""
-    message <- if (total && is.finite(current_idx)) {
-      paste0("Graph ", current_idx, " / ", total, " を準備中", if (nzchar(current_label)) paste0("（", current_label, "）") else "")
-    } else if (total) {
-      paste0("Graphを準備しています… ", ready_n, " / ", total)
-    } else {
-      "Projectファイルを読み込んでいます…"
-    }
-    send_project_load_overlay(
-      "loading",
-      message,
-      ready = ready_n,
-      total = total,
-      current = current_idx
-    )
-    invisible(NULL)
-  }
-
-  complete_project_load_lock <- function(reason = "all Project Graphs READY") {
+  complete_project_load_lock <- function(reason = "selected Graph READY") {
     if (!isTRUE(isolate(project_load_locked()))) return(invisible(NULL))
     project_load_locked(FALSE)
     project_load_failure(NULL)
-    diag_log("PROJECT-LOCK", paste0("UNLOCKED reason=", as.character(reason %||% "")))
-    send_project_load_overlay("hidden", "")
+    diag_log("PROJECT-LOCK", paste0("RESTORE-UNLOCKED; browser display lock retained reason=", as.character(reason %||% "")))
+    set_project_load_phase("complete")
     invisible(NULL)
   }
 
@@ -268,7 +249,7 @@ shinyServer(function(input, output, session) {
     }
     project_load_failure(list(id = id, message = msg))
     diag_log("PROJECT-LOCK", paste0("FAILED id=", id, " detail=", detail))
-    send_project_load_overlay("failed", msg)
+    set_project_load_phase("failed", msg)
     invisible(NULL)
   }
 
@@ -355,19 +336,7 @@ shinyServer(function(input, output, session) {
   # Increment only when an override can change measured/layout geometry.
   # STYLE_ONLY edits redraw the source but do not force Auto-fit measurement.
   figure_geometry_revision <- reactiveVal(0L)
-  # Project cache-first bootstrap must not synchronously remeasure every
-  # Figure source before the persisted Graph/Figure SVGs have reached the browser.
-  # While TRUE, figure_source_sizes() uses persisted snapshot metadata only.
-  # Exact gtable geometry is promoted lazily when the Figure workspace is opened.
-  figure_geometry_bootstrap_deferred <- reactiveVal(FALSE)
   figure_workspace_active <- reactiveVal(FALSE)
-  release_figure_geometry_bootstrap <- function(reason = "explicit-demand") {
-    if (!isTRUE(isolate(figure_geometry_bootstrap_deferred()))) return(invisible(FALSE))
-    figure_geometry_bootstrap_deferred(FALSE)
-    figure_geometry_revision(as.integer(isolate(figure_geometry_revision()) %||% 0L) + 1L)
-    diag_log("FIGURE-GEOMETRY-DEFER", paste0("released reason=", reason))
-    invisible(TRUE)
-  }
   figure_reorder_undo <- reactiveVal(NULL)
   figure_requested_free_padding <- reactiveVal(24)
   figure_external_assets <- reactiveVal(list())
@@ -584,6 +553,7 @@ shinyServer(function(input, output, session) {
     } else ""
     payload <- list(
       reason = as.character(reason %||% "update"),
+      generation = as.integer(isolate(graph_single_editor_generation()) %||% 0L),
       selected = selected_id,
       editing = if (isTRUE(editing_valid)) editing_id else "",
       editingName = editing_name,
@@ -591,6 +561,8 @@ shinyServer(function(input, output, session) {
       entries = entries
     )
     session$onFlushed(function() {
+      if (!identical(as.integer(payload$generation),
+                     as.integer(isolate(graph_single_editor_generation())))) return(invisible(NULL))
       session$sendCustomMessage("graph-client-catalog", payload)
     }, once = TRUE)
     invisible(TRUE)
@@ -923,7 +895,11 @@ shinyServer(function(input, output, session) {
     target <- as.character(id %||% owner)[1]
     if (!nzchar(owner) || !identical(owner, target)) return(FALSE)
     mod <- graph_single_mod()
+    lease <- isolate(graph_single_editor_lease())
     !is.null(mod) && identical(as.character(isolate(graph_single_editor_mode()) %||% ""), "READY") &&
+      is.list(lease) && identical(as.character(lease$id %||% "")[1], owner) &&
+      identical(as.integer(lease$generation %||% -1L),
+                as.integer(isolate(graph_single_editor_generation()) %||% 0L)) &&
       isTRUE(tryCatch(isolate(mod$ready()), error = function(e) FALSE))
   }
 
@@ -1067,7 +1043,7 @@ shinyServer(function(input, output, session) {
   }
 
   # Graph SVG publication/cache lifecycle retired. Temporary
-  # vector consumers (Figure Inset / Statistics) call
+  # Figure Inset vector consumers call
   # graph_preview_record_from_plot() directly and retain the result in their
   # own ownership domain only.
 
@@ -1119,21 +1095,13 @@ shinyServer(function(input, output, session) {
     if (is.null(mod) || !isTRUE(tryCatch(isolate(mod$ready()), error = function(e) FALSE))) return(NULL)
 
     comp <- tryCatch({
-      if (is.function(mod$figure_components)) isolate(mod$figure_components()) else NULL
+      isolate(mod$figure_components())
     }, error = function(e) {
       diag_log("FIGURE-EDIT-SNAPSHOT", paste0("components ERROR: ", conditionMessage(e)), id = id)
       NULL
     })
-    p <- tryCatch({
-      if (is.list(comp) && !is.null(comp$plot)) comp$plot
-      else if (is.function(mod$figure_plot)) isolate(mod$figure_plot())
-      else isolate(mod$plot())
-    }, error = function(e) NULL)
-    ex <- tryCatch({
-      if (is.list(comp) && is.list(comp$meta)) comp$meta
-      else if (is.function(mod$figure_meta)) isolate(mod$figure_meta())
-      else isolate(mod$export())
-    }, error = function(e) NULL)
+    p <- comp$plot
+    ex <- comp$meta
     if (is.null(p) || !is.list(ex)) return(NULL)
 
     epw <- suppressWarnings(as.numeric(ex$panel_width_px %||% NA_real_)[1])
@@ -1577,9 +1545,10 @@ shinyServer(function(input, output, session) {
       editing_graph_id("")
       graph_single_editor_loading(FALSE)
       graph_single_editor_mode("IDLE")
-      graph_single_editor_generation(as.integer(isolate(graph_single_editor_generation()) %||% 0L) + 1L)
+      generation <- editor_activation_supersede("graph-delete", new_id)
       if (identical(as.character(isolate(active_graph()) %||% "")[1], id)) active_graph(new_id)
-      session$sendCustomMessage("graph-editor-shell-clear", list(reason = "deleted-editing-graph", selected = new_id))
+      session$sendCustomMessage("graph-editor-shell-clear", list(reason = "deleted-editing-graph",
+        selected = new_id, generation = generation))
       diag_log("EDITOR-SHELL", "cleared reason=deleted-editing-graph")
     } else if (identical(as.character(isolate(active_graph()) %||% "")[1], id)) {
       # No live editor owned this Graph; keep the legacy active fallback valid.
