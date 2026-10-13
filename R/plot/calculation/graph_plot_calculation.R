@@ -1644,6 +1644,20 @@
       )
     )
 
+    # X category label layout is display-only: source values/order stay canonical.
+    # Apply after plot-specific themes so Box/Bar axis styling cannot overwrite
+    # the requested angle. Scatter keeps its ordinary continuous-axis theme.
+    if (input$plot_type %in% c("line", "bar", "box") && isTRUE(input$x_tick_labels_show)) {
+      x_tick_angle <- suppressWarnings(as.numeric(graph_appearance_value("x_tick_angle", input$x_tick_angle %||% 0)))
+      if (!is.finite(x_tick_angle)) x_tick_angle <- 0
+      x_tick_angle <- max(-90, min(90, x_tick_angle))
+      p <- p + theme(axis.text.x = element_text(
+        angle = x_tick_angle,
+        hjust = if (x_tick_angle > 0) 1 else if (x_tick_angle < 0) 0 else 0.5,
+        vjust = 1
+      ))
+    }
+
     # X category names are independent from the X-axis title. Hide only the
     # per-category text; tick marks/axis line remain available.
     if (input$plot_type %in% c("line", "bar", "box") && !isTRUE(input$x_tick_labels_show)) {

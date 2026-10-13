@@ -129,7 +129,7 @@
       levels_now,
       function(lv) {
         z <- branch[[lv]]
-        if (is.null(z) || !length(z) || !nzchar(trimws(as.character(z)[1]))) lv else as.character(z)[1]
+        if (is.null(z) || !length(z) || !nzchar(trimws(as.character(z)[1]))) lv else normalize_multiline_label(as.character(z)[1])
       },
       character(1)
     )
@@ -250,35 +250,6 @@
   }
   shape_style_vector <- function(variable_name, levels_now) {
     aesthetic_style_vector("shape", variable_name, levels_now)
-  }
-
-  migrate_legacy_group_styles <- function(legacy, color_var = "", line_var = "", shape_var = "") {
-    if (is.null(legacy) || !length(legacy)) return(invisible(FALSE))
-    scalar_chr <- function(x, default) {
-      z <- unlist(x, use.names = FALSE)
-      if (!length(z)) default else as.character(z[[1]])
-    }
-    scalar_num <- function(x, default) {
-      z <- suppressWarnings(as.numeric(scalar_chr(x, as.character(default))))
-      if (!is.finite(z)) default else z
-    }
-
-    if (nzchar(color_var)) {
-      tree <- isolate(color_styles()); br <- tree[[color_var]] %||% list()
-      for (lv in names(legacy)) br[[lv]] <- scalar_chr(legacy[[lv]]$color, "#333333")
-      tree[[color_var]] <- br; color_styles(tree)
-    }
-    if (nzchar(line_var)) {
-      tree <- isolate(linetype_styles()); br <- tree[[line_var]] %||% list()
-      for (lv in names(legacy)) br[[lv]] <- scalar_chr(legacy[[lv]]$linetype, "solid")
-      tree[[line_var]] <- br; linetype_styles(tree)
-    }
-    if (nzchar(shape_var)) {
-      tree <- isolate(shape_styles()); br <- tree[[shape_var]] %||% list()
-      for (lv in names(legacy)) br[[lv]] <- scalar_num(legacy[[lv]]$shape, 16)
-      tree[[shape_var]] <- br; shape_styles(tree)
-    }
-    invisible(TRUE)
   }
 
   series_combo_key <- graph_series_combo_key

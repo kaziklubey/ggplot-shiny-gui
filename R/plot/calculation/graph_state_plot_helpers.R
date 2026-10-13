@@ -78,7 +78,7 @@ level_label_values <- function(var_name, levels_now) {
       levels_now,
       function(lv) {
         z <- branch[[lv]]
-        if (is.null(z) || !length(z) || !nzchar(trimws(as.character(z)[1]))) lv else as.character(z)[1]
+        if (is.null(z) || !length(z) || !nzchar(trimws(as.character(z)[1]))) lv else normalize_multiline_label(as.character(z)[1])
       },
       character(1)
     )
@@ -313,15 +313,6 @@ ensure_regression_styles <- function(levels_now) {
     }
 
     if (changed) regression_styles(rs)
-  }
-
-ensure_raw_group_colors <- function(variable_name, levels_now) {
-    if (!nzchar(variable_name) || !length(levels_now)) return()
-    ensure_style_branch("color", variable_name, levels_now)
-    base <- color_styles()[[variable_name]] %||% list()
-    tree <- raw_group_colors(); br <- tree[[variable_name]] %||% list(); changed <- FALSE
-    for (lv in levels_now) if (is.null(br[[lv]])) { br[[lv]] <- lighten_colour(base[[lv]] %||% "#333333", amount = 0.45); changed <- TRUE }
-    if (changed) { tree[[variable_name]] <- br; raw_group_colors(tree) }
   }
 
 y_break_values <- function(ymin, ymax) {

@@ -25,7 +25,13 @@ graph_snapshot_input_defaults <- function() {
     external_error_mode = "none", external_error_col = "",
     external_ymin_col = "", external_ymax_col = "",
     xlab = "", ylab = "", title = "", ymin = "", ymax = "",
-    x_tick_labels_show = TRUE,
+    x_tick_labels_show = TRUE, x_tick_angle = 0,
+    # Palette selectors are editor-operation state: choosing one does not alter
+    # the plot until the corresponding Apply action materializes colours into
+    # the canonical style trees. Keep their UI defaults in the same input
+    # default contract so startup/new Graph state does not depend on a browser
+    # round-trip.
+    palette_preset = "okabe_ito", raw_palette_preset = "okabe_ito",
     theme = "classic", base_size = 13, font_family_mode = "sans", font_family_custom = "",
     mean_color_mode = "#000000", bar_fill_none_fixed = FALSE,
     mean_linetype = "solid", mean_shape = 16,

@@ -35,9 +35,8 @@
     invisible(value)
   }
 
-  line_break_restore_from_cfg <- function(cfg, mapping_plan = NULL, hydrate_bound_control = TRUE) {
+  line_break_restore_from_cfg <- function(cfg, mapping_plan = NULL) {
     if (!is.list(cfg)) return(invisible(FALSE))
-    plan <- graph_line_break_plan(cfg, mapping_plan)
     saved <- line_break_clean((cfg$plot %||% list())$line_breaks)
     target_x <- ""
     if (is.list(mapping_plan)) target_x <- as.character(mapping_plan$x %||% "")[1]
@@ -49,15 +48,6 @@
     line_break_choice_signature("")
     line_break_transient_signature("")
 
-    if (isTRUE(hydrate_bound_control)) {
-      selected_ui <- saved[saved %in% unname(plan$choices)]
-      updateSelectizeInput(
-        session, "line_breaks",
-        choices = plan$choices,
-        selected = selected_ui,
-        server = FALSE
-      )
-    }
     invisible(TRUE)
   }
 
@@ -150,8 +140,6 @@
     if (identical(signature, isolate(line_break_choice_signature()))) return(invisible(NULL))
     line_break_choice_signature(signature)
 
-    if (graph_editor_profile_has(editor_profile, "full_shell") ||
-        graph_editor_profile_is_figure(editor_profile)) {
       # both persistent Editors keep category-order-driven line-break
       # topology browser-direct. Figure used to fall back to updateSelectizeInput(),
       # whose delayed echo could be misclassified as a user edit after replay.
@@ -169,14 +157,5 @@
           generation = as.integer(isolate(graph_state_replay_generation()) %||% 0L)
         )
       )
-      return(invisible(NULL))
-    }
-
-    updateSelectizeInput(
-      session, "line_breaks",
-      choices = choices,
-      selected = selected,
-      server = FALSE
-    )
     invisible(NULL)
   }, priority = 120)

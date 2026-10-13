@@ -21,9 +21,8 @@ graph_editor_profile <- function(name = c("full", "figure_controls")) {
       ),
       # Full Editor uses one persistent browser DOM and direct local hydration.
       # It has no updateInput completion barrier.
-      replay_required_inputs = character(0),
       mount_inputs = c("plot_type", "graph_main_tab", "text"),
-      editable_state = c("project_name", "data_text", "reshape", "mapping",
+      editable_state = c("data_text", "reshape", "mapping",
                          "plot", "labels", "style", "statistics_recipes",
                          "statistics_selected_id", "ui_snapshot")
     ))
@@ -44,7 +43,6 @@ graph_editor_profile <- function(name = c("full", "figure_controls")) {
     # Figure owns a browser working copy over its frozen snapshot. The
     # initial mount still checks the four structural bindings below, while
     # ordinary Figure selection/reselection has no per-input replay barrier.
-    replay_required_inputs = character(0),
     mount_inputs = c("plot_type", "xvar", "yvar", "colorvar"),
     # Figure edits overlay only these canonical sections. Data, reshape,
     # Statistics, project identity and Full-Editor UI snapshot stay source-owned.
@@ -54,10 +52,6 @@ graph_editor_profile <- function(name = c("full", "figure_controls")) {
 
 graph_editor_profile_has <- function(profile, capability) {
   is.list(profile) && isTRUE((profile$capabilities %||% list())[[capability]])
-}
-
-graph_editor_profile_required_inputs <- function(profile) {
-  as.character(profile$replay_required_inputs %||% character(0))
 }
 
 graph_editor_profile_mount_inputs <- function(profile) {

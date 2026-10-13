@@ -2,6 +2,7 @@
   # Derived UI only: no diagnostic result is persisted into GraphState.
 
   output$position_mapping_notice_ui <- renderUI({
+    graph_cold_diag_measure("output$position_mapping_notice_ui", function() {
     d <- tryCatch(dat(), error = function(e) NULL)
     if (!is.data.frame(d) || !nrow(d)) return(NULL)
 
@@ -35,9 +36,11 @@
       tags$div(tags$b(paste0("横位置: ", g)), paste0("　左 → 右: ", order_text)),
       tags$div(class = "help-block", semantic)
     )
+    })
   })
 
   output$mapping_diagnostics_ui <- renderUI({
+    graph_cold_diag_measure("output$mapping_diagnostics_ui", function() {
     d <- tryCatch(dat(), error = function(e) NULL)
     if (!is.data.frame(d) || !nrow(d)) return(NULL)
 
@@ -74,4 +77,5 @@
       tags$summary("Mappingチェック"),
       div(class = "subsection-body", tagList(rows))
     )
+    })
   })

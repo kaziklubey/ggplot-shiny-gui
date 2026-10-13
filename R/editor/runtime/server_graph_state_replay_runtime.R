@@ -1,7 +1,7 @@
   # normal Graph state replay for the one persistent Editor.
   # Sourced inside graphServer after data/style/statistics runtimes are installed.
   # This runtime is the only GraphState-to-Editor hydration path. It uses one
-  # value batch plus one browser completion barrier—no staged restore, semantic
+  # browser-direct value batch and server flush—no staged restore, semantic
   # comparison, retry, or per-Graph DOM/module instances.
 
   graph_capture_editor_ui_snapshot <- function() {
@@ -12,168 +12,10 @@
     graph_ui_snapshot_normalize(list(
       schema_version = 2L,
       selections = list(
-        graph_main_tab = as.character(input$graph_main_tab %||% "Plot")[1],
         sticky_plot = isTRUE(input$sticky_plot)
       ),
-      panels = list()
+      panels = graph_ui_snapshot_normalize(isolate(attached_state_seed())$ui_snapshot)$panels
     ))
-  }
-
-  graph_replay_selected <- function(snapshot, key, fallback = "") {
-    z <- snapshot$selections[[key]]
-    if (is.null(z) || !length(z)) return(fallback)
-    as.character(unlist(z, use.names = FALSE))
-  }
-
-  graph_replay_apply_mapping_values <- function(cfg) {
-    mp <- cfg$mapping %||% list()
-    r <- cfg$reshape %||% list()
-    plan <- isolate(graph_mapping_replay_plan())
-
-    color <- json_chr(mp$color, "")
-    if (identical(color, "__fixed__")) color <- ""
-
-    # Keep saved values as short-lived seeds while ordinary observers process
-    # the same replay. Unlike the old path, the replay itself now sends the
-    # target Graph's choice lists together with the selected values. A switch
-    # therefore never asks the browser to select a value against the previous
-    # Graph's choices (which could coerce Color/Shape/ID/etc. to empty).
-    if (graph_editor_profile_has(editor_profile, "reshape_controls")) {
-      reshape_restore_seed(if (is.list(plan)) plan$reshape_columns else as.character(r$columns %||% character(0)))
-    }
-    restore_position_seed(if (is.list(plan)) plan$position else json_chr(mp$position, json_chr(mp$series, "")))
-    restore_linetype_seed(if (is.list(plan)) plan$linetype else json_chr(mp$linetype, "__color__"))
-    restore_external_error_seed(if (is.list(plan)) plan$external_error else json_chr(mp$external_error, ""))
-    restore_external_ymin_seed(if (is.list(plan)) plan$external_ymin else json_chr(mp$external_ymin, ""))
-    restore_external_ymax_seed(if (is.list(plan)) plan$external_ymax else json_chr(mp$external_ymax, ""))
-
-    if (is.list(plan)) {
-      if (graph_editor_profile_has(editor_profile, "reshape_controls")) {
-        updateCheckboxGroupInput(
-          session, "reshape_columns",
-          choices = plan$raw_cols,
-          selected = plan$reshape_columns
-        )
-      }
-      updateSelectInput(session, "xvar", choices = plan$cols, selected = plan$x)
-      updateSelectInput(session, "yvar", choices = plan$numeric_cols, selected = plan$y)
-      updateSelectInput(session, "colorvar", choices = c("使わない（固定）" = "", plan$cols), selected = plan$color)
-      updateSelectInput(session, "shapevar", choices = c("Color と同じ" = "__color__", "なし（固定）" = "", plan$cols), selected = plan$shape)
-      updateSelectInput(session, "idvar", choices = c("なし" = "", plan$cols), selected = plan$id)
-      updateSelectInput(session, "facetvar", choices = c("なし" = "", plan$cols), selected = plan$facet)
-      updateSelectInput(session, "groupvar", choices = c("なし" = "", plan$cols), selected = plan$position)
-      updateSelectInput(session, "line_series_mode", selected = plan$line_series_mode)
-      updateSelectInput(session, "line_series_var", choices = c("なし" = "", plan$cols), selected = plan$line_series_var)
-      updateSelectInput(
-        session, "linetypevar",
-        choices = c("色で分ける要因と同じ" = "__color__", "使わない（固定）" = "", plan$cols),
-        selected = plan$linetype
-      )
-      updateSelectInput(session, "external_error_col", choices = c("なし" = "", plan$numeric_cols), selected = plan$external_error)
-      updateSelectInput(session, "external_ymin_col", choices = c("なし" = "", plan$numeric_cols), selected = plan$external_ymin)
-      updateSelectInput(session, "external_ymax_col", choices = c("なし" = "", plan$numeric_cols), selected = plan$external_ymax)
-      return(invisible(TRUE))
-    }
-
-    # Invalid/partial legacy data falls back to value-only updates; the normal
-    # data observers will rebuild choices from whatever data can be parsed.
-    if (graph_editor_profile_has(editor_profile, "reshape_controls")) {
-      updateCheckboxGroupInput(session, "reshape_columns", selected = as.character(r$columns %||% character(0)))
-    }
-    updateSelectInput(session, "xvar", selected = json_chr(mp$x, ""))
-    updateSelectInput(session, "yvar", selected = json_chr(mp$y, ""))
-    updateSelectInput(session, "colorvar", selected = color)
-    updateSelectInput(session, "shapevar", selected = json_chr(mp$shape, "__color__"))
-    updateSelectInput(session, "idvar", selected = json_chr(mp$id, ""))
-    updateSelectInput(session, "facetvar", selected = json_chr(mp$facet, ""))
-    updateSelectInput(session, "groupvar", selected = json_chr(mp$position, json_chr(mp$series, "")))
-    updateSelectInput(session, "line_series_mode", selected = json_chr(mp$line_series_mode, "auto"))
-    updateSelectInput(session, "line_series_var", selected = json_chr(mp$line_series_var, ""))
-    updateSelectInput(session, "linetypevar", selected = json_chr(mp$linetype, "__color__"))
-    updateSelectInput(session, "external_error_col", selected = json_chr(mp$external_error, ""))
-    updateSelectInput(session, "external_ymin_col", selected = json_chr(mp$external_ymin, ""))
-    updateSelectInput(session, "external_ymax_col", selected = json_chr(mp$external_ymax, ""))
-    invisible(TRUE)
-  }
-
-  graph_replay_apply_scalar_controls <- function(cfg, replay_plan) {
-    r <- cfg$reshape %||% list()
-    pl <- cfg$plot %||% list()
-    lb <- cfg$labels %||% list()
-    rp <- replay_plan %||% list(full = TRUE)
-
-    if (graph_editor_profile_has(editor_profile, "full_shell") &&
-        isTRUE(rp$full_scalar_transport)) {
-      # Full-Editor-only view state and editable Data/reshape controls. Each
-      # subsection is transported only when its canonical owner changed.
-      if (isTRUE(rp$full) || isTRUE(rp$ui_changed)) {
-        snap <- graph_ui_snapshot_normalize(cfg$ui_snapshot)
-        updateTabsetPanel(
-          session, "graph_main_tab",
-          selected = graph_replay_selected(snap, "graph_main_tab", "Plot")[1]
-        )
-        sticky_saved <- snap$selections$sticky_plot
-        if (!is.null(sticky_saved) && length(sticky_saved)) {
-          updateCheckboxInput(session, "sticky_plot", value = isTRUE(sticky_saved[[1]]))
-        }
-      }
-
-      if ((isTRUE(rp$full) || isTRUE(rp$project_changed)) && !is.null(cfg$project_name)) {
-        updateTextInput(session, "project_name", value = json_chr(cfg$project_name))
-      }
-      if ((isTRUE(rp$full) || isTRUE(rp$data_changed)) && !is.null(cfg$data_text)) {
-        shinyAce::updateAceEditor(session, "text", value = json_chr(cfg$data_text))
-      }
-
-      if (isTRUE(rp$full) || isTRUE(rp$reshape_changed)) {
-        updateCheckboxInput(session, "reshape_wide", value = isTRUE(r$enabled))
-        updateCheckboxInput(session, "reshape_row_id", value = isTRUE(r$row_id))
-        updateTextInput(session, "reshape_x_name", value = json_chr(r$x_name, "Time"))
-        updateTextInput(session, "reshape_y_name", value = json_chr(r$y_name, "Value"))
-      }
-    }
-
-    if (isTRUE(rp$shared_scalar_transport)) {
-      if (isTRUE(rp$full) || isTRUE(rp$plot_changed)) {
-        target_type <- graph_plot_type_normalize(json_chr(pl$type, "line"))
-        updateSelectInput(session, "plot_type", selected = target_type)
-        updateSelectInput(
-          session, "bar_layout",
-          selected = graph_plot_bar_layout_normalize(json_chr(pl$bar_layout, "side_by_side"))
-        )
-        updateSelectInput(
-          session, "bar_value_source",
-          selected = graph_plot_bar_value_source_normalize(json_chr(pl$bar_value_source, "numeric_y"))
-        )
-        updateSelectInput(
-          session, "bar_proportion_display",
-          selected = graph_plot_bar_proportion_display_normalize(json_chr(pl$bar_proportion_display, "percent"))
-        )
-        updateSelectInput(session, "summary_type", selected = json_chr(pl$summary, "mean"))
-        updateRadioButtons(session, "summary_unit", selected = json_chr(pl$summary_unit, "row"))
-        updateRadioButtons(session, "external_error_mode", selected = json_chr(pl$external_error_mode, "none"))
-        updateCheckboxInput(session, "show_raw", value = isTRUE(pl$show_raw))
-        updateCheckboxInput(session, "connect_id", value = isTRUE(pl$connect_id))
-        updateRadioButtons(
-          session, "scatter_connect_mode",
-          selected = json_chr(pl$scatter_connect_mode, if (isTRUE(pl$connect_id)) "id" else "none")
-        )
-        updateSelectInput(
-          session, "individual_connect_direction",
-          selected = json_chr(pl$individual_connect_direction, "auto")
-        )
-      }
-
-      if (isTRUE(rp$full) || isTRUE(rp$labels_changed)) {
-        if (!is.null(lb$xlab)) updateTextAreaInput(session, "xlab", value = json_chr(lb$xlab))
-        if (!is.null(lb$ylab)) updateTextAreaInput(session, "ylab", value = json_chr(lb$ylab))
-        if (!is.null(lb$title)) updateTextInput(session, "title", value = json_chr(lb$title))
-        if (!is.null(lb$ymin)) updateTextInput(session, "ymin", value = json_chr(lb$ymin))
-        if (!is.null(lb$ymax)) updateTextInput(session, "ymax", value = json_chr(lb$ymax))
-        if (!is.null(lb$y_top_to_tick)) updateCheckboxInput(session, "y_top_to_tick", value = isTRUE(lb$y_top_to_tick))
-      }
-    }
-    invisible(TRUE)
   }
 
   graph_replay_apply_statistics <- function(cfg) {
@@ -185,194 +27,64 @@
     # the source GraphState recipes untouched through profile state overlay.
     stats_replace_graph_context(
       restored = restored,
-      preferred_id = cfg$statistics_selected_id %||% NULL,
-      legacy_reshape = cfg$reshape %||% list()
+      preferred_id = cfg$statistics_selected_id %||% NULL
     )
     invisible(TRUE)
   }
 
-  # Ace Data text deliberately stays off the generic browser-direct scalar
-  # payload. shinyAce owns its server->browser update contract, just as it owns
-  # browser->Shiny transport for user edits. Queue the canonical Data text only
-  # for replay generations whose Data owner changed (or for a full attach).
-  # The caller performs the generation check immediately before invoking this
-  # helper, so a superseded Graph switch cannot enqueue a stale Ace hydrate.
-  graph_replay_hydrate_data_text_native <- function(cfg, replay_plan, generation) {
+  # Data text uses one explicit Graph-owned document transport rather than
+  # shinyAce's implicit input$text ownership. Every hydrate carries the target
+  # Graph id and outer Editor lease generation; browser edits echo those exact
+  # identifiers back with a monotonically increasing sequence number.
+  graph_replay_hydrate_data_document <- function(cfg, transaction, replay_generation) {
     if (!graph_editor_profile_has(editor_profile, "full_shell")) return(invisible(FALSE))
-    rp <- replay_plan %||% list(full = TRUE)
-    if (!isTRUE(rp$full) && !isTRUE(rp$data_changed)) return(invisible(FALSE))
+    tx <- transaction %||% list()
+    graph_id <- as.character(tx$id %||% "")[[1]]
+    lease_generation <- suppressWarnings(as.integer(tx$generation %||% replay_generation %||% 0L))
+    if (!nzchar(graph_id) || !is.finite(lease_generation)) return(invisible(FALSE))
 
-    text_value <- graph_state_scalar(cfg$data_text, "")
-    shinyAce::updateAceEditor(session, "text", value = text_value)
+    text_value <- graph_data_document_source_text(cfg)
+    doc <- graph_data_document_from_state(cfg)
+    session$sendCustomMessage(
+      "graph-data-document-hydrate",
+      app_json_safe_tree(list(
+        graphId = graph_id,
+        generation = lease_generation,
+        activationGeneration = lease_generation,
+        replayGeneration = as.integer(replay_generation %||% 0L),
+        inputId = session$ns("text"),
+        patchInputId = session$ns("data_document_patch"),
+        text = text_value,
+        sourceRevision = as.integer(doc$source_revision %||% 0L),
+        parseStatus = as.character(doc$parse_status %||% "valid")[[1]]
+      ))
+    )
     diag(
-      "DATA-TEXT-HYDRATE",
+      "DATA-DOCUMENT-HYDRATE",
       paste0(
-        "queued generation=", as.integer(generation %||% 0L),
+        "queued graph=", graph_id,
+        " lease_generation=", lease_generation,
+        " replay_generation=", as.integer(replay_generation %||% 0L),
+        " source_revision=", as.integer(doc$source_revision %||% 0L),
         " chars=", nchar(text_value, type = "chars")
       )
     )
     invisible(TRUE)
   }
 
-  graph_browser_direct_hydration_payload <- function(cfg, replay_plan, transaction = NULL) {
-    values <- utils::modifyList(graph_snapshot_input_defaults(), graph_ui_seed_from_state(cfg))
-    values$project_name <- graph_state_scalar(cfg$project_name, "")
-    # graph_ui_seed_from_state() intentionally includes Data text for ordinary
-    # UI seeding. Browser-direct replay must remove it again: Ace is hydrated
-    # separately through shinyAce::updateAceEditor(), not the scalar batch.
-    values$text <- NULL
-    values$reshape_wide <- isTRUE((cfg$reshape %||% list())$enabled)
-    values$reshape_row_id <- isTRUE((cfg$reshape %||% list())$row_id)
-    values$reshape_x_name <- graph_state_scalar((cfg$reshape %||% list())$x_name, "Time")
-    values$reshape_y_name <- graph_state_scalar((cfg$reshape %||% list())$y_name, "Value")
-    snap <- graph_ui_snapshot_normalize(cfg$ui_snapshot)
-    # graph_main_tab is intentionally excluded from browser-direct scalar
-    # hydration. Shiny's tabset binding owns the pane + input transition and
-    # is restored after this direct value batch with updateTabsetPanel().
-    values$sticky_plot <- isTRUE(snap$selections$sticky_plot %||% FALSE)
-    values$reshape_columns <- as.character((cfg$reshape %||% list())$columns %||% character(0))
-    values$line_breaks <- as.character((cfg$plot %||% list())$line_breaks %||% character(0))
+  sys.source(file.path(getwd(), "R/editor/runtime/graph_browser_direct_payload_runtime.R"), envir = environment())
 
-    mapping_plan <- isolate(graph_mapping_replay_plan())
-    choices <- list()
-    option_records <- function(x, labels = NULL) {
-      x <- as.character(x %||% character(0))
-      if (is.null(labels)) labels <- x
-      labels <- as.character(labels)
-      lapply(seq_along(x), function(i) list(label = labels[[i]], value = x[[i]]))
-    }
-    prepend_options <- function(prefix, x) c(prefix, option_records(x))
-    if (is.list(mapping_plan)) {
-      cols <- as.character(mapping_plan$cols %||% character(0))
-      nums <- as.character(mapping_plan$numeric_cols %||% character(0))
 
-      # Use the same target-derived, validity-checked Mapping plan for both the
-      # option universe and the selected values. This prevents a stale/invalid
-      # saved scalar from being selected against a newly rebuilt choice set.
-      values$xvar <- as.character(mapping_plan$x %||% "")[1]
-      values$yvar <- as.character(mapping_plan$y %||% "")[1]
-      values$colorvar <- as.character(mapping_plan$color %||% "")[1]
-      values$shapevar <- as.character(mapping_plan$shape %||% "__color__")[1]
-      values$idvar <- as.character(mapping_plan$id %||% "")[1]
-      values$facetvar <- as.character(mapping_plan$facet %||% "")[1]
-      values$groupvar <- as.character(mapping_plan$position %||% "")[1]
-      values$linetypevar <- as.character(mapping_plan$linetype %||% "__color__")[1]
-      values$line_series_mode <- as.character(mapping_plan$line_series_mode %||% "auto")[1]
-      values$line_series_var <- as.character(mapping_plan$line_series_var %||% "")[1]
-      values$external_error_col <- as.character(mapping_plan$external_error %||% "")[1]
-      values$external_ymin_col <- as.character(mapping_plan$external_ymin %||% "")[1]
-      values$external_ymax_col <- as.character(mapping_plan$external_ymax %||% "")[1]
-      values$reshape_columns <- as.character(mapping_plan$reshape_columns %||% character(0))
-
-      choices$xvar <- option_records(cols)
-      choices$yvar <- option_records(nums)
-      choices$colorvar <- prepend_options(list(list(label = "使わない（固定）", value = "")), cols)
-      choices$shapevar <- prepend_options(list(
-        list(label = "Color と同じ", value = "__color__"),
-        list(label = "なし（固定）", value = "")
-      ), cols)
-      choices$idvar <- prepend_options(list(list(label = "なし", value = "")), cols)
-      choices$facetvar <- prepend_options(list(list(label = "なし", value = "")), cols)
-      choices$groupvar <- prepend_options(list(list(label = "なし", value = "")), cols)
-      choices$line_series_var <- prepend_options(list(list(label = "なし", value = "")), cols)
-      choices$linetypevar <- prepend_options(list(
-        list(label = "色で分ける要因と同じ", value = "__color__"),
-        list(label = "使わない（固定）", value = "")
-      ), cols)
-      choices$external_error_col <- prepend_options(list(list(label = "なし", value = "")), nums)
-      choices$external_ymin_col <- prepend_options(list(list(label = "なし", value = "")), nums)
-      choices$external_ymax_col <- prepend_options(list(list(label = "なし", value = "")), nums)
-      choices$reshape_columns <- option_records(mapping_plan$raw_cols %||% character(0))
-
-      # line_breaks is a selectize whose option universe depends on the effective
-      # X mapping/order. Keep it inside the same browser-direct choice phase so
-      # the Full Editor never needs a late updateSelectizeInput() after READY.
-      lb_plan <- tryCatch(graph_line_break_plan(cfg, mapping_plan), error = function(e) NULL)
-      if (is.list(lb_plan) && !is.null(lb_plan$choices)) {
-        lb_values <- as.character(unname(lb_plan$choices) %||% character(0))
-        lb_labels <- as.character(names(lb_plan$choices) %||% lb_values)
-        choices$line_breaks <- option_records(lb_values, lb_labels)
-        saved_breaks <- as.character((cfg$plot %||% list())$line_breaks %||% character(0))
-        values$line_breaks <- saved_breaks[saved_breaks %in% lb_values]
-      }
-    }
-
-    list(
-      graphId = as.character((transaction %||% list())$id %||% "")[[1]],
-      generation = as.integer(isolate(graph_state_replay_generation()) %||% 0L),
-      mode = if (graph_editor_profile_is_figure(editor_profile)) "figure_controls" else "full",
-      inputPrefix = session$ns(""),
-      patchInput = session$ns("graph_profile_browser_patch"),
-      values = values,
-      choices = choices,
-      panels = snap$panels %||% list(),
-      changedInputs = as.list(as.character(replay_plan$updated_inputs %||% character(0)))
-    )
-  }
-
-  graph_browser_direct_publish_pools <- function(cfg) {
+  graph_browser_direct_publish_pools <- function(cfg, mapping_plan = NULL, pools = graph_slot_pool_names()) {
     if (!is.list(cfg) || !graph_editor_profile_has(editor_profile, "full_shell")) return(invisible(FALSE))
-    d <- tryCatch(graph_snapshot_data(cfg), error = function(e) NULL)
+    plan <- mapping_plan
+    if (!is.list(plan)) plan <- tryCatch(graph_replay_mapping_plan(cfg), error = function(e) NULL)
+    d <- if (is.list(plan) && is.data.frame(plan$data)) plan$data else NULL
     if (!is.data.frame(d)) return(invisible(FALSE))
-    mp <- cfg$mapping %||% list()
-    st <- cfg$style %||% list()
-    app <- st$appearance %||% list()
-    levels_for <- function(v) {
-      v <- json_chr(v, "")
-      if (!nzchar(v) || !v %in% names(d)) return(character(0))
-      z <- d[[v]]
-      lev <- levels(z)
-      if (is.null(lev) || !length(lev)) lev <- unique(as.character(z))
-      as.character(lev[!is.na(lev)])
-    }
-    color_var <- json_chr(mp$color, "")
-    if (identical(color_var, "__fixed__")) color_var <- ""
-    linetype_mode <- json_chr(mp$linetype, "__color__")
-    linetype_var <- if (identical(linetype_mode, "__color__")) color_var else linetype_mode
-    shape_mode <- json_chr(mp$shape, "__color__")
-    shape_var <- if (identical(shape_mode, "__color__")) color_var else shape_mode
-    position_var <- json_chr(mp$position, "")
-    color_levels <- levels_for(color_var)
-    linetype_levels <- levels_for(linetype_var)
-    shape_levels <- levels_for(shape_var)
-    color_branch <- (st$color_styles %||% list())[[color_var]] %||% list()
-    fill_levels <- graph_bar_box_fill_none_levels(st$fill_none_styles %||% list(), color_var)
-    plot_type <- json_chr((cfg$plot %||% list())$type, "line")
-    bar_box <- graph_plot_uses_fill(plot_type)
-    graph_slot_pool_publish("color_style", "color_fill", lapply(color_levels, function(lv) list(
-      key = lv, label = lv, value = as.character(color_branch[[lv]] %||% "#333333")[1], fillNone = lv %in% fill_levels
-    )), context_key = paste(c(color_var, color_levels, paste0("barbox=", bar_box)), collapse = "\u001f"),
-      empty_text = "Colorに使う列がありません。", options = list(showFillNone = bar_box))
-    lt_branch <- (st$linetype_styles %||% list())[[linetype_var]] %||% list()
-    graph_slot_pool_publish("linetype_style", "linetype", lapply(linetype_levels, function(lv) list(
-      key = lv, label = lv, value = as.character(lt_branch[[lv]] %||% "solid")[1]
-    )), context_key = paste(c(linetype_var, linetype_levels), collapse = "\u001f"), empty_text = "Linetypeは固定です。")
-    sh_branch <- (st$shape_styles %||% list())[[shape_var]] %||% list()
-    graph_slot_pool_publish("shape_style", "shape", lapply(shape_levels, function(lv) list(
-      key = lv, label = lv, value = as.character(sh_branch[[lv]] %||% 16)[1]
-    )), context_key = paste(c(shape_var, shape_levels), collapse = "\u001f"), empty_text = "Shapeは固定です。")
-
-    combo_entries <- list()
-    combo_keys <- character(0)
-    if (isTRUE(app$series_style_override) && nzchar(color_var) && nzchar(position_var) &&
-        !identical(color_var, position_var) && position_var %in% names(d)) {
-      combo_keys <- unique(graph_series_combo_key(as.character(d[[color_var]]), as.character(d[[position_var]])))
-      combo_keys <- combo_keys[!is.na(combo_keys)]
-      series <- st$series_styles %||% list()
-      combo_entries <- lapply(combo_keys, function(key) list(
-        key = key, label = key, value = as.character((series[[key]] %||% list())$color %||% "#333333")[1]
-      ))
-    }
-    graph_slot_pool_publish("series_style", "color", combo_entries,
-      context_key = paste(combo_keys, collapse = "\u001f"),
-      empty_text = "Colorと横位置要因に異なる列を選択すると、組み合わせ別の色設定が表示されます。")
-
-    raw_key <- if (length(combo_keys)) paste0("__combo__::", color_var, "::", position_var) else color_var
-    raw_levels <- if (length(combo_keys)) combo_keys else color_levels
-    raw_branch <- (st$raw_group_colors %||% list())[[raw_key]] %||% list()
-    graph_slot_pool_publish("raw_group_color", "color", lapply(raw_levels, function(lv) list(
-      key = lv, label = lv, value = as.character(raw_branch[[lv]] %||% "#555555")[1]
-    )), context_key = paste(c(raw_key, raw_levels), collapse = "\u001f"), empty_text = "Colorに使う系列がありません。")
+    # Use the validity-checked effective mappings shown by browser hydration.
+    display_cfg <- cfg
+    for (key in c("x", "color", "linetype", "shape", "position")) display_cfg$mapping[[key]] <- plan[[key]]
+    for (pool in pools) graph_slot_pool_publish_spec(pool, display_cfg, d)
     invisible(TRUE)
   }
 
@@ -382,9 +94,8 @@
     cfg <- isolate(graph_state_replay_target())
     if (!is.list(cfg)) return(invisible(FALSE))
 
-    # ACK follows immediate transport of bound input values (including Ace).
-    # Ordinary choices writers were excluded throughout this transaction.
-    # Release only after those inputs have crossed the server flush.
+    # Release after the canonical hydration messages have crossed the server
+    # flush. Data Document owns Ace; no native input ACK is read back.
     attached_state_seed(cfg)
     graph_state_replay_completed_generation(as.integer(generation))
     graph_state_replay_active(FALSE)
@@ -392,94 +103,118 @@
     graph_state_replay_error(NULL)
     restoring_style_state(FALSE)
     diag("STATE-REPLAY", paste0("READY generation=", generation, " token=", token, " mode=mapping-transaction"))
+    graph_cold_diag_end("replay-finish")
     invisible(TRUE)
   }
 
-  observeEvent(input$graph_state_replay_ack, {
-    ack <- input$graph_state_replay_ack
-    if (!is.list(ack)) return()
-    generation <- suppressWarnings(as.integer(ack$generation %||% -1L))
-    token <- as.character(ack$token %||% "")[1]
-    pending_generation <- as.integer(isolate(graph_state_replay_generation()) %||% -1L)
-    if (!isTRUE(isolate(graph_state_replay_active())) || !identical(generation, pending_generation)) return()
-    if (!is.null(ack$error) && nzchar(as.character(ack$error)[1])) {
-      err <- as.character(ack$error)[1]
-      graph_state_replay_error(err)
-      # Failure is terminal for this replay generation. Never leave the module
-      # in replay_active=TRUE waiting for an ACK that already reported failure.
-      graph_state_replay_active(FALSE)
-      graph_state_replay_target(NULL)
-      restoring_style_state(FALSE)
-      diag("STATE-REPLAY", paste0("TRANSPORT-ERROR ", err, " terminal=TRUE"))
-      return()
-    }
-    diag("STATE-REPLAY", paste0("browser-flush complete generation=", generation, " token=", token))
-    # The ACK arrives after the browser processed the updateInput batch. Cross
-    # one server flush so ordinary reactive observers can settle once before READY.
-    session$onFlushed(function() {
-      graph_replay_finish(generation, token)
-    }, once = TRUE)
-  }, ignoreInit = TRUE, priority = 200)
-
   graph_apply_state_replay <- function(cfg, transaction = NULL) {
     if (!is.list(cfg)) return(invisible(FALSE))
+    if (graph_editor_profile_has(editor_profile, "full_shell")) {
+      graph_editor_activation_generation(as.integer((transaction %||% list())$generation %||% 0L))
+    }
+    replay_t0 <- proc.time()[["elapsed"]]
+    replay_timing <- function(phase, extra = "") {
+      diag(
+        "STATE-REPLAY-TIMING",
+        paste0(
+          "phase=", phase,
+          " elapsed_ms=", round((proc.time()[["elapsed"]] - replay_t0) * 1000, 1),
+          if (nzchar(extra)) paste0(" ", extra) else ""
+        )
+      )
+      invisible(TRUE)
+    }
     snapshot <- graph_ui_snapshot_normalize(cfg$ui_snapshot)
 
     transaction_new_graph <- isTRUE((transaction %||% list())$new_graph)
+    transaction_full_replay <- isTRUE((transaction %||% list())$full_replay)
     # A genuinely new Graph owns a pristine canonical template. The persistent
     # Editor DOM may still display the previous Graph, so delta replay against
     # attached_state_seed() is the wrong optimization boundary here: any stale
     # browser control omitted from the delta can visually inherit the old Graph.
     # New Graph creation therefore performs one full canonical hydration.
     # Ordinary Graph switches and Duplicate keep the delta replay path.
-    previous_state <- if (isTRUE(transaction_new_graph)) NULL else isolate(attached_state_seed())
+    previous_state <- if (isTRUE(transaction_new_graph) || isTRUE(transaction_full_replay)) NULL else isolate(attached_state_seed())
+    plan_t0 <- proc.time()[["elapsed"]]
     replay_plan <- graph_editor_replay_plan(previous_state, cfg, editor_profile)
     if (!is.list(replay_plan)) return(invisible(FALSE))
+    if (isTRUE(getOption("ggplot.gui.style_pool_diag", FALSE))) {
+      replay_timing("replay-plan", paste0("work_ms=", round((proc.time()[["elapsed"]] - plan_t0) * 1000, 1)))
+    }
 
     generation <- as.integer(isolate(graph_state_replay_generation()) %||% 0L) + 1L
     graph_state_replay_generation(generation)
     graph_state_replay_error(NULL)
     graph_state_replay_target(cfg)
-    # Keep one canonical mapping/data plan available for data-source reactives
-    # throughout replay. Browser mapping controls are updated only when the
-    # canonical delta requires it.
-    graph_mapping_replay_plan(graph_replay_mapping_plan(cfg))
-    graph_mapping_choices_seed(isolate(graph_mapping_replay_plan()))
+    graph_cold_diag_begin(generation, enabled = isTRUE((transaction %||% list())$cold_replay_diag))
+    # Keep one target-derived mapping/data plan available during replay. When
+    # Data/reshape/Mapping/Plot semantics are unchanged, the plan already held
+    # by the persistent Editor is semantically identical and can be reused.
+    # This avoids reparsing the same Data Document and rerunning reshape/filter
+    # merely because labels/style/UI differ between Graphs.
+    mapping_plan_needed <- isTRUE(replay_plan$full) || isTRUE(replay_plan$data_changed) ||
+      isTRUE(replay_plan$reshape_changed) || isTRUE(replay_plan$filter_changed) || isTRUE(replay_plan$mapping_changed) ||
+      isTRUE(replay_plan$plot_changed) || !is.list(isolate(graph_mapping_replay_plan()))
+    if (isTRUE(mapping_plan_needed)) {
+      mapping_t0 <- proc.time()[["elapsed"]]
+      graph_mapping_replay_plan(graph_replay_mapping_plan(cfg))
+      replay_timing("mapping-plan", paste0("mode=rebuild work_ms=", round((proc.time()[["elapsed"]] - mapping_t0) * 1000, 1)))
+    } else {
+      replay_timing("mapping-plan", "mode=reuse")
+    }
     graph_state_replay_active(TRUE)
     restoring_style_state(TRUE)
     graph_seed_render_target(cfg, reason = "state-replay")
+    replay_timing("prepare-target")
 
     diag(
       "STATE-REPLAY",
       paste0(
         "BEGIN generation=", generation,
         " profile=", editor_profile$name,
-        " sections={", paste(replay_plan$sections, collapse=","), "}",
-        " required={", paste(replay_plan$required_inputs, collapse=","), "}"
+        " sections={", paste(replay_plan$sections, collapse=","), "}"
       )
     )
 
-    browser_direct <- graph_editor_profile_has(editor_profile, "full_shell") ||
-      graph_editor_profile_is_figure(editor_profile)
     apply_ok <- tryCatch({
-      if (!isTRUE(browser_direct)) {
-        graph_replay_apply_scalar_controls(cfg, replay_plan)
-        if (isTRUE(replay_plan$mapping_transport)) graph_replay_apply_mapping_values(cfg)
-      }
       if (isTRUE(replay_plan$mapping_transport) || isTRUE(replay_plan$plot_changed) || isTRUE(replay_plan$full)) {
         line_break_restore_from_cfg(
-          cfg, isolate(graph_mapping_replay_plan()),
-          hydrate_bound_control = !isTRUE(browser_direct)
+          cfg, isolate(graph_mapping_replay_plan())
         )
       }
-      if (isTRUE(replay_plan$statistics_changed)) graph_replay_apply_statistics(cfg)
+      if (isTRUE(replay_plan$statistics_changed)) {
+        graph_replay_apply_statistics(cfg)
+        replay_timing("statistics-canonical", "ui=dormant")
+      }
       if (isTRUE(replay_plan$style_changed) && is.list(cfg$style)) {
+        style_t0 <- proc.time()[["elapsed"]]
         apply_style_config(
           cfg$style, success_message = NULL, release_guard = FALSE, notify = FALSE,
-          hydrate_bound_controls = !isTRUE(browser_direct)
+          hydrate_bound_controls = FALSE, canonical_style = TRUE,
+          changed_branches = replay_plan$style_branches
         )
+        replay_timing("style-canonical", paste0("work_ms=", round((proc.time()[["elapsed"]] - style_t0) * 1000, 1)))
       }
-      if (isTRUE(browser_direct)) graph_browser_direct_publish_pools(cfg)
+      # Pool hydration shares the same target-derived transformed/filtered data
+      # plan as Mapping and the Plot pipeline. Preserve the existing persistent
+      # pool DOM when neither its topology nor its per-level values changed.
+      # Unrelated Style changes (font/axes/legend layout etc.) must not force a
+      # five-pool rebuild.
+      if (isTRUE(replay_plan$pool_transport)) {
+        pool_t0 <- proc.time()[["elapsed"]]
+        graph_browser_direct_publish_pools(cfg, isolate(graph_mapping_replay_plan()), replay_plan$pool_names)
+        replay_timing("slot-pools", paste0("work_ms=", round((proc.time()[["elapsed"]] - pool_t0) * 1000, 1)))
+      } else {
+        replay_timing("slot-pools", "skipped=unchanged")
+      }
+      if (isTRUE(getOption("ggplot.gui.style_pool_diag", FALSE))) {
+        for (pool in setdiff(graph_slot_pool_names(), replay_plan$pool_names)) {
+          diag("STATE-REPLAY-TIMING", paste0("phase=slot-pool name=", pool,
+            " action=skip work_ms=0 reason=dependencies-unchanged"))
+        }
+      }
+      replay_timing("server-prepare-complete")
+      graph_cold_diag_boundary("server-prepare-complete")
       TRUE
     }, error = function(e) {
       graph_state_replay_error(conditionMessage(e))
@@ -491,104 +226,56 @@
       graph_state_replay_target(NULL)
       graph_state_replay_error(NULL)
       restoring_style_state(FALSE)
+      graph_cold_diag_end("apply-error")
       return(invisible(FALSE))
     }
 
     token <- paste0("replay:", generation, ":", as.character((transaction %||% list())$id %||% "graph"))
-    panels <- if (graph_editor_profile_has(editor_profile, "full_shell")) snapshot$panels %||% list() else list()
-    browser_graph_id <- if (graph_editor_profile_has(editor_profile, "full_shell")) {
-      as.character((transaction %||% list())$id %||% "")[1]
-    } else ""
-    required_inputs <- as.character(replay_plan$required_inputs %||% character(0))
-    main_tab_target <- if (graph_editor_profile_has(editor_profile, "full_shell")) {
-      graph_replay_selected(snapshot, "graph_main_tab", "Plot")[[1]]
-    } else NULL
-
     # The Full Editor is one persistent DOM. Apply its target-derived values
     # and choices locally in the browser and release the canonical render on
     # the same server flush. There is no per-input transport, binding scan,
     # ACK or READY retry. Figure Controls use the same transport in RC12, but
     # retain their separate Figure-owned base state and lifecycle gate.
-    if (isTRUE(browser_direct)) {
-      payload <- graph_browser_direct_hydration_payload(cfg, replay_plan, transaction)
-      if (graph_editor_profile_is_figure(editor_profile)) {
-        # Browser hydration may intentionally show only the subset of saved
-        # line-break boundaries representable by the current choice universe.
-        # Figure-owned canonical state must still retain the exact saved value;
-        # otherwise the UI-only subset is overlaid back as a fake user edit just
-        # after replay (RC13.1: live-edit-coalesced plot.line_breaks).
-        figure_profile_values <- payload$values
-        figure_profile_values$line_breaks <- as.character(unlist(
-          (cfg$plot %||% list())$line_breaks %||% character(0),
-          use.names = FALSE
-        ))
-        profile_browser_values(figure_profile_values)
-        profile_browser_paths(as.list(graph_browser_patch_path_contract(cfg)))
-      }
-      session$onFlushed(function() {
-        if (!isTRUE(isolate(graph_state_replay_active())) ||
-            !identical(as.integer(isolate(graph_state_replay_generation()) %||% -1L), generation)) return(invisible(NULL))
-        graph_replay_hydrate_data_text_native(cfg, replay_plan, generation)
-        session$sendCustomMessage("graph-state-browser-hydrate", app_json_safe_tree(payload))
-        if (!is.null(main_tab_target) && length(main_tab_target) == 1L && nzchar(main_tab_target)) {
-          # Do not emulate tab selection by mutating browser scalar/input state.
-          # The native Shiny tabset updater changes the Bootstrap pane and the
-          # graph_main_tab input through one binding-owned operation. This is
-          # queued after the direct hydration message in the same outbound
-          # flush, so Statistics can observe the real active tab and recalc.
-          updateTabsetPanel(session, "graph_main_tab", selected = main_tab_target)
-          diag(
-            "MAIN-TAB-RESTORE",
-            paste0(
-              "requested=", main_tab_target,
-              " transport=updateTabsetPanel",
-              " generation=", generation
-            )
-          )
-        }
-        diag(
-          "STATE-REPLAY",
-          paste0(
-            "apply mode=browser-direct generation=", generation,
-            " scalar_count=", length(payload$values),
-            " choice_sets=", length(payload$choices),
-            " browser_barrier=NONE",
-            if (graph_editor_profile_is_figure(editor_profile)) " figure_owner=preserved" else ""
-          )
-        )
-        graph_replay_finish(generation, token)
-        invisible(NULL)
-      }, once = TRUE)
-      return(invisible(TRUE))
+    payload <- graph_browser_direct_hydration_payload(cfg, replay_plan, transaction)
+    if (graph_editor_profile_is_figure(editor_profile)) {
+      # Browser hydration may intentionally show only the subset of saved
+      # line-break boundaries representable by the current choice universe.
+      # Figure-owned canonical state must still retain the exact saved value;
+      # otherwise the UI-only subset is overlaid back as a fake user edit just
+      # after replay (RC13.1: live-edit-coalesced plot.line_breaks).
+      figure_profile_values <- payload$values
+      figure_profile_values$line_breaks <- as.character(unlist(
+        (cfg$plot %||% list())$line_breaks %||% character(0),
+        use.names = FALSE
+      ))
+      profile_browser_values(figure_profile_values)
+      profile_browser_paths(as.list(graph_browser_input_paths(cfg)))
     }
-
-    session$onFlushed(function() {
-      if (!isTRUE(isolate(graph_state_replay_active())) ||
-          !identical(as.integer(isolate(graph_state_replay_generation()) %||% -1L), generation)) return(invisible(NULL))
-      session$sendCustomMessage(
-        "graph-state-replay-complete-request",
-        list(
-          generation = generation,
-          token = token,
-          graphId = browser_graph_id,
-          panels = panels,
-          ackId = session$ns("graph_state_replay_ack"),
-          inputPrefix = session$ns(""),
-          requiredInputs = if (length(required_inputs)) {
-            as.list(unname(session$ns(required_inputs)))
-          } else {
-            list()
-          }
-        )
-      )
+    # Custom messages are serialized in call order at the end of this flush.
+    # Waiting for onFlushed created an otherwise empty server/browser turn.
+    if (isTRUE(isolate(graph_state_replay_active())) &&
+        identical(as.integer(isolate(graph_state_replay_generation()) %||% -1L), generation)) {
+      if (isTRUE(replay_plan$full) || isTRUE(replay_plan$data_changed)) {
+      graph_replay_hydrate_data_document(cfg, transaction, generation)
+      replay_timing("data-document-hydrate")
+      }
+      session$sendCustomMessage("graph-state-browser-hydrate", app_json_safe_tree(payload))
+      replay_timing("browser-direct-send", paste0("mode=", payload$replayMode, " browser_ack=NONE"))
       diag(
         "STATE-REPLAY",
         paste0(
-          "apply fields=delta generation=", generation,
-          " completion-barrier requested required_count=", length(required_inputs)
+          "apply mode=browser-direct generation=", generation,
+          " replay_mode=", payload$replayMode,
+          " scalar_count=", length(payload$values),
+          " choice_sets=", length(payload$choices),
+          " browser_barrier=NONE",
+          if (graph_editor_profile_is_figure(editor_profile)) " figure_owner=preserved" else ""
         )
       )
-      invisible(NULL)
-    }, once = TRUE)
+      finished <- isTRUE(graph_replay_finish(generation, token))
+      replay_timing("replay-release")
+      completion <- (transaction %||% list())$on_complete
+      if (isTRUE(finished) && is.function(completion)) completion(generation)
+    }
     invisible(TRUE)
   }

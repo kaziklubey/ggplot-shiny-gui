@@ -352,6 +352,7 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                 value = graph_sample_data_text(),
                 mode = "text", theme = "chrome", height = "220px"
               ),
+              uiOutput("data_document_status"),
               br(),
               checkboxInput(
                 "reshape_wide",
@@ -1414,6 +1415,14 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
                     TRUE
                   )
                 ),
+                conditionalPanel(
+                  condition = "input.plot_type != 'scatter' && input.x_tick_labels_show",
+                  sliderInput(
+                    "x_tick_angle",
+                    "X軸カテゴリ名の角度 (°)",
+                    min = -90, max = 90, value = 0, step = 5
+                  )
+                ),
                 tags$details(
                   class = "control-subsection",
                   tags$summary("X軸カテゴリ名 / Facet名"),
@@ -1756,56 +1765,20 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
 
             ),
 
-            tabPanel("Data View",
-              br(),
-              p(class = "help-block", "Plotへ渡すReshape後のデータを表示します。フィルター使用時は適用後の行を表示します。"),
-              uiOutput("data_view_status"),
-              tableOutput("data_view")
-            ),
-          tabPanel(
-            "製作者コメント",
-            div(
-              style = "max-width: 900px; padding: 20px 10px;",
-              h3("本アプリケーションについて"),
-              p(
-                "本アプリケーションは、Rの ",
-                tags$code("ggplot2"),
-                " をより簡便に利用し、グラフ作成を支援することを目的として作成したものです。"
-              ),
-              h4("統計解析について"),
-              p(
-                "分散分析には井関龍太先生の ",
-                tags$a(
-                  href = "https://riseki.cloudfree.jp/?ANOVA%E5%90%9B",
-                  target = "_blank",
-                  rel = "noopener noreferrer",
-                  "ANOVA君"
-                ),
-                " を使用しています。"
-              ),
-              p(
-                "t検定および相関分析には、Rの標準関数である ",
-                tags$code("stats::t.test()"),
-                " および ",
-                tags$code("stats::cor.test()"),
-                " を使用しています。"
-              ),
-              p(
-                "本アプリケーションは、入力データおよびユーザーが指定した設定に基づいてグラフを生成しますが、",
-                "解析内容、図の妥当性、表示内容の正確性を保証するものではありません。"
-              ),
-              p(
-                "論文、学会発表、報告書等に使用する場合は、必ず元データおよび生成された図の内容を利用者自身で確認してください。"
-              ),
-              p(
-                "本アプリケーションの利用により生じた誤り、損失、不利益、その他いかなる損害についても、製作者は責任を負いません。"
-              ),
-              p(
-                strong("本アプリケーションは作図作業の補助ツールとしてご利用ください。")
+            tabPanel(
+              "Data View",
+              div(
+                class = "graph-data-view-pane graph-pane-full-width",
+                br(),
+                p(class = "help-block", "Plotへ渡すReshape後のデータを表示します。フィルター使用時は適用後の行を表示します。"),
+                uiOutput("data_view_status"),
+                div(
+                  class = "graph-data-view-table",
+                  tableOutput("data_view")
+                )
               )
             )
-          )
-    )
+            )
           )
         ) else mainPanel(
           width = 8,

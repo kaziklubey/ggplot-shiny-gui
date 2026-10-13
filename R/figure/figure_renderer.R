@@ -72,6 +72,17 @@ figure_legend_grob_asset <- function(p, reference_res = 120, preferred_origin = 
   rr <- suppressWarnings(as.numeric(reference_res)[1])
   if (!is.finite(rr) || rr <= 0) rr <- 120
 
+  # Gtable construction already measures text. Open the same font-aware device
+  # used by the SVG asset before that work, not only before grid.draw().
+  measure_path <- tempfile(fileext = ".svg")
+  on.exit(unlink(measure_path), add = TRUE)
+  svglite::svglite(measure_path, width = 20, height = 20,
+    bg = "transparent", standalone = FALSE)
+  dev_id <- grDevices::dev.cur()
+  closed <- FALSE
+  on.exit({
+    if (!closed && identical(grDevices::dev.cur(), dev_id)) try(grDevices::dev.off(), silent = TRUE)
+  }, add = TRUE, after = FALSE)
   gt <- tryCatch(ggplot2::ggplotGrob(p), error = function(e) NULL)
   sel <- figure_select_guide_box_grob(gt, preferred_origin = preferred_origin)
   if (!is.list(sel) || is.null(sel$grob)) return(NULL)
@@ -82,19 +93,7 @@ figure_legend_grob_asset <- function(p, reference_res = 120, preferred_origin = 
   gr <- sel$grob
   gi <- suppressWarnings(as.integer(sel$index %||% NA_integer_)[1])
 
-  measure_path <- tempfile(fileext = ".pdf")
-  on.exit(unlink(measure_path), add = TRUE)
   dims <- tryCatch({
-    if (isTRUE(capabilities("cairo"))) {
-      grDevices::cairo_pdf(measure_path, width = 20, height = 20, onefile = FALSE)
-    } else {
-      grDevices::pdf(measure_path, width = 20, height = 20, onefile = FALSE)
-    }
-    dev_id <- grDevices::dev.cur()
-    closed <- FALSE
-    on.exit({
-      if (!closed && identical(grDevices::dev.cur(), dev_id)) try(grDevices::dev.off(), silent = TRUE)
-    }, add = TRUE)
     grid::grid.newpage()
     grid::grid.draw(gr)
     ww <- tryCatch(grid::convertWidth(grid::grobWidth(gr), "in", valueOnly = TRUE), error = function(e) NA_real_)
@@ -736,4 +735,3 @@ figure_build_cell_ui <- function(rect, sp, ov, svg_text = NULL, use_svg = TRUE,
     )
   )
 }
-

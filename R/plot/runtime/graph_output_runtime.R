@@ -17,31 +17,31 @@
 
   # Plot横幅/縦幅はpanel（軸に囲まれた領域）の寸法として固定する。
   # Legendやタイトル等はpanel外側へ追加され、Legendを消しても軸長は変わらない。
+  # Geometry has one owner and one invalidation key: accepted RenderState.
+  # Gate changes control consumers; they do not invalidate completed geometry.
   panel_sized_plot <- reactive({
-    p <- make_plot()
-    apply_fixed_panel_size(
-      p,
-      effective_plot_width_px(),
-      effective_plot_height_px(),
+    shiny::req(plot_build_revision() > 0L)
+    isolate(apply_fixed_panel_size(
+      make_plot(), effective_plot_width_px(), effective_plot_height_px(),
       reference_res = 120
-    )
+    ))
   })
 
   plot_total_dimensions <- reactive({
-    pw <- effective_plot_width_px()
-    ph <- effective_plot_height_px()
-    tryCatch(
-      measure_plot_size_px(
-        panel_sized_plot(),
-        reference_res = 120,
-        fallback_width = pw,
-        fallback_height = ph
-      ),
-      error = function(e) list(width = pw, height = ph)
-    )
+    measure_plot_size_px(panel_sized_plot(), reference_res = 120)
+  })
+
+  # One cached SVG per accepted render revision. Section toggles, recipe edits
+  # and Project/UI fields do not regenerate it. Plot Filter/data changes do.
+  statistics_preview_svg <- reactive({
+    p <- panel_sized_plot()
+    dims <- plot_total_dimensions()
+    svg <- figure_plot_svg_text(p, dims$width, dims$height, 120)
+    list(svg = graph_svg_viewport_text(svg), width = dims$width, height = dims$height)
   })
 
   output$plot_container <- renderUI({
+    graph_cold_diag_measure("output$plot_container", function() {
     # IMPORTANT:
     # Plot width/height changes must NOT recreate this DOM.
     # Rebuilding plot_follow while sticky caused a temporary vertical jump.
@@ -56,6 +56,11 @@
         id = session$ns("plot_follow"),
         class = "plot-follow",
         `data-follow` = "true",
+        style = sprintf(
+          "--plot-device-width:%dpx; --plot-device-height:%dpx;",
+          as.integer(round(initial_plot_width_px)),
+          as.integer(round(initial_plot_height_px))
+        ),
         uiOutput("plot_note"),
         # Preview scrolling/zooming belongs to the graph viewport only.
         # Graph書式 remains a sibling below the viewport so it follows the Graph
@@ -75,10 +80,6 @@
               div(
                 id = session$ns("plot_panel"),
                 class = "plot-panel",
-                style = sprintf(
-                  "width:%dpx; max-width:none; margin-left:auto; margin-right:auto;",
-                  as.integer(round(initial_plot_width_px + 26))
-                ),
                 plotOutput(
                   "plot",
                   width = paste0(as.integer(round(initial_plot_width_px)), "px"),
@@ -113,24 +114,24 @@
         )
       )
     )
+    })
   })
 
   # Plot DOMは固定したまま、native device寸法をbrowserへ通知する。
   # Native Plot dimensions are published into the one persistent live Plot DOM.
   # Graph replay changes values only; it never swaps display surfaces.
   send_plot_dimensions <- function(dims, reason = "reactive") {
+    generation <- as.integer(isolate(graph_editor_activation_generation()) %||% 0L)
+    if (!graph_activation_current(generation)) return(invisible(FALSE))
     pw <- suppressWarnings(as.numeric(dims$width %||% NA_real_)[1])
     ph <- suppressWarnings(as.numeric(dims$height %||% NA_real_)[1])
     if (!is.finite(pw) || !is.finite(ph) || pw <= 0 || ph <= 0) return(invisible(FALSE))
     session$sendCustomMessage(
       "set-plot-dimensions",
       list(
-        panelId = session$ns("plot_panel"),
         plotId = session$ns("plot"),
-        followId = session$ns("plot_follow"),
-        anchorId = session$ns("plot_anchor"),
+        activationGeneration = generation,
         width = as.integer(round(pw)),
-        panelWidth = as.integer(round(pw + 26)),
         height = as.integer(round(ph)),
         reason = as.character(reason %||% "")
       )
@@ -144,15 +145,20 @@
 
   if (graph_editor_profile_has(editor_profile, "preview")) {
     observe({
+      graph_cold_diag_measure("observer$preview-dimensions", function() {
+      # Device dimensions are derived preview geometry, not canonical panel
+      # size. Do not build/measure them while startup/replay owns the closed
+      # render gate; the ordinary READY render wave invalidates this observer.
+      shiny::req(isTRUE(render_gate()), cancelOutput = TRUE)
       # Only profiles with an actual live Preview DOM publish device dimensions.
       # Figure Controls are controls-only; running this consumer there used to
       # build/measure a plot after every panel selection even though no preview
       # output existed. Figure plot construction stays demand-driven by snapshot
       # publication after a real render-affecting edit.
-      shiny::req(isTRUE(render_gate()))
       diag("PLOT-CONSUMER", "request=dimensions")
       dims <- plot_total_dimensions()
       send_plot_dimensions(dims, reason = "reactive")
+      })
     })
   }
 
@@ -167,6 +173,7 @@
   }, ignoreInit = FALSE)
 
   output$plot <- renderPlot({
+    graph_cold_diag_measure("output$plot", function() {
     # Keep renderPlot itself behind the same transaction gate as make_plot().
     # This blocks dimension/input invalidations from drawing an intermediate
     # Graph while a persistent-Editor value replay is in flight.
@@ -200,6 +207,7 @@
     # deliberately prevents Shiny from constructing a ggplot coordmap that the
     # GUI never consumes.
     invisible(NULL)
+    })
   },
   # Browserの瞬間的なoutput幅には依存せず、Axes設定の明示値を
   # device sizeとして使う。これによりPlot横幅/縦幅を安定して変更できる。
@@ -226,6 +234,7 @@
   data_view_is_stale <- reactiveVal(FALSE)
 
   data_view_data <- reactive({
+    graph_cold_diag_measure("data_view_data", function() {
     # plot_source_data() now depends on the attached canonical GraphState. A
     # malformed/incomplete paste therefore invalidates here through the same
     # source as Plot/Statistics; the last valid Data View is retained below.
@@ -238,10 +247,12 @@
     }
 
     data_view_is_stale(TRUE)
-    last_valid_data_view()
+      last_valid_data_view()
+    })
   })
 
   output$data_view_status <- renderUI({
+    graph_cold_diag_measure("output$data_view_status", function() {
     if (!isTRUE(data_view_is_stale())) {
       state <- attached_state_seed() %||% list()
       if (!isTRUE(graph_plot_filter_normalize(state$plot_filter)$enabled)) return(NULL)
@@ -251,24 +262,23 @@
         style = "background:#eaf5f7;border:1px solid #a9ced6;padding:6px 9px;margin-bottom:8px;",
         paste0("フィルター適用中  ", used, " / ", total, " 行")))
     }
-    div(
+      div(
       class = "alert alert-warning",
       style = "padding:6px 9px; margin-bottom:8px;",
       "現在の貼り付け内容をまだ解析できないため、直前の正常なData Viewを表示しています。"
-    )
+      )
+    })
   })
-  outputOptions(output, "data_view_status", suspendWhenHidden = FALSE)
-
   output$data_view <- renderTable({
-    dv <- data_view_data()
-    shiny::validate(shiny::need(
-      !is.null(dv) && is.data.frame(dv),
-      "表示できるデータがありません。"
-    ))
-    head(dv, 100)
+    graph_cold_diag_measure("output$data_view", function() {
+      dv <- data_view_data()
+      shiny::validate(shiny::need(
+        !is.null(dv) && is.data.frame(dv),
+        "表示できるデータがありません。"
+      ))
+      head(dv, 100)
+    })
   }, striped = TRUE, bordered = TRUE, spacing = "s")
-
-  outputOptions(output, "data_view", suspendWhenHidden = FALSE)
 
   code_text <- reactive({
     x0 <- resolved_xvar()
@@ -369,7 +379,7 @@
     )
   })
 
-  output$ggcode <- renderText(code_text())
+  output$ggcode <- renderText(graph_cold_diag_measure("output$ggcode", function() code_text()))
 
   observeEvent(input$copy_code, {
     session$sendCustomMessage("copy-code", code_text())

@@ -23,6 +23,7 @@
   }
 
   output$order_ui <- renderUI({
+    graph_cold_diag_measure("output$order_ui", function() {
     d <- dat()
     x_now <- graph_mapping_value("x", input$xvar %||% "")
     facet_now <- graph_mapping_value("facet", input$facetvar %||% "")
@@ -74,6 +75,7 @@
     }
 
     tagList(items)
+    })
   })
 
   observeEvent(input$category_order_move, {

@@ -12,6 +12,8 @@
   }
 
 make_plot <- reactive({
+    build_generation <- as.integer(isolate(graph_editor_activation_generation()) %||% 0L)
+    shiny::req(graph_activation_current(build_generation))
     # persistent single-Editor Graph switches are one render
     # transaction. Do not rebuild while the outer owner is HYDRATING/SYNCING.
     # Opening this gate at READY invalidates make_plot once with the completed
@@ -50,27 +52,9 @@ make_plot <- reactive({
     # attachment that released this revision. Do not rebuild semantics from the
     # stale Shiny input mirror; that mirror is presentation-only during direct
     # hydration and may still show the previous plot type for a few milliseconds.
-    state_for_plot <- NULL
-    direct_state <- isTRUE(graph_browser_patch_direct_render_active())
-    if (isTRUE(direct_state)) {
-      # Full Editor renders the outer accepted canonical attachment. Figure
-      # Controls render their Figure-owned base plus the local working overlay;
-      # this never consults or mutates the source Graph registry.
-      state_for_plot <- if (graph_editor_profile_is_figure(editor_profile)) {
-        isolate(project_settings())
-      } else {
-        isolate(attached_state_seed())
-      }
-      if (!is.list(state_for_plot)) {
-        state_for_plot <- isolate(project_settings())
-        state_for_plot <- graph_apply_browser_patch_overlay(state_for_plot)
-      }
-    }
-    plot_type_diag <- if (is.list(state_for_plot)) {
-      as.character((state_for_plot$plot %||% list())$type %||% "<unset>")[1]
-    } else {
-      as.character(graph_plot_value("type", input$plot_type %||% "<unset>"))[1]
-    }
+    state_for_plot <- attached_state_seed()
+    shiny::req(is.list(state_for_plot))
+    plot_type_diag <- as.character((state_for_plot$plot %||% list())$type %||% "<unset>")[1]
     diag("PLOT", paste0("make_plot START rev=", build_rev, " type=", plot_type_diag))
     on.exit({
       dt <- proc.time()[["elapsed"]] - t0_diag_plot
@@ -78,17 +62,9 @@ make_plot <- reactive({
     }, add = TRUE)
 
     p <- graph_render_plot_safely(function() {
-      if (isTRUE(direct_state)) {
-        built <- graph_build_plot(graph_snapshot_context(state_for_plot))
-        diag("PLOT", paste0(
-          "make_plot path=DIRECT-STATE ",
-          if (graph_editor_profile_is_figure(editor_profile)) "figure-owned-working-state" else "accepted-canonical"
-        ))
-        built
-      } else {
-        graph_build_plot(environment())
-      }
+      graph_build_plot(graph_snapshot_context(state_for_plot))
     })
+    shiny::req(graph_activation_current(build_generation))
 
     plot_last_built_render_state(isolate(plot_build_render_state()))
     plot_last_success_revision(as.integer(build_rev))

@@ -25,8 +25,8 @@ graph_replay_mapping_plan <- function(cfg) {
       graph_apply_data_transform(raw, recipe, incomplete_is_warning = FALSE),
       error = function(e) NULL
     )
-    d <- if (is.list(transformed) && is.data.frame(transformed$data)) transformed$data else raw
-    d <- graph_plot_filter_apply(d, cfg$plot_filter)
+    source_data <- if (is.list(transformed) && is.data.frame(transformed$data)) transformed$data else raw
+    d <- graph_plot_filter_apply(source_data, cfg$plot_filter)
     cols <- graph_usable_column_names(d)
     all_names <- as.character(names(d) %||% rep("", ncol(d)))
     numeric_flags <- vapply(d, is.numeric, logical(1))
@@ -59,6 +59,7 @@ graph_replay_mapping_plan <- function(cfg) {
 
     list(
       raw = raw,
+      source_data = source_data,
       data = d,
       recipe = recipe,
       transform_applied = isTRUE(transformed$transformed),
