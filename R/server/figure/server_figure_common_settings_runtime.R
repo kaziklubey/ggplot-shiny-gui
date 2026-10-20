@@ -374,23 +374,16 @@
     d <- tryCatch(graph_snapshot_data(state), error = function(e) NULL)
     if (!is.data.frame(d) || !ncol(d)) return(list(data = d, vars = character(0)))
     mp <- state$mapping %||% list()
-    actual <- function(x) {
-      z <- as.character(x %||% "")[1]
-      if (!nzchar(z) || startsWith(z, "__") || !z %in% names(d)) "" else z
-    }
-    color <- actual(mp$color)
-    linetype <- as.character(mp$linetype %||% "")[1]
-    if (identical(linetype, "__color__")) linetype <- color else linetype <- actual(linetype)
-    shape <- as.character(mp$shape %||% "")[1]
-    if (identical(shape, "__color__")) shape <- color else shape <- actual(shape)
-    # Common Semantic Styles focuses on grouping/condition roles rather than
-    # every X-axis category. Existing X-level bindings are still retained below
-    # through bound_vars so imported projects do not lose them.
-    vars <- c(actual(mp$position), color, linetype, shape, actual(mp$facet))
-    vars <- unique(vars[nzchar(vars)])
-    binding <- shared_style_normalize_binding(state$style$shared_library %||% NULL)
-    bound_vars <- intersect(names(binding$levels) %||% character(0), names(d))
-    list(data = d, vars = unique(c(vars, bound_vars)))
+    ap <- state$style$appearance %||% list()
+    plot_type <- state$plot$type %||% "line"
+    roles <- shared_style_mapping_roles(
+      mp, plot_type, names(d),
+      scatter_connect = ap$scatter_connect_mode %||% "none",
+      scatter_raw_shapes = isTRUE(ap$show_raw)
+    )
+    # Keep legacy X/Facet link data stored on the Graph/Figure snapshot, but
+    # do not list those unrelated timepoints as aesthetic style targets.
+    list(data = d, vars = names(roles))
   }
 
   figure_common_semantic_records <- reactive({

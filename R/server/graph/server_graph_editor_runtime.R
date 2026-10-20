@@ -551,6 +551,10 @@
         )
         invisible(TRUE)
       },
+      on_shared_style_library_open = function() {
+        showModal(figureSharedStyleLibraryModalUI())
+        invisible(TRUE)
+      },
       on_shared_style_library_change = function(library_now) {
         owner <- graph_single_owner()
         if (!nzchar(owner)) return(invisible(FALSE))

@@ -37,111 +37,216 @@
     invisible(TRUE)
   }
 
+  # The grouping follows the actual mapped aesthetics. X/facet labels remain
+  # independently editable in the existing Axis/Label section; they are not
+  # automatically treated as line/point styles.
   shared_style_level_rows <- reactive({
     d <- tryCatch(dat(), error = function(e) NULL)
-    if (is.null(d)) return(list())
-    vars <- active_display_label_vars()
+    if (!is.data.frame(d)) return(list())
+    plot_type <- graph_plot_value("type", input$plot_type %||% "line")
+    mapped <- list(
+      color = resolve_color_var(d),
+      linetype = graph_mapping_value("linetype", input$linetypevar %||% "__color__"),
+      shape = graph_mapping_value("shape", input$shapevar %||% "__color__")
+    )
+    roles <- shared_style_mapping_roles(
+      mapped, plot_type, names(d),
+      scatter_connect = graph_appearance_value("scatter_connect_mode", input$scatter_connect_mode %||% "none"),
+      scatter_raw_shapes = isTRUE(graph_appearance_value("show_raw", input$show_raw))
+    )
     rows <- list()
-    for (v in vars) {
-      if (!v %in% names(d)) next
-      observed <- unique(as.character(d[[v]]))
+    for (vn in names(roles)) {
+      observed <- unique(as.character(d[[vn]]))
       observed <- observed[!is.na(observed)]
-      for (lv in observed) rows[[paste0(v, "\r", lv)]] <- list(variable = v, level = lv)
+      for (lv in observed) {
+        rows[[paste0(vn, "\r", lv)]] <- list(variable = vn, level = lv,
+                                               roles = roles[[vn]])
+      }
     }
     rows
   })
 
-  output$shared_style_binding_ui <- renderUI({
-    style_restore_epoch()
-    shared_style_binding_ui_epoch()
-    lib <- shared_style_normalize_library(shared_style_library())
-    b <- shared_style_normalize_binding(isolate(shared_style_binding()))
-    level_choices <- shared_style_choices("level")
-    axis_choices <- shared_style_choices("axis_label")
-    legend_choices <- shared_style_choices("legend_title")
+  # Keep the renderUI DOM steady on ordinary GraphState commits. The source
+  # data may invalidate `dat()` even though the set of aesthetic keys did not
+  # change. Only changes to mapping/levels, library choice labels, or legend
+  # structure require replacing these selectors.
+  shared_style_ui_structure <- reactiveVal(NULL)
+  observe({
     rows <- shared_style_level_rows()
     specs <- active_legend_specs()
+    spec <- list(
+      rows = rows,
+      specs = specs,
+      levels = shared_style_choices("level"),
+      axes = shared_style_choices("axis_label"),
+      legends = shared_style_choices("legend_title")
+    )
+    if (!identical(isolate(shared_style_ui_structure()), spec)) {
+      shared_style_ui_structure(spec)
+    }
+  }, priority = 140)
 
+  output$shared_style_binding_status <- renderText({
+    rows <- shared_style_level_rows()
+    b <- shared_style_normalize_binding(shared_style_binding())
+    linked <- sum(vapply(rows, function(row) {
+      nzchar(shared_style_safe_id(b$levels[[row$variable]][[row$level]] %||% ""))
+    }, logical(1)))
+    paste0("Mapping対応済み: ", linked, " / ", length(rows), "件")
+  })
+
+  output$shared_style_binding_ui <- renderUI({
+    shared_style_binding_ui_epoch()
+    spec <- shared_style_ui_structure()
+    if (is.null(spec)) return(NULL)
+    b <- shared_style_normalize_binding(isolate(shared_style_binding()))
+    rows <- spec$rows
+    by_variable <- split(rows, vapply(rows, function(row) row$variable, character(1)))
     attr_selected <- names(b$attributes)[vapply(b$attributes, isTRUE, logical(1))]
-    linked_n <- sum(vapply(b$levels, length, integer(1))) +
-      sum(nzchar(unlist(b$axis, use.names = FALSE))) + length(b$legends)
+    active_keys <- vapply(rows, function(row) paste0(row$variable, "\r", row$level), character(1))
+    legacy_rows <- list()
+    for (vn in names(b$levels) %||% character(0)) {
+      for (lv in names(b$levels[[vn]]) %||% character(0)) {
+        if (paste0(vn, "\r", lv) %in% active_keys) next
+        legacy_rows[[paste0(vn, "\r", lv)]] <- list(variable = vn, level = lv)
+      }
+    }
+    level_choices <- spec$levels
+    axis_choices <- spec$axes
+    legend_choices <- spec$legends
 
-    tagList(
-      div(
-        class = "shared-style-graph-binding",
-        checkboxInput(
-          shared_style_input_id("shared_style_enabled", "binding"),
-          "共通スタイルを使用", value = isTRUE(b$enabled)
-        ),
-        checkboxGroupInput(
-          shared_style_input_id("shared_style_attributes", "binding"), "共通スタイルで揃える項目",
-          choices = c("表示名" = "display", "色" = "color", "形" = "shape", "線" = "linetype"),
-          selected = attr_selected, inline = TRUE
-        ),
-        tags$p(
-          class = "help-block",
-          paste0(
-            "共通グループとこのGraphの項目を対応づけます。現在の対応: ", linked_n,
-            "。揃える項目をこのGraphで変更すると、同じ共通グループを使うGraphにも反映します。Figureは自動では変わりません。"
-          )
-        ),
-        if (!length(lib$items)) {
-          tags$div(class = "alert alert-info shared-style-empty", "共通スタイルはまだありません。Figure > Figure調整 > まとめて調整 > 共通スタイル管理 から作成してください。")
-        } else tagList(
-          if (length(rows)) tagList(
-            tags$strong("群・条件"),
-            tags$div(
-              class = "shared-style-binding-grid",
-              lapply(rows, function(row) {
+    tagList(div(class = "shared-style-graph-binding",
+      checkboxInput(shared_style_input_id("shared_style_enabled", "binding"),
+                    "共通スタイルを使用", value = isTRUE(b$enabled)),
+      checkboxGroupInput(shared_style_input_id("shared_style_attributes", "binding"),
+        "共通スタイルで揃える項目",
+        choices = c("表示名" = "display", "色" = "color", "形" = "shape", "線" = "linetype"),
+        selected = attr_selected, inline = TRUE),
+      div(class = "help-block",
+        shiny::textOutput(session$ns("shared_style_binding_status")),
+        tags$span("X軸・Facetの表示名は『7. 軸・Label』で設定できます。Figureは自動更新しません。")),
+      if (!length(rows)) {
+        tags$p(class = "help-block", "共有対象のColor・Shape・Linetype Mappingはありません。")
+      } else {
+        tags$details(class = "shared-style-detail", open = "open",
+          tags$summary("視覚スタイルの対応付け"),
+          lapply(names(by_variable), function(vn) {
+            var_rows <- by_variable[[vn]]
+            roles <- unique(unlist(lapply(var_rows, `[[`, "roles"), use.names = FALSE))
+            tags$div(class = "shared-style-mapped-group",
+              tags$strong(paste0(paste(roles, collapse = "・"), ": ", vn)),
+              tags$div(class = "shared-style-binding-grid", lapply(var_rows, function(row) {
                 current <- b$levels[[row$variable]][[row$level]] %||% ""
-                div(
-                  class = "shared-style-binding-row",
-                  tags$span(class = "shared-style-binding-source", paste0(row$variable, " / ", row$level)),
-                  selectInput(
-                    shared_style_input_id("shared_bind_level", paste0(row$variable, "::", row$level)),
-                    label = NULL, choices = level_choices, selected = current, width = "230px"
-                  )
-                )
-              })
+                div(class = "shared-style-binding-row",
+                  tags$span(class = "shared-style-binding-source", row$level),
+                  selectInput(shared_style_input_id("shared_bind_level", paste0(row$variable, "::", row$level)),
+                              NULL, choices = level_choices, selected = current,
+                              width = "230px", selectize = FALSE))
+              }))
             )
-          ),
-          tags$hr(),
-          tags$strong("軸ラベル"),
-          div(
-            class = "shared-style-binding-grid shared-style-binding-axis",
-            div(class = "shared-style-binding-row", tags$span(class = "shared-style-binding-source", "X axis"),
-                selectInput(shared_style_input_id("shared_bind_axis", "x"), NULL, choices = axis_choices, selected = b$axis$x %||% "", width = "230px")),
-            div(class = "shared-style-binding-row", tags$span(class = "shared-style-binding-source", "Y axis"),
-                selectInput(shared_style_input_id("shared_bind_axis", "y"), NULL, choices = axis_choices, selected = b$axis$y %||% "", width = "230px"))
-          ),
-          if (length(specs)) tagList(
-            tags$hr(),
-            tags$strong("凡例タイトル"),
-            tags$div(
-              class = "shared-style-binding-grid",
-              lapply(specs, function(sp) {
-                current <- b$legends[[sp$key]] %||% ""
-                div(
-                  class = "shared-style-binding-row",
-                  tags$span(class = "shared-style-binding-source", paste0(sp$used_by, " / ", sp$default)),
-                  selectInput(shared_style_input_id("shared_bind_legend", sp$key), NULL, choices = legend_choices, selected = current, width = "230px")
-                )
-              })
-            )
-          )
+          })
+        )
+      },
+      if (length(legacy_rows)) tags$details(class = "shared-style-detail",
+        tags$summary(paste0("既存Projectの旧対応（Mapping外・", length(legacy_rows), "件）")),
+        tags$p(class = "help-block", "旧ProjectのX軸・Facet等に残る接続です。新しい一括対応の対象にはなりません。不要なら未接続に変更できます。"),
+        tags$div(class = "shared-style-binding-grid",
+          lapply(legacy_rows, function(row) {
+            current <- b$levels[[row$variable]][[row$level]] %||% ""
+            div(class = "shared-style-binding-row",
+              tags$span(class = "shared-style-binding-source", paste0(row$variable, " / ", row$level)),
+              selectInput(shared_style_input_id("shared_bind_level", paste0(row$variable, "::", row$level)),
+                NULL, choices = level_choices, selected = current, width = "230px", selectize = FALSE))
+          })
+        )
+      ),
+      tags$details(class = "shared-style-detail",
+        tags$summary("軸ラベル・凡例タイトル（個別設定）"),
+        tags$div(class = "shared-style-binding-grid shared-style-binding-axis",
+          div(class = "shared-style-binding-row", tags$span(class = "shared-style-binding-source", "X axis"),
+            selectInput(shared_style_input_id("shared_bind_axis", "x"), NULL,
+                        choices = axis_choices, selected = b$axis$x %||% "", width = "230px", selectize = FALSE)),
+          div(class = "shared-style-binding-row", tags$span(class = "shared-style-binding-source", "Y axis"),
+            selectInput(shared_style_input_id("shared_bind_axis", "y"), NULL,
+                        choices = axis_choices, selected = b$axis$y %||% "", width = "230px", selectize = FALSE))
+        ),
+        if (length(spec$specs)) tags$div(class = "shared-style-binding-grid",
+          lapply(spec$specs, function(sp) {
+            current <- b$legends[[sp$key]] %||% ""
+            div(class = "shared-style-binding-row",
+              tags$span(class = "shared-style-binding-source", paste0(sp$used_by, " / ", sp$default)),
+              selectInput(shared_style_input_id("shared_bind_legend", sp$key), NULL,
+                choices = legend_choices, selected = current, width = "230px", selectize = FALSE))
+          })
         )
       )
-    )
+    ))
   })
+
+  # Use the exact same Library editor as Figure, with a Graph-side entry
+  # point. The modal and its handlers remain project-level / single-owner.
+  observeEvent(input$shared_style_open_library, {
+    if (is.function(on_shared_style_library_open)) on_shared_style_library_open()
+  }, ignoreInit = TRUE)
+
+  shared_style_bulk_commit <- function(create_missing = FALSE) {
+    if (isTRUE(restoring_style_state()) || isTRUE(graph_state_replay_active()) ||
+        !isTRUE(graph_activation_current())) return(invisible(FALSE))
+    rows <- isolate(shared_style_level_rows())
+    result <- shared_style_bulk_bind_levels(
+      isolate(shared_style_library()), isolate(shared_style_binding()),
+      rows, create_missing = create_missing,
+      source_style = list(color_styles = isolate(color_styles()),
+                          shape_styles = isolate(shape_styles()),
+                          linetype_styles = isolate(linetype_styles()))
+    )
+    if (result$created > 0L) {
+      if (!is.function(on_shared_style_library_change) ||
+          !isTRUE(on_shared_style_library_change(result$library))) {
+        showNotification("共通スタイルの作成を確定できませんでした。", type = "warning")
+        return(invisible(FALSE))
+      }
+    }
+    old <- isolate(shared_style_binding())
+    if (!identical(old, result$binding)) {
+      shared_style_binding(result$binding)
+      shared_style_diag_binding(result$binding)
+      # Fresh input generation prevents stale selectInput values from a prior
+      # UI from overwriting the newly committed bulk binding.
+      shared_style_binding_ui_epoch(as.integer(isolate(shared_style_binding_ui_epoch()) %||% 0L) + 1L)
+    }
+    if (result$linked > 0L || result$created > 0L) {
+      showNotification(paste0(result$linked, "件を対応付け、", result$created,
+          "件の共通スタイルを作成しました。",
+          if (!isTRUE(result$binding$enabled)) "『共通スタイルを使用』をONにすると適用されます。" else ""),
+          type = "message", duration = 5)
+    } else {
+      showNotification("新たに対応できる未接続項目はありませんでした。", type = "message")
+    }
+    if (result$ambiguous > 0L) {
+      showNotification(paste0(result$ambiguous, "件は同名の共通スタイルが複数あるため保留しました。個別に選択してください。"),
+                       type = "warning", duration = 6)
+    }
+    invisible(TRUE)
+  }
+  observeEvent(input$shared_style_bulk_match, {
+    shared_style_bulk_commit(create_missing = FALSE)
+  }, ignoreInit = TRUE)
+  observeEvent(input$shared_style_bulk_register, {
+    shared_style_bulk_commit(create_missing = TRUE)
+  }, ignoreInit = TRUE)
 
   # The linkage checkbox is user-intent owned. A hidden persistent Editor can
   # be unbound/rebound while Figure is active; that browser lifecycle used to
   # publish a synthetic FALSE and silently disable the Graph. Only the explicit
   # trusted-user channel from app_client.js may change `enabled`.
   observeEvent(input$shared_style_enabled_user_change, {
-    if (isTRUE(restoring_style_state()) || isTRUE(graph_state_replay_active())) return()
+    if (isTRUE(restoring_style_state()) || isTRUE(graph_state_replay_active()) ||
+        !isTRUE(graph_activation_current())) return()
     req <- input$shared_style_enabled_user_change
-    if (!is.list(req) || is.null(req$value)) return()
+    if (!is.list(req) || is.null(req$value) ||
+        !identical(shared_style_scalar_chr(req$controlId, ""),
+                   session$ns(shared_style_input_id("shared_style_enabled", "binding")))) return()
     req_graph <- as.character(req$graphId %||% "")[[1]]
     owner_now <- tryCatch(as.character(graph_browser_patch_override_snapshot()$graphId %||% "")[[1]], error = function(e) "")
     if (nzchar(req_graph) && nzchar(owner_now) && !identical(req_graph, owner_now)) {
@@ -158,59 +263,73 @@
     }
   }, ignoreInit = TRUE, priority = 130)
 
-  # Remaining Browser binding controls -> canonical per-Graph binding metadata.
-  # Do not read/write the linkage checkbox here: this observer can re-run for
-  # topology/UI reasons that are not user edits.
-  observe({
-    if (isTRUE(restoring_style_state())) return()
-    style_restore_epoch()
-    shared_style_binding_ui_epoch()
-    attrs <- input[[shared_style_input_id("shared_style_attributes", "binding")]]
-
+  # Only actual browser changes modify the linkage/attributes. A Shiny input
+  # echo from renderUI or workspace resume is not user intent, and must not
+  # write its temporary values back into canonical GraphState.
+  observeEvent(input$shared_style_binding_user_change, {
+    if (isTRUE(restoring_style_state()) || isTRUE(graph_state_replay_active()) ||
+        !isTRUE(graph_activation_current())) return()
+    req <- input$shared_style_binding_user_change
+    if (!is.list(req) || is.null(req$controlId)) return()
+    owner_now <- tryCatch(as.character(graph_browser_patch_override_snapshot()$graphId %||% "")[[1]],
+                          error = function(e) "")
+    req_graph <- shared_style_scalar_chr(req$graphId, "")
+    if (!nzchar(req_graph) || !identical(req_graph, owner_now)) return()
+    current_id <- function(prefix, key) {
+      identical(shared_style_scalar_chr(req$controlId, ""),
+                session$ns(shared_style_input_id(prefix, key)))
+    }
     old <- isolate(shared_style_binding())
     b <- shared_style_normalize_binding(old)
-    if (!is.null(attrs)) {
-      attrs <- as.character(attrs %||% character(0))
-      b$attributes <- list(
-        display = "display" %in% attrs,
-        color = "color" %in% attrs,
-        shape = "shape" %in% attrs,
-        linetype = "linetype" %in% attrs
-      )
+    value <- req$value
+    found <- FALSE
+    if (current_id("shared_style_attributes", "binding")) {
+      attrs <- as.character(value %||% character(0))
+      b$attributes <- list(display = "display" %in% attrs,
+                           color = "color" %in% attrs,
+                           shape = "shape" %in% attrs,
+                           linetype = "linetype" %in% attrs)
+      found <- TRUE
+    } else {
+      rows_now <- isolate(shared_style_level_rows())
+      for (vn in names(b$levels) %||% character(0)) {
+        for (lv in names(b$levels[[vn]]) %||% character(0)) {
+          key <- paste0(vn, "\r", lv)
+          if (!any(vapply(rows_now, function(row) identical(paste0(row$variable, "\r", row$level), key), logical(1)))) {
+            rows_now[[key]] <- list(variable = vn, level = lv)
+          }
+        }
+      }
+      for (row in rows_now) {
+        if (!current_id("shared_bind_level", paste0(row$variable, "::", row$level))) next
+        id <- shared_style_safe_id(value)
+        branch <- b$levels[[row$variable]] %||% list()
+        if (nzchar(id)) branch[[row$level]] <- id else branch[[row$level]] <- NULL
+        if (length(branch)) b$levels[[row$variable]] <- branch else b$levels[[row$variable]] <- NULL
+        found <- TRUE
+        break
+      }
+      if (!found) for (axis_nm in c("x", "y")) {
+        if (!current_id("shared_bind_axis", axis_nm)) next
+        b$axis[[axis_nm]] <- shared_style_safe_id(value)
+        found <- TRUE
+        break
+      }
+      if (!found) for (sp in isolate(active_legend_specs())) {
+        if (!current_id("shared_bind_legend", sp$key)) next
+        id <- shared_style_safe_id(value)
+        if (nzchar(id)) b$legends[[sp$key]] <- id else b$legends[[sp$key]] <- NULL
+        found <- TRUE
+        break
+      }
     }
-
-    rows <- shared_style_level_rows()
-    active_keys <- character(0)
-    for (row in rows) {
-      key <- paste0(row$variable, "\r", row$level)
-      active_keys <- c(active_keys, key)
-      val <- input[[shared_style_input_id("shared_bind_level", paste0(row$variable, "::", row$level))]]
-      if (is.null(val)) next
-      val <- shared_style_safe_id(val)
-      br <- b$levels[[row$variable]] %||% list()
-      if (nzchar(val)) br[[row$level]] <- val else br[[row$level]] <- NULL
-      if (length(br)) b$levels[[row$variable]] <- br else b$levels[[row$variable]] <- NULL
-    }
-
-    for (axis_nm in c("x", "y")) {
-      val <- input[[shared_style_input_id("shared_bind_axis", axis_nm)]]
-      if (!is.null(val)) b$axis[[axis_nm]] <- shared_style_safe_id(val)
-    }
-    specs <- active_legend_specs()
-    active_legend_keys <- vapply(specs, function(sp) sp$key, character(1))
-    for (sp in specs) {
-      val <- input[[shared_style_input_id("shared_bind_legend", sp$key)]]
-      if (is.null(val)) next
-      val <- shared_style_safe_id(val)
-      if (nzchar(val)) b$legends[[sp$key]] <- val else b$legends[[sp$key]] <- NULL
-    }
-
+    if (!found) return()
     b <- shared_style_normalize_binding(b)
     if (!identical(old, b)) {
       shared_style_binding(b)
       shared_style_diag_binding(b)
     }
-  }, priority = 120)
+  }, priority = 120, ignoreInit = TRUE)
 
   shared_style_apply_local <- function() {
     lib <- shared_style_normalize_library(shared_style_library())

@@ -1709,7 +1709,16 @@ graphUI <- function(id, initial_state = NULL, cached_svg = NULL, cached_label = 
               class = "section-body",
               p(
                 class = "help-block",
-                "同じ群・条件・軸ラベル・凡例タイトルを、他のGraphと共通の見た目に揃えます。対応付けは明示的に行います。"
+                "Color・Shape・LinetypeのMappingに使う群・条件をGraph間で共通化します。X軸の時点は、スタイルに使う場合だけ対象になります。"
+              ),
+              div(
+                class = "shared-style-bulk-actions",
+                div(style = "display:flex; flex-wrap:wrap; gap:6px; margin:6px 0 8px;",
+                  actionButton("shared_style_bulk_match", "Mapping項目を同名で一括対応", class = "btn-sm btn-default"),
+                  actionButton("shared_style_bulk_register", "未登録のMapping項目を作成・対応", class = "btn-sm btn-default"),
+                  actionButton("shared_style_open_library", "共通スタイルを管理…", class = "btn-sm btn-default")
+                ),
+                p(class = "help-block", "対応済み項目は変更しません。新規作成時は、現在のGraphに明示設定済みの色・形・線だけを登録します。未設定の値を上書きしません。")
               ),
               uiOutput("shared_style_binding_ui")
             )

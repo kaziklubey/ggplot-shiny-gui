@@ -158,6 +158,124 @@ shared_style_normalize_binding <- function(x) {
   out
 }
 
+# A shared style is keyed by the categorical variable that actually controls
+# an aesthetic, not by every X-axis position. A single variable used by several
+# aesthetics appears once, with all applicable roles. This helper is reused by
+# the Graph and Figure editors so both screens describe the same assignments.
+shared_style_mapping_roles <- function(mapping, plot_type = "line", available = character(0),
+                                       scatter_connect = "none", scatter_raw_shapes = FALSE) {
+  mp <- if (is.list(mapping)) mapping else list()
+  available <- as.character(available %||% character(0))
+  plot_type <- graph_plot_type_normalize(plot_type)
+  actual <- function(value) {
+    v <- shared_style_scalar_chr(value, "")
+    if (!nzchar(v) || startsWith(v, "__") || !v %in% available) "" else v
+  }
+  color <- actual(mp$color)
+  lt <- shared_style_scalar_chr(mp$linetype, "__color__")
+  shape <- shared_style_scalar_chr(mp$shape, "__color__")
+  lt <- if (identical(lt, "__color__")) color else actual(lt)
+  shape <- if (identical(shape, "__color__")) color else actual(shape)
+  roles <- list()
+  add_role <- function(variable, role) {
+    if (!nzchar(variable)) return(invisible(NULL))
+    roles[[variable]] <<- unique(c(roles[[variable]] %||% character(0), role))
+    invisible(NULL)
+  }
+  add_role(color, "色")
+  if (graph_plot_supports_mapping(plot_type, "linetype") &&
+      (identical(plot_type, "line") ||
+       (identical(plot_type, "scatter") && scatter_connect %in% c("id", "row")))) {
+    add_role(lt, "線")
+  }
+  if (graph_plot_supports_mapping(plot_type, "shape") &&
+      (plot_type %in% c("line", "scatter") || isTRUE(scatter_raw_shapes))) {
+    add_role(shape, "形")
+  }
+  roles
+}
+
+# Bulk binding is a pure semantic operation: keep existing links, match only
+# unambiguous exact names, and optionally create missing level definitions.
+# Newly created entries manage display only. In particular, bulk registration
+# must not replace a Graph's existing colors/shape/linetype with default styles.
+shared_style_bulk_bind_levels <- function(library, binding, rows, create_missing = FALSE, source_style = NULL) {
+  lib <- shared_style_normalize_library(library)
+  b <- shared_style_normalize_binding(binding)
+  linked <- 0L
+  created <- 0L
+  ambiguous <- 0L
+  for (row in rows) {
+    if (!is.list(row)) next
+    vn <- shared_style_scalar_chr(row$variable, "")
+    lv <- shared_style_scalar_chr(row$level, "")
+    if (!nzchar(vn) || !nzchar(lv)) next
+    branch <- b$levels[[vn]] %||% list()
+    if (nzchar(shared_style_safe_id(branch[[lv]] %||% ""))) next
+
+    matches <- names(lib$items)[vapply(lib$items, function(item) {
+      identical(item$kind, "level") && identical(item$display, lv)
+    }, logical(1))]
+    stable_id <- shared_style_safe_id(lv)
+    if (nzchar(stable_id) && is.list(lib$items[[stable_id]]) &&
+        identical(lib$items[[stable_id]]$kind, "level")) {
+      matches <- unique(c(matches, stable_id))
+    }
+    if (length(matches) > 1L) {
+      ambiguous <- ambiguous + 1L
+      next
+    }
+    if (!length(matches) && isTRUE(create_missing)) {
+      id <- if (nzchar(stable_id)) stable_id else "level"
+      suffix <- 2L
+      while (id %in% names(lib$items)) {
+        id <- paste0(if (nzchar(stable_id)) stable_id else "level", "_", suffix)
+        suffix <- suffix + 1L
+      }
+      item <- shared_style_default_item(id, lv, "level")
+      # Seed only explicitly stored local visual styles. Never invent an
+      # unspecified colour/shape/line: a fresh link must not recolour a Graph.
+      item$manage <- list(display = TRUE, color = FALSE, fill = FALSE,
+                          shape = FALSE, linetype = FALSE)
+      st <- if (is.list(source_style)) source_style else list()
+      roles <- as.character(row$roles %||% character(0))
+      if ("色" %in% roles) {
+        current_color <- st$color_styles[[vn]][[lv]]
+        if (!is.null(current_color) && nzchar(shared_style_scalar_chr(current_color, ""))) {
+          item$color <- graph_normalise_colour(current_color, item$color)
+          item$fill <- item$color
+          item$manage$color <- TRUE
+          item$manage$fill <- TRUE
+        }
+      }
+      if ("形" %in% roles) {
+        current_shape <- st$shape_styles[[vn]][[lv]]
+        if (!is.null(current_shape)) {
+          item$shape <- shared_style_scalar_num(current_shape, item$shape)
+          item$manage$shape <- TRUE
+        }
+      }
+      if ("線" %in% roles) {
+        current_line <- shared_style_scalar_chr(st$linetype_styles[[vn]][[lv]], "")
+        if (current_line %in% c("solid", "dashed", "dotted", "dotdash", "longdash", "twodash")) {
+          item$linetype <- current_line
+          item$manage$linetype <- TRUE
+        }
+      }
+      lib$items[[id]] <- item
+      matches <- id
+      created <- created + 1L
+    }
+    if (length(matches) != 1L) next
+    branch[[lv]] <- matches[[1]]
+    b$levels[[vn]] <- branch
+    linked <- linked + 1L
+  }
+  list(library = shared_style_normalize_library(lib),
+       binding = shared_style_normalize_binding(b),
+       linked = linked, created = created, ambiguous = ambiguous)
+}
+
 shared_style_binding_has_links <- function(binding) {
   b <- shared_style_normalize_binding(binding)
   any(vapply(b$levels, length, integer(1)) > 0L) ||

@@ -3,7 +3,7 @@
 # Each module owns its own input/reactive/style/data state.
 # ============================================================
 
-graphServer <- function(id, style_clipboard = NULL, diag_log = NULL, ui_preseeded = FALSE, on_state_change = NULL, profile = c("full", "figure_controls"), render_gate = NULL, persistent_shell = FALSE, shared_style_library = NULL, on_shared_style_library_change = NULL, browser_patch_override = NULL, on_data_document_patch = NULL, on_plot_filter_commit = NULL, activation_is_current = NULL, state_capture_deferred = function(generation) FALSE) {
+graphServer <- function(id, style_clipboard = NULL, diag_log = NULL, ui_preseeded = FALSE, on_state_change = NULL, profile = c("full", "figure_controls"), render_gate = NULL, persistent_shell = FALSE, shared_style_library = NULL, on_shared_style_library_change = NULL, on_shared_style_library_open = NULL, browser_patch_override = NULL, on_data_document_patch = NULL, on_plot_filter_commit = NULL, activation_is_current = NULL, state_capture_deferred = function(generation) FALSE) {
   editor_profile <- graph_editor_profile(match.arg(profile))
   init_timing_outer_ms <- as.numeric(proc.time()[["elapsed"]]) * 1000
   init_timing_last_ms <- init_timing_outer_ms

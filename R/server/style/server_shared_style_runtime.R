@@ -231,7 +231,15 @@
         condition = "input.shared_style_edit_kind == 'level'",
         div(
           class = "shared-style-editor-style-row",
-          colourpicker::colourInput("shared_style_edit_color", "色", value = item$color, showColour = "both"),
+          # Match the ordinary Graph level-colour control (native HTML color).
+          # The browser registers this as a Shiny input binding under the same
+          # existing input ID; the Library/GraphState colour contract is unchanged.
+          tags$div(class = "form-group shared-style-native-color-wrap",
+            tags$label(`for` = "shared_style_edit_color", class = "control-label", "色"),
+            tags$input(id = "shared_style_edit_color", type = "color",
+              class = "form-control shared-style-native-color-input",
+              value = item$color)
+          ),
           selectInput("shared_style_edit_shape", "形", choices = c("● 丸"=16,"▲ 三角"=17,"■ 四角"=15,"◆ ひし形"=18,"+ プラス"=3,"× クロス"=4,"○ 白丸"=1,"△ 白三角"=2,"□ 白四角"=0,"◇ 白ひし形"=5), selected = as.character(item$shape), width = "120px"),
           selectInput("shared_style_edit_linetype", "線", choices = c("実線"="solid","破線"="dashed","点線"="dotted","一点鎖線"="dotdash","長い破線"="longdash","二重点線"="twodash"), selected = item$linetype, width = "120px")
         )
