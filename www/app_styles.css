@@ -2464,6 +2464,11 @@
 .shared-style-editor-style-row .form-group {
   margin-bottom: 0;
 }
+/* Use the same native colour swatch as Graph's per-level colour slots. */
+.shared-style-editor-style-row .shared-style-native-color-wrap {
+  width: 180px;
+  max-width: 100%;
+}
 .shared-style-summary-empty {
   margin: 8px 0 2px;
   color: #777;
@@ -2871,10 +2876,86 @@
   gap: 5px;
   margin-bottom: 6px;
 }
+/* All categorical value sets use the same wrap-capable checkbox UI. */
+.plot-filter-search {
+  box-sizing: border-box;
+  width: 100%;
+  margin-bottom: 7px;
+}
+.plot-filter-values {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 4px 9px;
+  max-height: 230px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.plot-filter-value-option {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 4px;
+  margin: 0;
+  max-width: 100%;
+  min-width: 0;
+  font-weight: normal;
+  cursor: pointer;
+}
+.plot-filter-value-option[hidden] {
+  display: none !important;
+}
+.plot-filter-value-option input {
+  flex: 0 0 auto;
+  margin-top: 3px;
+}
+.plot-filter-value-option span {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
 .plot-filter-rule-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
   margin-top: 7px;
+}
+
+/* Shared Style: mapping-first Graph editor (existing GraphState ownership). */
+.shared-style-graph-binding .shared-style-detail {
+  margin: 9px 0;
+  padding: 8px 10px;
+  border: 1px solid #dfe5e9;
+  border-radius: 6px;
+  background: #fff;
+}
+.shared-style-graph-binding .shared-style-detail > summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding: 2px 0;
+}
+.shared-style-graph-binding .shared-style-mapped-group {
+  margin: 10px 0 5px;
+  padding-top: 6px;
+  border-top: 1px solid #edf0f3;
+}
+.shared-style-graph-binding .shared-style-binding-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 6px 0;
+}
+.shared-style-graph-binding .shared-style-binding-source {
+  min-width: 78px;
+  flex: 1 1 110px;
+  overflow-wrap: anywhere;
+}
+.shared-style-graph-binding .shared-style-binding-row .form-group {
+  min-width: 140px;
+  max-width: 100%;
+  margin-bottom: 0;
+  flex: 1 1 180px;
+}
+.shared-style-graph-binding .shared-style-binding-row select {
+  max-width: 100%;
 }

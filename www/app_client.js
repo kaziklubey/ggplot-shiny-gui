@@ -260,6 +260,33 @@ window.ggplotGuiClientEditingGraphName = window.ggplotGuiClientEditingGraphName 
 window.ggplotGuiClientEditorReady = window.ggplotGuiClientEditorReady || false;
 
 
+// Shared Style uses the same native color control as the Graph level slots.
+// Register it under the existing shared_style_edit_color Shiny input ID, so
+// selected Library items initialize their own value even before an edit.
+// No independent colour owner, hidden input, or additional save channel.
+(function ggplotGuiRegisterSharedStyleColor() {
+  if (!window.Shiny || !window.jQuery || !Shiny.inputBindings) return;
+  var binding = new Shiny.InputBinding();
+  binding.find = function(scope) {
+    return window.jQuery(scope).find('input.shared-style-native-color-input[type="color"]');
+  };
+  binding.getValue = function(el) { return el.value; };
+  binding.setValue = function(el, value) { el.value = String(value || '#E69F00'); };
+  binding.subscribe = function(el, callback) {
+    window.jQuery(el).on('change.sharedStyleNativeColor', function() { callback(); });
+  };
+  binding.unsubscribe = function(el) {
+    window.jQuery(el).off('.sharedStyleNativeColor');
+  };
+  binding.receiveMessage = function(el, data) {
+    if (data && data.value != null) {
+      this.setValue(el, data.value);
+      window.jQuery(el).trigger('change');
+    }
+  };
+  Shiny.inputBindings.register(binding, 'ggplot.sharedStyleNativeColor');
+})();
+
 // persistent level-control slot pools.
 // Each pool allocates ordinary browser controls in chunks of 50 and never
 // shrinks during the session. These controls are intentionally not Shiny input
@@ -649,6 +676,27 @@ document.addEventListener('change', function(ev) {
     value: !!ev.target.checked,
     controlId: id,
     nonce: Date.now()
+  }, {priority:'event'});
+}, true);
+
+// Mapped Shared Style selectors and attribute checkboxes are user-intent
+// owned. Shiny's dynamic-input binding changes are not canonical edits.
+document.addEventListener('change', function(ev) {
+  if (!ev || ev.isTrusted !== true || !ev.target || !window.Shiny) return;
+  var el = ev.target;
+  if (!el.closest || !el.closest('.shared-style-graph-binding')) return;
+  var isAttributes = el.type === 'checkbox' &&
+    /^graph_editor_single-shared_style_attributes_[0-9a-f]+_ui\d+_ss\d+$/.test(String(el.name || ''));
+  var id = String(isAttributes ? el.name : (el.id || ''));
+  if (!/^graph_editor_single-shared_(?:style_attributes|bind_level|bind_axis|bind_legend)_[0-9a-f]+_ui\d+_ss\d+$/.test(id)) return;
+  if (!isAttributes && el.tagName !== 'SELECT') return;
+  var graphId = String(window.ggplotGuiClientEditingGraph || '');
+  if (!graphId || !window.ggplotGuiClientEditorReady) return;
+  var value = isAttributes ? Array.from(document.getElementsByName(id))
+    .filter(function(node) { return node.checked; })
+    .map(function(node) { return node.value; }) : el.value;
+  Shiny.setInputValue('graph_editor_single-shared_style_binding_user_change', {
+    graphId: graphId, controlId: id, value: value, nonce: Date.now()
   }, {priority:'event'});
 }, true);
 
