@@ -9,10 +9,17 @@
         tags$button(type = "button", `data-filter-action` = "all", "すべて選択"),
         tags$button(type = "button", `data-filter-action` = "none", "すべて解除")
       ),
-      if (length(possible) <= GRAPH_PLOT_FILTER_CHECKBOX_LIMIT)
-        tags$div(class = "plot-filter-values", lapply(possible, function(v)
-          tags$label(tags$input(type = "checkbox", `data-filter-field` = "values",
-            value = v, checked = if (v %in% selected_values) "checked" else NULL), v)))
+      if (identical(r$kind, "categorical") ||
+          length(possible) <= GRAPH_PLOT_FILTER_CHECKBOX_LIMIT)
+        tags$div(
+          if (length(possible) > GRAPH_PLOT_FILTER_CHECKBOX_LIMIT)
+            tags$input(type = "search", class = "plot-filter-search", placeholder = "値を検索"),
+          tags$div(class = "plot-filter-values", lapply(possible, function(v)
+            tags$label(class = "plot-filter-value-option",
+              tags$input(type = "checkbox", `data-filter-field` = "values",
+                value = v, checked = if (v %in% selected_values) "checked" else NULL),
+              tags$span(v))))
+        )
       else tags$div(
         tags$input(type = "search", class = "plot-filter-search", placeholder = "値を検索"),
         tags$select(multiple = "multiple", size = 7L, `data-filter-field` = "values",
@@ -63,17 +70,56 @@
     paste0(compare_label, suffix)
   }
 
+  # Rebuild the native filter controls only if their structure changes, or
+  # when a different Graph generation is attached. A categorical selection
+  # commit changes canonical GraphState but must not recreate the checkboxes
+  # while the user is selecting values. This is a UI invalidation key, not
+  # another filter owner or a copy of GraphState.
+  plot_filter_ui_structure <- reactiveVal(NULL)
+  observe({
+    if (!graph_editor_profile_has(editor_profile, "editable_data") ||
+        isTRUE(graph_state_replay_active())) return()
+    base <- attached_state_seed()
+    d <- tryCatch(plot_source_data(), error = function(e) NULL)
+    if (!is.list(base) || !is.data.frame(d)) {
+      plot_filter_ui_structure(NULL)
+      return()
+    }
+    f <- graph_plot_filter_normalize(base$plot_filter)
+    key <- list(
+      generation = as.integer(graph_state_replay_generation()),
+      enabled = f$enabled,
+      columns = names(d),
+      rules = lapply(f$rules, function(r) {
+        possible <- if (r$column %in% names(d))
+          unique(as.character(d[[r$column]][!is.na(d[[r$column]])])) else character()
+        # Numeric/time/date controls retain their existing server-rendered
+        # summaries. Categorical values/NA are kept entirely in the live DOM
+        # until a structural change (or Graph replay) actually needs a rebuild.
+        list(column = r$column, kind = r$kind, mode = r$mode, op = r$op,
+          possible = possible,
+          fields = if (identical(r$kind, "categorical")) NULL else
+            list(a = r$a, b = r$b, values = r$values, include_na = r$include_na))
+      })
+    )
+    plot_filter_ui_structure(key)
+  }, priority = 200)
+
   # One event channel owns all dynamic rules. Native controls are deliberately
   # unbound to Shiny; stale DOM from an earlier Graph cannot update the owner.
   output$plot_filter_ui <- renderUI({
+    # Do not subscribe the render itself to every canonical seed update.
+    # The structural projection above is the sole trigger for DOM replacement.
+    structure <- plot_filter_ui_structure()
+    if (is.null(structure)) return(NULL)
     graph_cold_diag_measure("output$plot_filter_ui", function() {
     if (!graph_editor_profile_has(editor_profile, "editable_data")) return(NULL)
-    base <- attached_state_seed()
+    base <- isolate(attached_state_seed())
     if (!is.list(base)) return(NULL)
-    d <- tryCatch(plot_source_data(), error = function(e) NULL)
+    d <- tryCatch(isolate(plot_source_data()), error = function(e) NULL)
     if (!is.data.frame(d)) return(NULL)
     f <- graph_plot_filter_normalize(base$plot_filter)
-    generation <- as.integer(graph_state_replay_generation())
+    generation <- structure$generation
     opt <- function(value, label, selected = FALSE) tags$option(value = value,
       selected = if (selected) "selected" else NULL, label)
     controls <- lapply(f$rules, function(r) {
@@ -99,6 +145,7 @@
           tags$span(class = "plot-filter-kind-badge", kind),
           tags$span(class = "plot-filter-rule-summary-state", plot_filter_rule_summary(r, possible))),
         tags$div(class = "plot-filter-rule-body", `data-column` = r$column,
+          `data-filter-kind` = kind,
           if (show_compare) tags$div(
             class = "plot-filter-comparison-section",
             if (combined_kind) tags$div(class = "plot-filter-value-heading",

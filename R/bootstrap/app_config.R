@@ -1,6 +1,6 @@
 # Application identity and non-reactive configuration.
-APP_VERSION <- "v4.14"
-APP_ASSET_VERSION <- "v4.14"
+APP_VERSION <- "v4.15"
+APP_ASSET_VERSION <- "v4.15"
 
 GRAPH_RAPID_RENDER_DEBOUNCE_MS <- 180L
 FIGURE_RAPID_INPUT_DEBOUNCE_MS <- 180L
