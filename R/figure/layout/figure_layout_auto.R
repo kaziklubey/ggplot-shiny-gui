@@ -266,7 +266,7 @@ figure_expand_auto_canvas_for_free_legends <- function(geo, source_sizes = list(
   for (rect in geo$rects) {
     id <- as.character(rect$id %||% "")[1]
     if (!nzchar(id)) next
-    ov <- figure_override_for(id, overrides)
+    ov <- figure_apply_slot_label_to_override(figure_override_for(id, overrides), rect)
     ss <- source_sizes[[id]] %||% list()
     sc <- suppressWarnings(as.numeric(rect$basis_scale %||% 1)[1]); if (!is.finite(sc) || sc <= 0) sc <- 1
     ssp <- figure_scale_geometry_meta(ss, sc)
